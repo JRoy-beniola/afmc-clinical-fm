@@ -268,3 +268,92 @@ def run_low_n_benchmark(
                         }
                     )
     return pd.DataFrame(rows)
+
+
+def run_observation_shift_benchmark(
+    cohort: SimulatedCohort,
+    config: ExperimentConfig,
+) -> pd.DataFrame:
+    site_zero_ids = [
+        patient.patient_id for patient in cohort.patients if patient.site_id == 0
+    ]
+    site_one_ids = [
+        patient.patient_id for patient in cohort.patients if patient.site_id == 1
+    ]
+    if not site_zero_ids or not site_one_ids:
+        raise ValueError("observation-shift evaluation requires patients from sites 0 and 1")
+    train_pool, validation_ids, site_zero_test_ids = split_patient_ids(site_zero_ids, seed=0)
+    patient_by_id = {patient.patient_id: patient for patient in cohort.patients}
+    encoder = SummaryHistoryEncoder(representation_dim=16, seed=0)
+    sequences = {
+        patient_id: build_patient_sequence(patient, encoder)
+        for patient_id, patient in patient_by_id.items()
+    }
+    rows: list[dict[str, object]] = []
+    for seed in config.seeds:
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        for n_train in config.train_sizes:
+            train_ids = sample_low_n_train_ids(train_pool, n_train, seed)
+            train_batch = _padded_batch(
+                [sequences[patient_id] for patient_id in train_ids], cohort.config.n_sites
+            )
+            validation_batch = _padded_batch(
+                [sequences[patient_id] for patient_id in validation_ids],
+                cohort.config.n_sites,
+            )
+            evaluation_batches = {
+                "site_0": _padded_batch(
+                    [sequences[patient_id] for patient_id in site_zero_test_ids],
+                    cohort.config.n_sites,
+                ),
+                "site_1": _padded_batch(
+                    [sequences[patient_id] for patient_id in site_one_ids],
+                    cohort.config.n_sites,
+                ),
+            }
+            for model_name in ("flow_jump", "flow_jump_observation"):
+                observation_aware = model_name == "flow_jump_observation"
+                model = FlowJumpAdapter(
+                    16,
+                    3,
+                    3,
+                    site_dim=cohort.config.n_sites,
+                    model_observation_process=observation_aware,
+                )
+                model = _fit_neural(
+                    model, train_batch, validation_batch, config, observation_aware
+                )
+                by_site = {
+                    site: _evaluate_neural(model, batch)
+                    for site, batch in evaluation_batches.items()
+                }
+                parameters = _parameter_count(model)
+                for site, metrics in by_site.items():
+                    for metric, value in metrics.items():
+                        rows.append(
+                            {
+                                "model": model_name,
+                                "n_train": n_train,
+                                "seed": seed,
+                                "split": "test",
+                                "site_or_shift": site,
+                                "metric": metric,
+                                "value": value,
+                                "trainable_parameters": parameters,
+                            }
+                        )
+                for metric in by_site["site_0"]:
+                    rows.append(
+                        {
+                            "model": model_name,
+                            "n_train": n_train,
+                            "seed": seed,
+                            "split": "test",
+                            "site_or_shift": "site_1_minus_site_0",
+                            "metric": metric,
+                            "value": by_site["site_1"][metric] - by_site["site_0"][metric],
+                            "trainable_parameters": parameters,
+                        }
+                    )
+    return pd.DataFrame(rows)

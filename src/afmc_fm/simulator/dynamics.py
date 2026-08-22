@@ -26,9 +26,9 @@ def sample_patient_parameters(
 ) -> PatientParameters:
     dimension = config.latent_dim
     return PatientParameters(
-        baseline_state=rng.normal(0.0, 0.7, size=dimension),
-        progression_scale=rng.lognormal(0.0, 0.2, size=dimension),
-        response_scale=rng.lognormal(0.0, 0.25, size=dimension),
+        baseline_state=rng.normal(0.0, 0.7 * config.heterogeneity_scale, size=dimension),
+        progression_scale=rng.lognormal(0.0, 0.2 * config.heterogeneity_scale, size=dimension),
+        response_scale=rng.lognormal(0.0, 0.25 * config.heterogeneity_scale, size=dimension),
         noise_scale=float(config.process_noise * rng.lognormal(0.0, 0.15)),
         site_id=int(rng.integers(config.n_sites)),
     )

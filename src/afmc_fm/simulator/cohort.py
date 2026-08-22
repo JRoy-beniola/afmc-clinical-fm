@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
@@ -46,6 +46,10 @@ def simulate_patient(
     parameters = sample_patient_parameters(config, rng)
     initial_latent = simulate_latent_trajectory(config, parameters, rng)
     states = np.array(initial_latent.states, copy=True)
+    if config.hidden_regime_switch and len(states) > 2:
+        midpoint = len(states) // 2
+        regime_offset = np.linspace(0.0, 0.6, len(states) - midpoint)[:, None]
+        states[midpoint:] += regime_offset
     events: list[ClinicalEvent] = []
     previous_observed_value: float | None = None
 
@@ -57,7 +61,8 @@ def simulate_patient(
             strength = float(rng.uniform(0.5, 1.5))
             jumped_state = apply_intervention_jump(state, strength, parameters, rng)
             shift = jumped_state - state
-            states[index:] += shift
+            effect_index = index + 1 if config.delayed_intervention_effect else index
+            states[effect_index:] += shift
             state = states[index]
             events.append(
                 ClinicalEvent(
@@ -114,3 +119,31 @@ def simulate_cohort(config: SimulatorConfig, seed: int) -> SimulatedCohort:
         for index in range(config.cohort_size)
     ]
     return SimulatedCohort(patients=patients, config=config, seed=seed)
+
+
+def simulate_world(
+    world_name: str,
+    config: SimulatorConfig,
+    seed: int,
+) -> SimulatedCohort:
+    overrides: dict[str, object]
+    if world_name == "smooth":
+        overrides = {"intervention_rate": 0.01, "observation_regime": "mcar"}
+    elif world_name == "jumps":
+        overrides = {"intervention_rate": 0.15, "observation_regime": "mar"}
+    elif world_name == "informative_observation":
+        overrides = {"observation_regime": "mnar"}
+    elif world_name == "site_shift":
+        overrides = {"observation_regime": "site_shift"}
+    elif world_name == "misspecified":
+        overrides = {
+            "intervention_rate": 0.12,
+            "observation_regime": "mnar",
+            "heterogeneity_scale": 2.0,
+            "delayed_intervention_effect": True,
+            "hidden_regime_switch": True,
+        }
+    else:
+        raise ValueError(f"unknown simulation world: {world_name}")
+    world_config = replace(config, world_name=world_name, **overrides)
+    return simulate_cohort(world_config, seed)
