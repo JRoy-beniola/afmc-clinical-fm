@@ -11,6 +11,12 @@ from afmc_fm.data.encoding import SummaryHistoryEncoder
 from afmc_fm.data.sequences import PatientSequence, build_patient_sequence
 from afmc_fm.data.splits import split_patient_ids
 from afmc_fm.data.tasks import LongitudinalTask
+from afmc_fm.metrics.forecasting import (
+    binary_metrics,
+    gaussian_forecasting_metrics,
+    regression_metrics,
+)
+from afmc_fm.metrics.latent import aligned_latent_r2
 from afmc_fm.models.baselines import (
     GradientBoostingRegressorBaseline,
     GRUBaseline,
@@ -192,6 +198,32 @@ def build_complete_truth_targets(
     return targets, masks
 
 
+def _attach_latent_truth(
+    batch: dict[str, torch.Tensor],
+    patients: Sequence[SimulatedPatient],
+) -> dict[str, torch.Tensor]:
+    latent_dim = patients[0].latent.states.shape[1]
+    targets = torch.zeros(
+        (len(patients), batch["valid"].shape[1], latent_dim),
+        dtype=torch.float32,
+    )
+    valid = torch.zeros_like(batch["valid"])
+    for row, patient in enumerate(patients):
+        event_times = sorted({event.start_time for event in patient.timeline.events})
+        for step, timestamp in enumerate(event_times):
+            elapsed_days = (
+                timestamp - patient.complete_outcomes.origin_time
+            ).total_seconds() / 86400
+            latent_index = int(np.argmin(np.abs(patient.latent.times - elapsed_days)))
+            targets[row, step] = torch.from_numpy(
+                patient.latent.states[latent_index].astype(np.float32)
+            )
+            valid[row, step] = 1.0
+    batch["latent_targets"] = targets
+    batch["latent_valid"] = valid
+    return batch
+
+
 def _complete_truth_batch(
     sequences: Sequence[PatientSequence],
     patients: Sequence[SimulatedPatient],
@@ -202,7 +234,7 @@ def _complete_truth_batch(
         length = len(targets)
         batch["target_values"][row, :length] = torch.from_numpy(targets)
         batch["target_masks"][row, :length] = torch.from_numpy(masks)
-    return batch
+    return _attach_latent_truth(batch, patients)
 
 
 def _neural_loss(
@@ -286,8 +318,31 @@ def _evaluate_neural(model: nn.Module, batch: dict[str, torch.Tensor]) -> dict[s
             times=batch["times"],
         )
     selected = batch["target_masks"].bool()
-    error = output.value_mean[selected] - batch["target_values"][selected]
-    return {"mae": float(error.abs().mean()), "rmse": float(error.square().mean().sqrt())}
+    truth = batch["target_values"][selected].numpy()
+    mean = output.value_mean[selected].numpy()
+    log_scale = output.value_log_scale[selected].numpy()
+    metrics = regression_metrics(truth, mean)
+    metrics.update(gaussian_forecasting_metrics(truth, mean, log_scale))
+
+    event_selected = batch["event_valid"].bool()
+    event_metrics = binary_metrics(
+        batch["target_events"][event_selected].numpy(),
+        torch.sigmoid(output.event_logits[event_selected]).numpy(),
+    )
+    metrics.update({f"event_{name}": value for name, value in event_metrics.items()})
+
+    if "latent_targets" in batch:
+        latent_selected = batch["latent_valid"].bool()
+        learned_states = (
+            output.post_event_states
+            if hasattr(output, "post_event_states")
+            else output.states
+        )
+        metrics["latent_aligned_r2"] = aligned_latent_r2(
+            batch["latent_targets"][latent_selected].numpy(),
+            learned_states[latent_selected].numpy(),
+        )
+    return metrics
 
 
 def _parameter_count(model: nn.Module) -> int:
@@ -366,6 +421,7 @@ def run_low_n_benchmark(
                 sequences[patient_id] for patient_id in budget.validation_ids
             ]
             test_sequences = [sequences[patient_id] for patient_id in test_ids]
+            test_patients = [patient_by_id[patient_id] for patient_id in test_ids]
             for model_name, ablation in variants:
                 parameters = 0
                 if model_name in {
@@ -388,15 +444,13 @@ def run_low_n_benchmark(
                     else:
                         estimator = GradientBoostingRegressorBaseline()
                     prediction = estimator.fit(train_x, train_y).predict(test_x)
-                    error = prediction - test_y
-                    metrics = {
-                        "mae": float(np.mean(np.abs(error))),
-                        "rmse": float(np.sqrt(np.mean(error**2))),
-                    }
+                    metrics = regression_metrics(test_y, prediction)
                 else:
                     train_batch = _padded_batch(train_sequences)
                     validation_batch = _padded_batch(validation_sequences)
-                    test_batch = _padded_batch(test_sequences)
+                    test_batch = _attach_latent_truth(
+                        _padded_batch(test_sequences), test_patients
+                    )
                     if model_name == "gru_from_scratch":
                         model: nn.Module = GRUBaseline(
                             len(task.value_codes), len(EventType)

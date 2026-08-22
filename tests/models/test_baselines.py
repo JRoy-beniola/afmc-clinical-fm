@@ -40,6 +40,7 @@ def test_gru_baseline_has_finite_shapes_and_gradients():
         event_features=torch.zeros(batch, steps, 3),
         times=torch.arange(steps).float().repeat(batch, 1),
     )
+    assert output.states.shape == (batch, steps, 12)
     assert output.value_mean.shape == (batch, steps, 3)
     assert output.value_log_scale.shape == (batch, steps, 3)
     assert output.event_logits.shape == (batch, steps)

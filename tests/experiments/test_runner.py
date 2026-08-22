@@ -157,3 +157,30 @@ def test_required_ablation_variants_are_runnable_and_tidy():
     assert set(results["ablation"]) == set(ABLATION_IDS)
     key = ["model", "ablation", "n_train", "seed", "site_or_shift", "metric"]
     assert not results.duplicated(key).any()
+
+
+def test_neural_benchmark_reports_forecasting_event_and_latent_metrics():
+    cohort = simulate_cohort(
+        SimulatorConfig(
+            cohort_size=36,
+            followup_days=90.0,
+            intervention_rate=0.15,
+        ),
+        seed=18,
+    )
+    config = ExperimentConfig(train_sizes=(5,), seeds=(1,), max_epochs=1, patience=1)
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("flow_jump",),
+    )
+    assert {
+        "mae",
+        "rmse",
+        "nll",
+        "coverage_90",
+        "event_roc_auc",
+        "event_brier",
+        "event_log_loss",
+        "latent_aligned_r2",
+    } <= set(results["metric"])

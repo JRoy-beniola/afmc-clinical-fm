@@ -70,6 +70,7 @@ class MLPRegressorBaseline:
 
 @dataclass(frozen=True)
 class GRUBaselineOutput:
+    states: torch.Tensor
     value_mean: torch.Tensor
     value_log_scale: torch.Tensor
     event_logits: torch.Tensor
@@ -111,6 +112,7 @@ class GRUBaseline(nn.Module):
         value_output = self.value_head(hidden)
         value_mean, value_log_scale = value_output.chunk(2, dim=-1)
         return GRUBaselineOutput(
+            states=hidden,
             value_mean=value_mean,
             value_log_scale=value_log_scale,
             event_logits=self.event_head(hidden).squeeze(-1),
