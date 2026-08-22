@@ -1,0 +1,9 @@
+train_sizes: [5, 10, 20, 40, 80, 100]
+seeds: [1, 2, 3, 4, 5]
+max_epochs: 100
+patience: 12
+learning_rate: 0.001
+weight_decay: 0.0001
+batch_size: 16
+lambda_event: 1.0
+lambda_obs: 0.2

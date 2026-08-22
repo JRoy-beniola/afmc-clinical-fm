@@ -23,11 +23,17 @@ class FlowJumpAdapter(nn.Module):
         state_dim: int = 24,
         site_dim: int = 0,
         model_observation_process: bool = False,
+        no_flow: bool = False,
+        no_jump: bool = False,
+        no_probabilistic_scale: bool = False,
     ) -> None:
         super().__init__()
         self.state_dim = state_dim
         self.site_dim = site_dim
         self.model_observation_process = model_observation_process
+        self.no_flow = no_flow
+        self.no_jump = no_jump
+        self.no_probabilistic_scale = no_probabilistic_scale
         flow_dim = state_dim + 1
         self.flow_gate = nn.Linear(flow_dim, state_dim)
         self.flow_candidate = nn.Linear(flow_dim, state_dim)
@@ -44,6 +50,8 @@ class FlowJumpAdapter(nn.Module):
             )
 
     def flow(self, state: torch.Tensor, delta_t: torch.Tensor) -> torch.Tensor:
+        if self.no_flow:
+            return state
         flow_input = torch.cat([state, torch.log1p(delta_t.clamp_min(0)).unsqueeze(-1)], dim=-1)
         gate = torch.sigmoid(self.flow_gate(flow_input))
         candidate = torch.tanh(self.flow_candidate(flow_input))
@@ -57,6 +65,8 @@ class FlowJumpAdapter(nn.Module):
         masks: torch.Tensor,
         event_features: torch.Tensor,
     ) -> torch.Tensor:
+        if self.no_jump:
+            return state
         jump_input = torch.cat(
             [representation, values * masks, masks, event_features], dim=-1
         )
@@ -108,6 +118,8 @@ class FlowJumpAdapter(nn.Module):
             )
             value_output = self.value_head(state)
             mean, log_scale = value_output.chunk(2, dim=-1)
+            if self.no_probabilistic_scale:
+                log_scale = torch.zeros_like(log_scale)
             pre_states.append(pre_state)
             post_states.append(state)
             means.append(mean)

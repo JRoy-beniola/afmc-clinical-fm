@@ -1,0 +1,270 @@
+from collections.abc import Sequence
+from copy import deepcopy
+from dataclasses import dataclass
+
+import numpy as np
+import pandas as pd
+import torch
+from torch import nn
+
+from afmc_fm.data.encoding import SummaryHistoryEncoder
+from afmc_fm.data.sequences import PatientSequence, build_patient_sequence
+from afmc_fm.data.splits import split_patient_ids
+from afmc_fm.models.baselines import (
+    GradientBoostingRegressorBaseline,
+    GRUBaseline,
+    ProbeRegressor,
+)
+from afmc_fm.models.flow_jump import FlowJumpAdapter
+from afmc_fm.models.losses import masked_gaussian_nll, observation_bce
+from afmc_fm.simulator.cohort import SimulatedCohort
+
+MODEL_NAMES = (
+    "probe_linear",
+    "gradient_boosting",
+    "gru_from_scratch",
+    "flow_jump",
+    "flow_jump_observation",
+)
+
+
+@dataclass(frozen=True)
+class ExperimentConfig:
+    train_sizes: tuple[int, ...] = (5, 10, 20, 40, 80, 100)
+    seeds: tuple[int, ...] = (1, 2, 3, 4, 5)
+    max_epochs: int = 100
+    patience: int = 12
+    learning_rate: float = 1e-3
+    weight_decay: float = 1e-4
+    batch_size: int = 16
+    lambda_event: float = 1.0
+    lambda_obs: float = 0.2
+
+
+def sample_low_n_train_ids(train_pool: Sequence[str], n: int, seed: int) -> list[str]:
+    if n <= 0 or n > len(train_pool):
+        raise ValueError("n must be positive and no larger than the training pool")
+    indices = np.random.default_rng(seed).choice(len(train_pool), size=n, replace=False)
+    return [train_pool[index] for index in indices]
+
+
+def _static_examples(sequences: Sequence[PatientSequence]) -> tuple[np.ndarray, np.ndarray]:
+    features: list[np.ndarray] = []
+    targets: list[float] = []
+    for sequence in sequences:
+        for step, lab in np.argwhere(sequence.target_next_masks > 0):
+            lab_indicator = np.zeros(sequence.target_next_masks.shape[1])
+            lab_indicator[lab] = 1.0
+            features.append(np.concatenate([sequence.representations[step], lab_indicator]))
+            targets.append(float(sequence.target_next_values[step, lab]))
+    if not features:
+        raise ValueError("sequences contain no observed forecasting targets")
+    return np.asarray(features), np.asarray(targets)
+
+
+def _padded_batch(sequences: Sequence[PatientSequence], n_sites: int) -> dict[str, torch.Tensor]:
+    batch = len(sequences)
+    steps = max(len(sequence.times) for sequence in sequences)
+    rep_dim = sequences[0].representations.shape[1]
+    value_dim = sequences[0].values.shape[1]
+    event_dim = sequences[0].event_features.shape[1]
+    arrays = {
+        "representations": np.zeros((batch, steps, rep_dim), dtype=np.float32),
+        "values": np.zeros((batch, steps, value_dim), dtype=np.float32),
+        "masks": np.zeros((batch, steps, value_dim), dtype=np.float32),
+        "event_features": np.zeros((batch, steps, event_dim), dtype=np.float32),
+        "times": np.zeros((batch, steps), dtype=np.float32),
+        "site_context": np.zeros((batch, steps, n_sites), dtype=np.float32),
+        "target_values": np.zeros((batch, steps, value_dim), dtype=np.float32),
+        "target_masks": np.zeros((batch, steps, value_dim), dtype=np.float32),
+        "target_events": np.zeros((batch, steps), dtype=np.float32),
+        "valid": np.zeros((batch, steps), dtype=np.float32),
+    }
+    for row, sequence in enumerate(sequences):
+        length = len(sequence.times)
+        if length == 0:
+            continue
+        for name, source in (
+            ("representations", sequence.representations),
+            ("values", sequence.values),
+            ("masks", sequence.masks),
+            ("event_features", sequence.event_features),
+            ("times", sequence.times),
+            ("target_values", sequence.target_next_values),
+            ("target_masks", sequence.target_next_masks),
+            ("target_events", sequence.target_event_within_horizon),
+        ):
+            arrays[name][row, :length] = source
+        arrays["site_context"][row, :length, sequence.site_id] = 1.0
+        arrays["valid"][row, :length] = 1.0
+    return {name: torch.from_numpy(value) for name, value in arrays.items()}
+
+
+def _neural_loss(
+    model: nn.Module,
+    batch: dict[str, torch.Tensor],
+    config: ExperimentConfig,
+    observation_aware: bool,
+) -> torch.Tensor:
+    output = model(
+        representations=batch["representations"],
+        values=batch["values"],
+        masks=batch["masks"],
+        event_features=batch["event_features"],
+        times=batch["times"],
+        **({"site_context": batch["site_context"]} if isinstance(model, FlowJumpAdapter) else {}),
+    )
+    loss = masked_gaussian_nll(
+        output.value_mean,
+        output.value_log_scale,
+        batch["target_values"],
+        batch["target_masks"],
+    )
+    event_loss = torch.nn.functional.binary_cross_entropy_with_logits(
+        output.event_logits,
+        batch["target_events"],
+        weight=batch["valid"],
+        reduction="sum",
+    ) / batch["valid"].sum().clamp_min(1.0)
+    loss = loss + config.lambda_event * event_loss
+    if observation_aware:
+        assert output.observation_logits is not None
+        loss = loss + config.lambda_obs * observation_bce(
+            output.observation_logits, batch["masks"]
+        )
+    return loss
+
+
+def _fit_neural(
+    model: nn.Module,
+    train: dict[str, torch.Tensor],
+    validation: dict[str, torch.Tensor],
+    config: ExperimentConfig,
+    observation_aware: bool,
+) -> nn.Module:
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
+    )
+    best_state = deepcopy(model.state_dict())
+    best_loss = float("inf")
+    stale_epochs = 0
+    for _ in range(config.max_epochs):
+        model.train()
+        optimizer.zero_grad()
+        loss = _neural_loss(model, train, config, observation_aware)
+        loss.backward()
+        optimizer.step()
+        model.eval()
+        with torch.no_grad():
+            validation_loss = float(
+                _neural_loss(model, validation, config, observation_aware).item()
+            )
+        if validation_loss < best_loss:
+            best_loss = validation_loss
+            best_state = deepcopy(model.state_dict())
+            stale_epochs = 0
+        else:
+            stale_epochs += 1
+            if stale_epochs >= config.patience:
+                break
+    model.load_state_dict(best_state)
+    return model
+
+
+def _evaluate_neural(model: nn.Module, batch: dict[str, torch.Tensor]) -> dict[str, float]:
+    model.eval()
+    with torch.no_grad():
+        output = model(
+            representations=batch["representations"],
+            values=batch["values"],
+            masks=batch["masks"],
+            event_features=batch["event_features"],
+            times=batch["times"],
+            **({"site_context": batch["site_context"]} if isinstance(model, FlowJumpAdapter) else {}),
+        )
+    selected = batch["target_masks"].bool()
+    error = output.value_mean[selected] - batch["target_values"][selected]
+    return {"mae": float(error.abs().mean()), "rmse": float(error.square().mean().sqrt())}
+
+
+def _parameter_count(model: nn.Module) -> int:
+    return sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
+
+
+def run_low_n_benchmark(
+    cohort: SimulatedCohort,
+    config: ExperimentConfig,
+    model_names: Sequence[str] = MODEL_NAMES,
+) -> pd.DataFrame:
+    unknown = set(model_names).difference(MODEL_NAMES)
+    if unknown:
+        raise ValueError(f"unknown models: {sorted(unknown)}")
+    torch.set_num_threads(1)
+    patient_by_id = {patient.patient_id: patient for patient in cohort.patients}
+    all_ids = list(patient_by_id)
+    train_pool, validation_ids, test_ids = split_patient_ids(all_ids, seed=0)
+    encoder = SummaryHistoryEncoder(representation_dim=16, seed=0)
+    sequences = {
+        patient_id: build_patient_sequence(patient, encoder)
+        for patient_id, patient in patient_by_id.items()
+    }
+    rows: list[dict[str, object]] = []
+    for seed in config.seeds:
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        for n_train in config.train_sizes:
+            train_ids = sample_low_n_train_ids(train_pool, n_train, seed)
+            train_sequences = [sequences[patient_id] for patient_id in train_ids]
+            validation_sequences = [sequences[patient_id] for patient_id in validation_ids]
+            test_sequences = [sequences[patient_id] for patient_id in test_ids]
+            for model_name in model_names:
+                parameters = 0
+                if model_name in {"probe_linear", "gradient_boosting"}:
+                    train_x, train_y = _static_examples(train_sequences)
+                    test_x, test_y = _static_examples(test_sequences)
+                    estimator = (
+                        ProbeRegressor()
+                        if model_name == "probe_linear"
+                        else GradientBoostingRegressorBaseline()
+                    )
+                    prediction = estimator.fit(train_x, train_y).predict(test_x)
+                    error = prediction - test_y
+                    metrics = {
+                        "mae": float(np.mean(np.abs(error))),
+                        "rmse": float(np.sqrt(np.mean(error**2))),
+                    }
+                else:
+                    train_batch = _padded_batch(train_sequences, cohort.config.n_sites)
+                    validation_batch = _padded_batch(validation_sequences, cohort.config.n_sites)
+                    test_batch = _padded_batch(test_sequences, cohort.config.n_sites)
+                    if model_name == "gru_from_scratch":
+                        model: nn.Module = GRUBaseline(16, 3, 3)
+                        observation_aware = False
+                    else:
+                        observation_aware = model_name == "flow_jump_observation"
+                        model = FlowJumpAdapter(
+                            16,
+                            3,
+                            3,
+                            site_dim=cohort.config.n_sites,
+                            model_observation_process=observation_aware,
+                        )
+                    model = _fit_neural(
+                        model, train_batch, validation_batch, config, observation_aware
+                    )
+                    metrics = _evaluate_neural(model, test_batch)
+                    parameters = _parameter_count(model)
+                for metric, value in metrics.items():
+                    rows.append(
+                        {
+                            "model": model_name,
+                            "n_train": n_train,
+                            "seed": seed,
+                            "split": "test",
+                            "site_or_shift": "all",
+                            "metric": metric,
+                            "value": value,
+                            "trainable_parameters": parameters,
+                        }
+                    )
+    return pd.DataFrame(rows)

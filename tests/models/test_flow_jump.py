@@ -101,3 +101,29 @@ def test_observation_forward_outputs_one_logit_per_mask_value():
     )
     assert output.observation_logits is not None
     assert output.observation_logits.shape == (2, 4, 3)
+
+
+def test_ablation_flags_disable_flow_jump_and_probabilistic_scale():
+    no_flow = FlowJumpAdapter(16, 3, 3, no_flow=True)
+    state = torch.randn(2, 24)
+    assert torch.equal(no_flow.flow(state, torch.ones(2)), state)
+
+    no_jump = FlowJumpAdapter(16, 3, 3, no_jump=True)
+    jumped = no_jump.jump(
+        state,
+        torch.randn(2, 16),
+        torch.randn(2, 3),
+        torch.ones(2, 3),
+        torch.zeros(2, 3),
+    )
+    assert torch.equal(jumped, state)
+
+    deterministic = FlowJumpAdapter(16, 3, 3, no_probabilistic_scale=True)
+    output = deterministic(
+        torch.randn(2, 3, 16),
+        torch.randn(2, 3, 3),
+        torch.ones(2, 3, 3),
+        torch.zeros(2, 3, 3),
+        torch.arange(3).float().repeat(2, 1),
+    )
+    assert torch.count_nonzero(output.value_log_scale) == 0
