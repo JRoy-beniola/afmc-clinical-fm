@@ -31,3 +31,24 @@ def test_same_seed_reproduces_events_and_latent_truth():
         assert patient_a.timeline.events == patient_b.timeline.events
         np.testing.assert_allclose(patient_a.latent.times, patient_b.latent.times)
         np.testing.assert_allclose(patient_a.latent.states, patient_b.latent.states)
+
+
+def test_complete_outcome_truth_is_retained_before_observation_masking():
+    config = SimulatorConfig(
+        cohort_size=1,
+        followup_days=120.0,
+        observation_regime="mcar",
+    )
+    patient = simulate_cohort(config, seed=31).patients[0]
+    truth = patient.complete_outcomes
+    assert truth.values.shape == (len(patient.latent.times), 3)
+    assert np.isfinite(truth.values).all()
+    observed = [
+        event for event in patient.timeline.events if event.event_type == EventType.OBSERVATION
+    ]
+    assert len(observed) < truth.values.size
+    for event in observed:
+        elapsed = (event.start_time - truth.origin_time).total_seconds() / 86400.0
+        time_index = int(np.argmin(np.abs(truth.times - elapsed)))
+        value_index = truth.value_codes.index(event.code)
+        assert event.value == truth.values[time_index, value_index]

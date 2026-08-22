@@ -1,8 +1,11 @@
 import numpy as np
 
+from afmc_fm.data.encoding import SummaryHistoryEncoder
+from afmc_fm.data.sequences import build_patient_sequence
 from afmc_fm.data.splits import split_patient_ids
 from afmc_fm.experiments.runner import (
     ExperimentConfig,
+    build_complete_truth_targets,
     run_low_n_benchmark,
     run_observation_shift_benchmark,
     sample_low_n_train_ids,
@@ -92,3 +95,20 @@ def test_fit_and_validation_patients_stay_within_total_low_n_budget():
     assert set(budget.fit_ids).isdisjoint(budget.validation_ids)
     assert labelled <= set(development)
     assert labelled.isdisjoint(final_test)
+
+
+def test_complete_truth_targets_do_not_condition_on_observation_masks():
+    patient = simulate_world(
+        "site_shift",
+        SimulatorConfig(cohort_size=1, followup_days=90.0),
+        seed=14,
+    ).patients[0]
+    sequence = build_patient_sequence(
+        patient,
+        SummaryHistoryEncoder(representation_dim=16, seed=0),
+    )
+    targets, masks = build_complete_truth_targets(patient)
+    assert targets.shape == sequence.target_next_values.shape
+    assert masks.shape == sequence.target_next_masks.shape
+    assert masks.sum() >= sequence.target_next_masks.sum()
+    assert np.all(masks.sum(axis=1) % 3 == 0)

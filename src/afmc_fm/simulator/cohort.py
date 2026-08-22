@@ -12,9 +12,17 @@ from afmc_fm.simulator.dynamics import (
     sample_patient_parameters,
     simulate_latent_trajectory,
 )
-from afmc_fm.simulator.observation import emit_labs, observation_probability
+from afmc_fm.simulator.observation import LAB_CODES, emit_labs, observation_probability
 
 _ORIGIN = datetime(2020, 1, 1, tzinfo=UTC)
+
+
+@dataclass(frozen=True)
+class CompleteOutcomeTruth:
+    origin_time: datetime
+    times: np.ndarray
+    value_codes: tuple[str, ...]
+    values: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -23,6 +31,7 @@ class SimulatedPatient:
     site_id: int
     parameters: PatientParameters
     latent: LatentTrajectory
+    complete_outcomes: CompleteOutcomeTruth
     timeline: PatientTimeline
 
 
@@ -51,6 +60,7 @@ def simulate_patient(
         regime_offset = np.linspace(0.0, 0.6, len(states) - midpoint)[:, None]
         states[midpoint:] += regime_offset
     events: list[ClinicalEvent] = []
+    complete_values: list[list[float]] = []
     previous_observed_value: float | None = None
 
     for index, elapsed_days in enumerate(initial_latent.times):
@@ -78,6 +88,7 @@ def simulate_patient(
             )
 
         candidate_labs = emit_labs(state, rng, config.measurement_noise)
+        complete_values.append([candidate_labs[code] for code in LAB_CODES])
         probability = observation_probability(
             config.observation_regime,
             state,
@@ -107,6 +118,12 @@ def simulate_patient(
         site_id=parameters.site_id,
         parameters=parameters,
         latent=latent,
+        complete_outcomes=CompleteOutcomeTruth(
+            origin_time=_ORIGIN,
+            times=np.array(initial_latent.times, copy=True),
+            value_codes=LAB_CODES,
+            values=np.asarray(complete_values, dtype=float),
+        ),
         timeline=PatientTimeline(patient_id=patient_id, events=events),
     )
 

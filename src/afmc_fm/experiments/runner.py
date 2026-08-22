@@ -17,7 +17,7 @@ from afmc_fm.models.baselines import (
 )
 from afmc_fm.models.flow_jump import FlowJumpAdapter
 from afmc_fm.models.losses import masked_gaussian_nll, observation_bce
-from afmc_fm.simulator.cohort import SimulatedCohort
+from afmc_fm.simulator.cohort import SimulatedCohort, SimulatedPatient
 
 MODEL_NAMES = (
     "probe_linear",
@@ -124,6 +124,40 @@ def _padded_batch(sequences: Sequence[PatientSequence], n_sites: int) -> dict[st
         arrays["site_context"][row, :length, sequence.site_id] = 1.0
         arrays["valid"][row, :length] = 1.0
     return {name: torch.from_numpy(value) for name, value in arrays.items()}
+
+
+def build_complete_truth_targets(
+    patient: SimulatedPatient,
+) -> tuple[np.ndarray, np.ndarray]:
+    event_times = sorted({event.start_time for event in patient.timeline.events})
+    value_dim = len(patient.complete_outcomes.value_codes)
+    targets = np.zeros((len(event_times), value_dim), dtype=np.float32)
+    masks = np.zeros_like(targets)
+    for step, timestamp in enumerate(event_times):
+        elapsed_days = (
+            timestamp - patient.complete_outcomes.origin_time
+        ).total_seconds() / 86400
+        target_index = int(
+            np.searchsorted(patient.complete_outcomes.times, elapsed_days, side="right")
+        )
+        if target_index < len(patient.complete_outcomes.times):
+            targets[step] = patient.complete_outcomes.values[target_index]
+            masks[step] = 1.0
+    return targets, masks
+
+
+def _complete_truth_batch(
+    sequences: Sequence[PatientSequence],
+    patients: Sequence[SimulatedPatient],
+    n_sites: int,
+) -> dict[str, torch.Tensor]:
+    batch = _padded_batch(sequences, n_sites)
+    for row, patient in enumerate(patients):
+        targets, masks = build_complete_truth_targets(patient)
+        length = len(targets)
+        batch["target_values"][row, :length] = torch.from_numpy(targets)
+        batch["target_masks"][row, :length] = torch.from_numpy(masks)
+    return batch
 
 
 def _neural_loss(
@@ -338,13 +372,21 @@ def run_observation_shift_benchmark(
                 [sequences[patient_id] for patient_id in budget.validation_ids],
                 cohort.config.n_sites,
             )
+            site_zero_patients = [
+                patient_by_id[patient_id] for patient_id in site_zero_test_ids
+            ]
+            site_one_patients = [
+                patient_by_id[patient_id] for patient_id in site_one_ids
+            ]
             evaluation_batches = {
-                "site_0": _padded_batch(
-                    [sequences[patient_id] for patient_id in site_zero_test_ids],
+                "site_0": _complete_truth_batch(
+                    [sequences[patient.patient_id] for patient in site_zero_patients],
+                    site_zero_patients,
                     cohort.config.n_sites,
                 ),
-                "site_1": _padded_batch(
-                    [sequences[patient_id] for patient_id in site_one_ids],
+                "site_1": _complete_truth_batch(
+                    [sequences[patient.patient_id] for patient in site_one_patients],
+                    site_one_patients,
                     cohort.config.n_sites,
                 ),
             }
