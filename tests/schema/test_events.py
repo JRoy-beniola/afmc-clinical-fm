@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pandas as pd
 import pytest
@@ -15,7 +15,7 @@ from afmc_fm.schema.events import (
 def _event(day: int, code: str = "LAB_A") -> ClinicalEvent:
     return ClinicalEvent(
         patient_id="p1",
-        start_time=datetime(2026, 1, 1 + day, tzinfo=timezone.utc),
+        start_time=datetime(2026, 1, 1 + day, tzinfo=UTC),
         code=code,
         value=1.5,
         unit="arb",
