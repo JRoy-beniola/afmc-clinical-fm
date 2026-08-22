@@ -52,8 +52,11 @@ def simulate_patient(
     patient_id: str,
     config: SimulatorConfig,
     rng: np.random.Generator,
+    site_id: int | None = None,
 ) -> SimulatedPatient:
     parameters = sample_patient_parameters(config, rng)
+    if site_id is not None:
+        parameters = replace(parameters, site_id=site_id)
     times = sample_event_times(config, rng)
     states: list[np.ndarray] = []
     current_state = np.array(parameters.baseline_state, dtype=float, copy=True)
@@ -97,15 +100,22 @@ def simulate_patient(
             )
 
         states.append(np.array(current_state, copy=True))
-        candidate_labs = emit_labs(current_state, rng, config.measurement_noise)
-        complete_values.append([candidate_labs[code] for code in LAB_CODES])
-        probability = observation_probability(
-            config.observation_regime,
+        candidate_labs = emit_labs(
             current_state,
-            previous_observed_value,
-            parameters.site_id,
+            rng,
+            config.measurement_noise,
+            regime=config.observation_regime,
+            site_id=parameters.site_id,
         )
+        complete_values.append([candidate_labs[code] for code in LAB_CODES])
         for code, value in candidate_labs.items():
+            probability = observation_probability(
+                config.observation_regime,
+                current_state,
+                previous_observed_value,
+                parameters.site_id,
+                code,
+            )
             if rng.random() >= probability:
                 continue
             events.append(
@@ -154,7 +164,12 @@ def simulate_patient(
 def simulate_cohort(config: SimulatorConfig, seed: int) -> SimulatedCohort:
     rng = np.random.default_rng(seed)
     patients = [
-        simulate_patient(f"synthetic-{index:06d}", config, rng)
+        simulate_patient(
+            f"synthetic-{index:06d}",
+            config,
+            rng,
+            site_id=index % config.n_sites,
+        )
         for index in range(config.cohort_size)
     ]
     return SimulatedCohort(patients=patients, config=config, seed=seed)

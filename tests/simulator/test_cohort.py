@@ -2,7 +2,7 @@ import numpy as np
 
 import afmc_fm.simulator.cohort as cohort_module
 from afmc_fm.schema.events import EventType
-from afmc_fm.simulator.cohort import simulate_cohort, simulate_patient
+from afmc_fm.simulator.cohort import simulate_cohort, simulate_patient, simulate_world
 from afmc_fm.simulator.config import SimulatorConfig
 
 
@@ -122,3 +122,21 @@ def test_delayed_intervention_enters_at_next_state(monkeypatch):
     )
     np.testing.assert_allclose(advance_inputs[0], patient.latent.states[0])
     np.testing.assert_allclose(patient.latent.states[1], patient.latent.states[0] + 2.5)
+
+
+def test_site_shift_balances_sites_without_shifting_latent_physiology():
+    cohort = simulate_world(
+        "site_shift",
+        SimulatorConfig(
+            cohort_size=400,
+            n_sites=2,
+            followup_days=30.0,
+        ),
+        seed=41,
+    )
+    site_zero = [patient for patient in cohort.patients if patient.site_id == 0]
+    site_one = [patient for patient in cohort.patients if patient.site_id == 1]
+    assert len(site_zero) == len(site_one) == 200
+    mean_zero = np.mean([patient.parameters.baseline_state for patient in site_zero], axis=0)
+    mean_one = np.mean([patient.parameters.baseline_state for patient in site_one], axis=0)
+    np.testing.assert_allclose(mean_zero, mean_one, atol=0.2)
