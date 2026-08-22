@@ -26,7 +26,12 @@ from afmc_fm.models.baselines import (
 from afmc_fm.models.flow_jump import FlowJumpAdapter
 from afmc_fm.models.losses import masked_gaussian_nll, observation_bce
 from afmc_fm.schema.events import EventType
-from afmc_fm.simulator.cohort import SimulatedCohort, SimulatedPatient
+from afmc_fm.simulator.cohort import (
+    SimulatedCohort,
+    SimulatedPatient,
+    simulate_cohort,
+    simulate_world,
+)
 
 MODEL_NAMES = (
     "engineered_linear",
@@ -51,7 +56,9 @@ ABLATION_IDS = (
 @dataclass(frozen=True)
 class ExperimentConfig:
     train_sizes: tuple[int, ...] = (5, 10, 20, 40, 80, 100)
-    seeds: tuple[int, ...] = (1, 2, 3, 4, 5)
+    cohort_seeds: tuple[int, ...] = ()
+    subset_seeds: tuple[int, ...] = (1,)
+    model_seeds: tuple[int, ...] = (1,)
     max_epochs: int = 100
     patience: int = 12
     learning_rate: float = 1e-3
@@ -59,6 +66,18 @@ class ExperimentConfig:
     batch_size: int = 16
     lambda_event: float = 1.0
     lambda_obs: float = 0.2
+
+    def seed_bundles(self, supplied_cohort_seed: int) -> tuple[tuple[int, int, int], ...]:
+        cohort_seeds = self.cohort_seeds or (supplied_cohort_seed,)
+        if not (
+            len(cohort_seeds) == len(self.subset_seeds) == len(self.model_seeds)
+        ):
+            raise ValueError(
+                "cohort_seeds, subset_seeds, and model_seeds must have equal lengths"
+            )
+        return tuple(
+            zip(cohort_seeds, self.subset_seeds, self.model_seeds, strict=True)
+        )
 
 
 @dataclass(frozen=True)
@@ -372,9 +391,11 @@ def _flow_jump_variant(
     return model, model.model_observation_process
 
 
-def run_low_n_benchmark(
+def _run_low_n_on_cohort(
     cohort: SimulatedCohort,
     config: ExperimentConfig,
+    subset_seed: int,
+    model_seed: int,
     model_names: Sequence[str] = MODEL_NAMES,
     ablations: Sequence[str] = ("none",),
 ) -> pd.DataFrame:
@@ -410,87 +431,119 @@ def run_low_n_benchmark(
         for patient_id, patient in patient_by_id.items()
     }
     rows: list[dict[str, object]] = []
-    for seed in config.seeds:
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        for n_train in config.train_sizes:
-            budget = select_low_n_budget(development_pool, n_train, seed)
-            train_ids = budget.fit_ids
-            train_sequences = [sequences[patient_id] for patient_id in train_ids]
-            validation_sequences = [
-                sequences[patient_id] for patient_id in budget.validation_ids
-            ]
-            test_sequences = [sequences[patient_id] for patient_id in test_ids]
-            test_patients = [patient_by_id[patient_id] for patient_id in test_ids]
-            for model_name, ablation in variants:
-                parameters = 0
-                if model_name in {
-                    "engineered_linear",
-                    "gradient_boosting",
-                    "representation_linear",
-                    "representation_mlp",
-                }:
-                    example_builder = (
-                        _representation_examples
-                        if model_name.startswith("representation_")
-                        else _engineered_examples
-                    )
-                    train_x, train_y = example_builder(train_sequences)
-                    test_x, test_y = example_builder(test_sequences)
-                    if model_name in {"engineered_linear", "representation_linear"}:
-                        estimator = ProbeRegressor()
-                    elif model_name == "representation_mlp":
-                        estimator = MLPRegressorBaseline(seed=seed)
-                    else:
-                        estimator = GradientBoostingRegressorBaseline()
-                    prediction = estimator.fit(train_x, train_y).predict(test_x)
-                    metrics = regression_metrics(test_y, prediction)
+    for n_train in config.train_sizes:
+        budget = select_low_n_budget(development_pool, n_train, subset_seed)
+        train_ids = budget.fit_ids
+        train_sequences = [sequences[patient_id] for patient_id in train_ids]
+        validation_sequences = [
+            sequences[patient_id] for patient_id in budget.validation_ids
+        ]
+        test_sequences = [sequences[patient_id] for patient_id in test_ids]
+        test_patients = [patient_by_id[patient_id] for patient_id in test_ids]
+        for model_name, ablation in variants:
+            np.random.seed(model_seed)
+            torch.manual_seed(model_seed)
+            parameters = 0
+            if model_name in {
+                "engineered_linear",
+                "gradient_boosting",
+                "representation_linear",
+                "representation_mlp",
+            }:
+                example_builder = (
+                    _representation_examples
+                    if model_name.startswith("representation_")
+                    else _engineered_examples
+                )
+                train_x, train_y = example_builder(train_sequences)
+                test_x, test_y = example_builder(test_sequences)
+                if model_name in {"engineered_linear", "representation_linear"}:
+                    estimator = ProbeRegressor()
+                elif model_name == "representation_mlp":
+                    estimator = MLPRegressorBaseline(seed=model_seed)
                 else:
-                    train_batch = _padded_batch(train_sequences)
-                    validation_batch = _padded_batch(validation_sequences)
-                    test_batch = _attach_latent_truth(
-                        _padded_batch(test_sequences), test_patients
+                    estimator = GradientBoostingRegressorBaseline()
+                prediction = estimator.fit(train_x, train_y).predict(test_x)
+                metrics = regression_metrics(test_y, prediction)
+            else:
+                train_batch = _padded_batch(train_sequences)
+                validation_batch = _padded_batch(validation_sequences)
+                test_batch = _attach_latent_truth(
+                    _padded_batch(test_sequences), test_patients
+                )
+                if model_name == "gru_from_scratch":
+                    model: nn.Module = GRUBaseline(
+                        len(task.value_codes), len(EventType)
                     )
-                    if model_name == "gru_from_scratch":
-                        model: nn.Module = GRUBaseline(
-                            len(task.value_codes), len(EventType)
-                        )
-                        observation_aware = False
-                    else:
-                        model, observation_aware = _flow_jump_variant(
-                            model_name,
-                            ablation,
-                            16,
-                            len(task.value_codes),
-                            len(EventType),
-                        )
-                    model = _fit_neural(
-                        model, train_batch, validation_batch, config, observation_aware
+                    observation_aware = False
+                else:
+                    model, observation_aware = _flow_jump_variant(
+                        model_name,
+                        ablation,
+                        16,
+                        len(task.value_codes),
+                        len(EventType),
                     )
-                    metrics = _evaluate_neural(model, test_batch)
-                    parameters = _parameter_count(model)
-                for metric, value in metrics.items():
-                    rows.append(
-                        {
-                            "model": model_name,
-                            "ablation": ablation,
-                            "n_train": n_train,
-                            "n_fit": len(budget.fit_ids),
-                            "n_validation": len(budget.validation_ids),
-                            "seed": seed,
-                            "split": "test",
-                            "site_or_shift": "all",
-                            "metric": metric,
-                            "value": value,
-                            "trainable_parameters": parameters,
-                        }
-                    )
+                model = _fit_neural(
+                    model, train_batch, validation_batch, config, observation_aware
+                )
+                metrics = _evaluate_neural(model, test_batch)
+                parameters = _parameter_count(model)
+            for metric, value in metrics.items():
+                rows.append(
+                    {
+                        "model": model_name,
+                        "ablation": ablation,
+                        "n_train": n_train,
+                        "n_fit": len(budget.fit_ids),
+                        "n_validation": len(budget.validation_ids),
+                        "seed": subset_seed,
+                        "cohort_seed": cohort.seed,
+                        "subset_seed": subset_seed,
+                        "model_seed": model_seed,
+                        "split": "test",
+                        "site_or_shift": "all",
+                        "metric": metric,
+                        "value": value,
+                        "trainable_parameters": parameters,
+                    }
+                )
     return pd.DataFrame(rows)
 
 
-def run_observation_shift_benchmark(
+def _cohort_for_seed(template: SimulatedCohort, cohort_seed: int) -> SimulatedCohort:
+    if cohort_seed == template.seed:
+        return template
+    if template.config.world_name == "custom":
+        return simulate_cohort(template.config, cohort_seed)
+    return simulate_world(template.config.world_name, template.config, cohort_seed)
+
+
+def run_low_n_benchmark(
     cohort: SimulatedCohort,
     config: ExperimentConfig,
+    model_names: Sequence[str] = MODEL_NAMES,
+    ablations: Sequence[str] = ("none",),
+) -> pd.DataFrame:
+    frames = [
+        _run_low_n_on_cohort(
+            _cohort_for_seed(cohort, cohort_seed),
+            config,
+            subset_seed,
+            model_seed,
+            model_names,
+            ablations,
+        )
+        for cohort_seed, subset_seed, model_seed in config.seed_bundles(cohort.seed)
+    ]
+    return pd.concat(frames, ignore_index=True)
+
+
+def _run_observation_shift_on_cohort(
+    cohort: SimulatedCohort,
+    config: ExperimentConfig,
+    subset_seed: int,
+    model_seed: int,
 ) -> pd.DataFrame:
     site_zero_ids = [
         patient.patient_id for patient in cohort.patients if patient.site_id == 0
@@ -513,79 +566,100 @@ def run_observation_shift_benchmark(
         for patient_id, patient in patient_by_id.items()
     }
     rows: list[dict[str, object]] = []
-    for seed in config.seeds:
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        for n_train in config.train_sizes:
-            budget = select_low_n_budget(development_pool, n_train, seed)
-            train_ids = budget.fit_ids
-            train_batch = _padded_batch([sequences[patient_id] for patient_id in train_ids])
-            validation_batch = _padded_batch(
-                [sequences[patient_id] for patient_id in budget.validation_ids]
+    for n_train in config.train_sizes:
+        budget = select_low_n_budget(development_pool, n_train, subset_seed)
+        train_ids = budget.fit_ids
+        train_batch = _padded_batch([sequences[patient_id] for patient_id in train_ids])
+        validation_batch = _padded_batch(
+            [sequences[patient_id] for patient_id in budget.validation_ids]
+        )
+        site_zero_patients = [
+            patient_by_id[patient_id] for patient_id in site_zero_test_ids
+        ]
+        site_one_patients = [
+            patient_by_id[patient_id] for patient_id in site_one_ids
+        ]
+        evaluation_batches = {
+            "site_0": _complete_truth_batch(
+                [sequences[patient.patient_id] for patient in site_zero_patients],
+                site_zero_patients,
+            ),
+            "site_1": _complete_truth_batch(
+                [sequences[patient.patient_id] for patient in site_one_patients],
+                site_one_patients,
+            ),
+        }
+        for model_name in ("flow_jump", "flow_jump_observation"):
+            np.random.seed(model_seed)
+            torch.manual_seed(model_seed)
+            observation_aware = model_name == "flow_jump_observation"
+            model = FlowJumpAdapter(
+                16,
+                len(task.value_codes),
+                len(EventType),
+                model_observation_process=observation_aware,
             )
-            site_zero_patients = [
-                patient_by_id[patient_id] for patient_id in site_zero_test_ids
-            ]
-            site_one_patients = [
-                patient_by_id[patient_id] for patient_id in site_one_ids
-            ]
-            evaluation_batches = {
-                "site_0": _complete_truth_batch(
-                    [sequences[patient.patient_id] for patient in site_zero_patients],
-                    site_zero_patients,
-                ),
-                "site_1": _complete_truth_batch(
-                    [sequences[patient.patient_id] for patient in site_one_patients],
-                    site_one_patients,
-                ),
+            model = _fit_neural(
+                model, train_batch, validation_batch, config, observation_aware
+            )
+            by_site = {
+                site: _evaluate_neural(model, batch)
+                for site, batch in evaluation_batches.items()
             }
-            for model_name in ("flow_jump", "flow_jump_observation"):
-                observation_aware = model_name == "flow_jump_observation"
-                model = FlowJumpAdapter(
-                    16,
-                    len(task.value_codes),
-                    len(EventType),
-                    model_observation_process=observation_aware,
-                )
-                model = _fit_neural(
-                    model, train_batch, validation_batch, config, observation_aware
-                )
-                by_site = {
-                    site: _evaluate_neural(model, batch)
-                    for site, batch in evaluation_batches.items()
-                }
-                parameters = _parameter_count(model)
-                for site, metrics in by_site.items():
-                    for metric, value in metrics.items():
-                        rows.append(
-                            {
-                                "model": model_name,
-                                "ablation": "none",
-                                "n_train": n_train,
-                            "n_fit": len(budget.fit_ids),
-                            "n_validation": len(budget.validation_ids),
-                                "seed": seed,
-                                "split": "test",
-                                "site_or_shift": site,
-                                "metric": metric,
-                                "value": value,
-                                "trainable_parameters": parameters,
-                            }
-                        )
-                for metric in by_site["site_0"]:
+            parameters = _parameter_count(model)
+            for site, metrics in by_site.items():
+                for metric, value in metrics.items():
                     rows.append(
                         {
                             "model": model_name,
                             "ablation": "none",
                             "n_train": n_train,
-                            "n_fit": len(budget.fit_ids),
-                            "n_validation": len(budget.validation_ids),
-                            "seed": seed,
+                        "n_fit": len(budget.fit_ids),
+                        "n_validation": len(budget.validation_ids),
+                            "seed": subset_seed,
+                            "cohort_seed": cohort.seed,
+                            "subset_seed": subset_seed,
+                            "model_seed": model_seed,
                             "split": "test",
-                            "site_or_shift": "site_1_minus_site_0",
+                            "site_or_shift": site,
                             "metric": metric,
-                            "value": by_site["site_1"][metric] - by_site["site_0"][metric],
+                            "value": value,
                             "trainable_parameters": parameters,
                         }
                     )
+            for metric in by_site["site_0"]:
+                rows.append(
+                    {
+                        "model": model_name,
+                        "ablation": "none",
+                        "n_train": n_train,
+                        "n_fit": len(budget.fit_ids),
+                        "n_validation": len(budget.validation_ids),
+                        "seed": subset_seed,
+                        "cohort_seed": cohort.seed,
+                        "subset_seed": subset_seed,
+                        "model_seed": model_seed,
+                        "split": "test",
+                        "site_or_shift": "site_1_minus_site_0",
+                        "metric": metric,
+                        "value": by_site["site_1"][metric] - by_site["site_0"][metric],
+                        "trainable_parameters": parameters,
+                    }
+                )
     return pd.DataFrame(rows)
+
+
+def run_observation_shift_benchmark(
+    cohort: SimulatedCohort,
+    config: ExperimentConfig,
+) -> pd.DataFrame:
+    frames = [
+        _run_observation_shift_on_cohort(
+            _cohort_for_seed(cohort, cohort_seed),
+            config,
+            subset_seed,
+            model_seed,
+        )
+        for cohort_seed, subset_seed, model_seed in config.seed_bundles(cohort.seed)
+    ]
+    return pd.concat(frames, ignore_index=True)

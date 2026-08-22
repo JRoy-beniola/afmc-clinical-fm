@@ -28,10 +28,9 @@ def _experiment_from_yaml(path: str | Path) -> ExperimentConfig:
     raw = load_yaml(path)
     raw.pop("train_site", None)
     raw.pop("test_sites", None)
-    if "train_sizes" in raw:
-        raw["train_sizes"] = tuple(raw["train_sizes"])
-    if "seeds" in raw:
-        raw["seeds"] = tuple(raw["seeds"])
+    for key in ("train_sizes", "cohort_seeds", "subset_seeds", "model_seeds"):
+        if key in raw:
+            raw[key] = tuple(raw[key])
     return ExperimentConfig(**raw)
 
 

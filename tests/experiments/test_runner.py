@@ -38,7 +38,7 @@ def test_tiny_benchmark_returns_unique_tidy_metric_rows():
     cohort = simulate_cohort(
         SimulatorConfig(cohort_size=36, followup_days=45.0), seed=8
     )
-    config = ExperimentConfig(train_sizes=(5,), seeds=(1,), max_epochs=2, patience=1)
+    config = ExperimentConfig(train_sizes=(5,), subset_seeds=(1,), model_seeds=(1,), max_epochs=2, patience=1)
     results = run_low_n_benchmark(
         cohort,
         config,
@@ -72,7 +72,7 @@ def test_observation_shift_reports_both_sites_for_observation_models():
         SimulatorConfig(cohort_size=30, followup_days=45.0),
         seed=9,
     )
-    config = ExperimentConfig(train_sizes=(5,), seeds=(1,), max_epochs=1, patience=1)
+    config = ExperimentConfig(train_sizes=(5,), subset_seeds=(1,), model_seeds=(1,), max_epochs=1, patience=1)
     results = run_observation_shift_benchmark(cohort, config)
     assert set(results["model"]) == {"flow_jump", "flow_jump_observation"}
     raw = results[results["site_or_shift"].isin(["site_0", "site_1"])]
@@ -122,7 +122,7 @@ def test_tiny_benchmark_runs_explicit_baseline_decomposition():
     cohort = simulate_cohort(
         SimulatorConfig(cohort_size=36, followup_days=45.0), seed=12
     )
-    config = ExperimentConfig(train_sizes=(5,), seeds=(1,), max_epochs=1, patience=1)
+    config = ExperimentConfig(train_sizes=(5,), subset_seeds=(1,), model_seeds=(1,), max_epochs=1, patience=1)
     results = run_low_n_benchmark(
         cohort,
         config,
@@ -147,7 +147,7 @@ def test_required_ablation_variants_are_runnable_and_tidy():
     cohort = simulate_cohort(
         SimulatorConfig(cohort_size=30, followup_days=45.0), seed=15
     )
-    config = ExperimentConfig(train_sizes=(5,), seeds=(1,), max_epochs=1, patience=1)
+    config = ExperimentConfig(train_sizes=(5,), subset_seeds=(1,), model_seeds=(1,), max_epochs=1, patience=1)
     results = run_low_n_benchmark(
         cohort,
         config,
@@ -168,7 +168,7 @@ def test_neural_benchmark_reports_forecasting_event_and_latent_metrics():
         ),
         seed=18,
     )
-    config = ExperimentConfig(train_sizes=(5,), seeds=(1,), max_epochs=1, patience=1)
+    config = ExperimentConfig(train_sizes=(5,), subset_seeds=(1,), model_seeds=(1,), max_epochs=1, patience=1)
     results = run_low_n_benchmark(
         cohort,
         config,
@@ -184,3 +184,50 @@ def test_neural_benchmark_reports_forecasting_event_and_latent_metrics():
         "event_log_loss",
         "latent_aligned_r2",
     } <= set(results["metric"])
+
+
+def test_repetitions_regenerate_independent_cohorts_and_report_seed_roles():
+    cohort = simulate_world(
+        "smooth",
+        SimulatorConfig(cohort_size=36, followup_days=45.0),
+        seed=101,
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        cohort_seeds=(101, 102),
+        subset_seeds=(201, 202),
+        model_seeds=(301, 302),
+        max_epochs=1,
+        patience=1,
+    )
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("engineered_linear",),
+    )
+    assert set(results["cohort_seed"]) == {101, 102}
+    assert set(results["subset_seed"]) == {201, 202}
+    assert set(results["model_seed"]) == {301, 302}
+
+
+def test_model_results_do_not_depend_on_registry_iteration_order():
+    cohort = simulate_world(
+        "jumps",
+        SimulatorConfig(cohort_size=30, followup_days=45.0),
+        seed=103,
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        cohort_seeds=(103,),
+        subset_seeds=(203,),
+        model_seeds=(303,),
+        max_epochs=1,
+        patience=1,
+    )
+    names = ("gru_from_scratch", "flow_jump")
+    forward = run_low_n_benchmark(cohort, config, model_names=names)
+    reverse = run_low_n_benchmark(cohort, config, model_names=tuple(reversed(names)))
+    key = ["model", "ablation", "metric"]
+    forward = forward.sort_values(key).reset_index(drop=True)
+    reverse = reverse.sort_values(key).reset_index(drop=True)
+    np.testing.assert_allclose(forward["value"], reverse["value"], equal_nan=True)
