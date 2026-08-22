@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 
 import numpy as np
@@ -48,7 +48,7 @@ def build_patient_sequence(
     value_dim = len(task.value_codes)
     values = np.zeros((steps, value_dim), dtype=np.float32)
     masks = np.zeros_like(values)
-    event_features = np.zeros((steps, 3), dtype=np.float32)
+    event_features = np.zeros((steps, len(EventType)), dtype=np.float32)
     representations = np.zeros((steps, encoder.representation_dim), dtype=np.float32)
 
     for index, (timestamp, events) in enumerate(groups):
@@ -76,9 +76,26 @@ def build_patient_sequence(
     if steps > 1:
         target_values[:-1] = values[1:]
         target_masks[:-1] = masks[1:]
-        event_target_index = list(EventType).index(task.event_target_type)
-        target_events[:-1] = event_features[1:, event_target_index]
-        target_event_valid[:-1] = 1.0
+
+    if groups:
+        followup_end = groups[-1][0]
+        target_event_times = [
+            event.start_time
+            for event in patient.timeline.events
+            if event.event_type == task.event_target_type
+        ]
+        horizon = timedelta(days=task.event_horizon_days)
+        for index, (timestamp, _) in enumerate(groups):
+            horizon_end = timestamp + horizon
+            if horizon_end > followup_end:
+                continue
+            target_event_valid[index] = 1.0
+            target_events[index] = float(
+                any(
+                    timestamp < event_time <= horizon_end
+                    for event_time in target_event_times
+                )
+            )
 
     return PatientSequence(
         patient_id=patient.patient_id,

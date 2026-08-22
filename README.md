@@ -39,7 +39,7 @@ The proposed learner maps a fixed generic causal history representation into a s
 
 Evaluation splits patients—not events. Fit and validation selection share the total labelled N-patient budget; the final patient test set remains untouched. Repetitions use separate cohort, subset, and model-initialization seeds, so each repeat generates an independent cohort. Training is intentionally full-batch for this small Phase 0 harness.
 
-Executed comparisons include an engineered-history linear model, an engineered-history gradient-boosted tree, a genuinely representation-free temporal GRU, a representation-only linear probe, a representation-only MLP probe, flow-jump adaptation, and observation-aware flow-jump adaptation. Runnable ablations remove the representation, flow, jump, observation head, or probabilistic scale. Where applicable, rows report MAE/RMSE, Gaussian NLL, 90% interval coverage, event ROC-AUC/Brier/log loss, aligned latent-state recovery, and complete-target observation-shift degradation.
+Executed comparisons include an engineered-history linear model, an engineered-history gradient-boosted tree, a genuinely representation-free temporal GRU, a representation-only linear probe, a representation-only MLP probe, flow-jump adaptation, and observation-aware flow-jump adaptation. Runnable ablations remove the representation, flow, jump, observation head, or probabilistic scale. Where applicable, rows report MAE/RMSE, Gaussian NLL, 90% interval coverage, horizon-risk classification with event ROC-AUC/Brier/log loss, aligned latent-state recovery, and complete-target observation-shift degradation.
 
 ## Privacy and non-claims
 

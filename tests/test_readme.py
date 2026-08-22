@@ -11,3 +11,4 @@ def test_readme_matches_executed_benchmark_contract():
     assert "site context" not in readme
     assert "full-batch" in readme
     assert "cohort, subset, and model-initialization seeds" in readme
+    assert "horizon-risk classification" in readme
