@@ -23,11 +23,11 @@ This writes `events.csv`, `latent_truth.npz`, and `simulation_manifest.json`. Ou
 ```bash
 afmc-phase0 benchmark \
   --sim-config configs/simulator/smoke.yaml \
-  --exp-config configs/experiments/low_n.yaml \
+  --exp-config configs/experiments/smoke.yaml \
   --output outputs/benchmark_smoke
 ```
 
-The command writes tidy `metrics.csv`, `learning_curves.png`, and `run_manifest.json` files.
+The command runs the worlds, models, and ablations named in the experiment YAML. It writes tidy `metrics.csv`, `ablation_metrics.csv`, `gate_summary.csv`, `learning_curves.png`, and `run_manifest.json` files. `gate_summary.csv` is a compact primary-MAE comparison table, not an automatic scientific go/no-go verdict. Use `configs/experiments/low_n.yaml` with the full simulator configuration for the complete five-world matrix.
 
 ## Research contract
 
@@ -35,9 +35,11 @@ The common event schema represents every timeline as ordered `ClinicalEvent` rec
 
 The simulator exposes latent physiological truth while separately generating interventions, nonlinear clinical emissions, and MCAR/MAR/MNAR/site-shift observation processes. Named worlds cover smooth dynamics, intervention jumps, informative observation, cross-site policy shift, and misspecification.
 
-The proposed learner maps a fixed generic causal history representation into a small latent state. A low-capacity elapsed-time flow evolves that state between events, and an event-conditioned GRU jump updates it at observations or interventions. Probabilistic value and event heads support uncertainty-aware forecasting. The optional observation head predicts measurement masks only from pre-event state and site context to avoid target leakage.
+The proposed learner maps a fixed generic causal history representation into a small latent state. A low-capacity elapsed-time flow evolves that state between events, and an event-conditioned GRU jump updates it at observations or interventions. Probabilistic value and event heads support uncertainty-aware forecasting. The optional observation head predicts measurement masks only from pre-event state. Neither the fixed history encoder nor the learner receives raw site identity.
 
-Evaluation splits patients—not events—and restricts training to low-N cohorts while keeping validation and test patients independent. Comparisons include linear probing, gradient boosting, a GRU trained from scratch, the flow-jump model, observation-aware flow-jump modelling, and component ablations. Reporting covers errors, probabilistic scores, calibration, latent-state recovery, and observation-shift degradation.
+Evaluation splits patients—not events. Fit and validation selection share the total labelled N-patient budget; the final patient test set remains untouched. Repetitions use separate cohort, subset, and model-initialization seeds, so each repeat generates an independent cohort. Training is intentionally full-batch for this small Phase 0 harness.
+
+Executed comparisons include an engineered-history linear model, an engineered-history gradient-boosted tree, a genuinely representation-free temporal GRU, a representation-only linear probe, a representation-only MLP probe, flow-jump adaptation, and observation-aware flow-jump adaptation. Runnable ablations remove the representation, flow, jump, observation head, or probabilistic scale. Where applicable, rows report MAE/RMSE, Gaussian NLL, 90% interval coverage, event ROC-AUC/Brier/log loss, aligned latent-state recovery, and complete-target observation-shift degradation.
 
 ## Privacy and non-claims
 

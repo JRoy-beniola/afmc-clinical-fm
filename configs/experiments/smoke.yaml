@@ -1,0 +1,15 @@
+train_sizes: [5]
+cohort_seeds: [101]
+subset_seeds: [201]
+model_seeds: [301]
+max_epochs: 1
+patience: 1
+learning_rate: 0.001
+weight_decay: 0.0001
+lambda_event: 1.0
+lambda_obs: 0.2
+worlds: [smooth, site_shift]
+models: [engineered_linear, representation_linear, gru_from_scratch, flow_jump]
+ablations: [none, no_flow]
+train_site: 0
+test_sites: [0, 1]
