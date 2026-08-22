@@ -1,7 +1,12 @@
 import numpy as np
 import torch
 
-from afmc_fm.models.baselines import GRUBaseline, ProbeClassifier, ProbeRegressor
+from afmc_fm.models.baselines import (
+    GRUBaseline,
+    MLPRegressorBaseline,
+    ProbeClassifier,
+    ProbeRegressor,
+)
 
 
 def test_probe_regressor_fits_small_signal():
@@ -23,7 +28,6 @@ def test_probe_classifier_returns_probabilities():
 
 def test_gru_baseline_has_finite_shapes_and_gradients():
     model = GRUBaseline(
-        representation_dim=16,
         value_dim=3,
         event_dim=3,
         hidden_size=12,
@@ -47,3 +51,23 @@ def test_gru_baseline_has_finite_shapes_and_gradients():
     loss.backward()
     gradients = [parameter.grad for parameter in model.parameters() if parameter.requires_grad]
     assert all(gradient is not None for gradient in gradients)
+
+
+def test_mlp_representation_head_fits_nonlinear_signal():
+    x = np.linspace(-1.0, 1.0, 80).reshape(-1, 1)
+    y = x[:, 0] ** 2
+    model = MLPRegressorBaseline(seed=3).fit(x, y)
+    prediction = model.predict(x)
+    assert np.mean((prediction - y) ** 2) < 0.03
+
+
+def test_gru_from_scratch_is_invariant_to_representation_values():
+    model = GRUBaseline(value_dim=3, event_dim=3, hidden_size=12)
+    values = torch.randn(2, 4, 3)
+    masks = torch.ones(2, 4, 3)
+    events = torch.zeros(2, 4, 3)
+    times = torch.arange(4).float().repeat(2, 1)
+    zeros = model(torch.zeros(2, 4, 16), values, masks, events, times)
+    random = model(torch.randn(2, 4, 16), values, masks, events, times)
+    torch.testing.assert_close(zeros.value_mean, random.value_mean)
+    torch.testing.assert_close(zeros.event_logits, random.event_logits)

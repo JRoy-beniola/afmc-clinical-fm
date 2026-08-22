@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.neural_network import MLPRegressor
 from torch import nn
 
 from afmc_fm.data.sequences import PatientSequence
@@ -46,6 +47,27 @@ class GradientBoostingRegressorBaseline:
         return self.model.predict(features)
 
 
+class MLPRegressorBaseline:
+    def __init__(self, seed: int = 0) -> None:
+        self.model = MLPRegressor(
+            hidden_layer_sizes=(32,),
+            activation="tanh",
+            solver="lbfgs",
+            alpha=1e-3,
+            max_iter=500,
+            random_state=seed,
+        )
+
+    def fit(
+        self, features: np.ndarray, targets: np.ndarray
+    ) -> "MLPRegressorBaseline":
+        self.model.fit(features, targets)
+        return self
+
+    def predict(self, features: np.ndarray) -> np.ndarray:
+        return self.model.predict(features)
+
+
 @dataclass(frozen=True)
 class GRUBaselineOutput:
     value_mean: torch.Tensor
@@ -56,13 +78,12 @@ class GRUBaselineOutput:
 class GRUBaseline(nn.Module):
     def __init__(
         self,
-        representation_dim: int,
         value_dim: int,
         event_dim: int,
         hidden_size: int = 32,
     ) -> None:
         super().__init__()
-        input_dim = representation_dim + 2 * value_dim + event_dim + 1
+        input_dim = 2 * value_dim + event_dim + 1
         self.gru = nn.GRU(input_dim, hidden_size, batch_first=True)
         self.value_head = nn.Linear(hidden_size, 2 * value_dim)
         self.event_head = nn.Linear(hidden_size, 1)
@@ -79,7 +100,6 @@ class GRUBaseline(nn.Module):
         delta_t[:, 1:] = (times[:, 1:] - times[:, :-1]).clamp_min(0.0)
         inputs = torch.cat(
             [
-                representations,
                 values * masks,
                 masks,
                 event_features,

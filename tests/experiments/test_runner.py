@@ -41,7 +41,7 @@ def test_tiny_benchmark_returns_unique_tidy_metric_rows():
     results = run_low_n_benchmark(
         cohort,
         config,
-        model_names=("probe_linear", "gradient_boosting"),
+        model_names=("engineered_linear", "representation_linear"),
     )
     assert not results.empty
     assert results["model"].nunique() == 2
@@ -115,3 +115,28 @@ def test_complete_truth_targets_do_not_condition_on_observation_masks():
     assert masks.shape == sequence.target_next_masks.shape
     assert masks.sum() >= sequence.target_next_masks.sum()
     assert np.all(masks.sum(axis=1) % 3 == 0)
+
+
+def test_tiny_benchmark_runs_explicit_baseline_decomposition():
+    cohort = simulate_cohort(
+        SimulatorConfig(cohort_size=36, followup_days=45.0), seed=12
+    )
+    config = ExperimentConfig(train_sizes=(5,), seeds=(1,), max_epochs=1, patience=1)
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=(
+            "engineered_linear",
+            "representation_linear",
+            "representation_mlp",
+            "gru_from_scratch",
+            "flow_jump",
+        ),
+    )
+    assert set(results["model"]) == {
+        "engineered_linear",
+        "representation_linear",
+        "representation_mlp",
+        "gru_from_scratch",
+        "flow_jump",
+    }

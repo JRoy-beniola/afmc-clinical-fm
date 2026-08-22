@@ -14,6 +14,7 @@ from afmc_fm.data.tasks import LongitudinalTask
 from afmc_fm.models.baselines import (
     GradientBoostingRegressorBaseline,
     GRUBaseline,
+    MLPRegressorBaseline,
     ProbeRegressor,
 )
 from afmc_fm.models.flow_jump import FlowJumpAdapter
@@ -22,9 +23,11 @@ from afmc_fm.schema.events import EventType
 from afmc_fm.simulator.cohort import SimulatedCohort, SimulatedPatient
 
 MODEL_NAMES = (
-    "probe_linear",
+    "engineered_linear",
     "gradient_boosting",
     "gru_from_scratch",
+    "representation_linear",
+    "representation_mlp",
     "flow_jump",
     "flow_jump_observation",
 )
@@ -76,7 +79,7 @@ def select_low_n_budget(
     )
 
 
-def _static_examples(sequences: Sequence[PatientSequence]) -> tuple[np.ndarray, np.ndarray]:
+def _representation_examples(sequences: Sequence[PatientSequence]) -> tuple[np.ndarray, np.ndarray]:
     features: list[np.ndarray] = []
     targets: list[float] = []
     for sequence in sequences:
@@ -85,6 +88,38 @@ def _static_examples(sequences: Sequence[PatientSequence]) -> tuple[np.ndarray, 
             lab_indicator[lab] = 1.0
             features.append(np.concatenate([sequence.representations[step], lab_indicator]))
             targets.append(float(sequence.target_next_values[step, lab]))
+    if not features:
+        raise ValueError("sequences contain no observed forecasting targets")
+    return np.asarray(features), np.asarray(targets)
+
+
+def _engineered_examples(
+    sequences: Sequence[PatientSequence],
+) -> tuple[np.ndarray, np.ndarray]:
+    features: list[np.ndarray] = []
+    targets: list[float] = []
+    for sequence in sequences:
+        value_dim = sequence.values.shape[1]
+        last_values = np.zeros(value_dim)
+        observation_counts = np.zeros(value_dim)
+        for step in range(len(sequence.times)):
+            observed = sequence.masks[step] > 0
+            last_values[observed] = sequence.values[step, observed]
+            observation_counts += observed
+            history = np.concatenate(
+                [
+                    last_values,
+                    observation_counts,
+                    sequence.masks[step],
+                    sequence.event_features[step],
+                    np.asarray([np.log1p(sequence.times[step])]),
+                ]
+            )
+            for lab in np.flatnonzero(sequence.target_next_masks[step] > 0):
+                lab_indicator = np.zeros(value_dim)
+                lab_indicator[lab] = 1.0
+                features.append(np.concatenate([history, lab_indicator]))
+                targets.append(float(sequence.target_next_values[step, lab]))
     if not features:
         raise ValueError("sequences contain no observed forecasting targets")
     return np.asarray(features), np.asarray(targets)
@@ -286,14 +321,25 @@ def run_low_n_benchmark(
             test_sequences = [sequences[patient_id] for patient_id in test_ids]
             for model_name in model_names:
                 parameters = 0
-                if model_name in {"probe_linear", "gradient_boosting"}:
-                    train_x, train_y = _static_examples(train_sequences)
-                    test_x, test_y = _static_examples(test_sequences)
-                    estimator = (
-                        ProbeRegressor()
-                        if model_name == "probe_linear"
-                        else GradientBoostingRegressorBaseline()
+                if model_name in {
+                    "engineered_linear",
+                    "gradient_boosting",
+                    "representation_linear",
+                    "representation_mlp",
+                }:
+                    example_builder = (
+                        _representation_examples
+                        if model_name.startswith("representation_")
+                        else _engineered_examples
                     )
+                    train_x, train_y = example_builder(train_sequences)
+                    test_x, test_y = example_builder(test_sequences)
+                    if model_name in {"engineered_linear", "representation_linear"}:
+                        estimator = ProbeRegressor()
+                    elif model_name == "representation_mlp":
+                        estimator = MLPRegressorBaseline(seed=seed)
+                    else:
+                        estimator = GradientBoostingRegressorBaseline()
                     prediction = estimator.fit(train_x, train_y).predict(test_x)
                     error = prediction - test_y
                     metrics = {
@@ -306,7 +352,7 @@ def run_low_n_benchmark(
                     test_batch = _padded_batch(test_sequences)
                     if model_name == "gru_from_scratch":
                         model: nn.Module = GRUBaseline(
-                            16, len(task.value_codes), len(EventType)
+                            len(task.value_codes), len(EventType)
                         )
                         observation_aware = False
                     else:
