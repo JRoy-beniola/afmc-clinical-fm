@@ -74,6 +74,21 @@ def simulate_patient(
             previous_regime_offset = regime_offset
 
         timestamp = _ORIGIN + timedelta(days=float(elapsed_days))
+        events.append(
+            ClinicalEvent(
+                patient_id=patient_id,
+                start_time=timestamp,
+                code="SYNTHETIC_MEASUREMENT_OPPORTUNITY",
+                value=None,
+                unit=None,
+                event_type=EventType.ENCOUNTER,
+                source="synthetic",
+                metadata={
+                    "site_id": parameters.site_id,
+                    "measurement_opportunity": True,
+                },
+            )
+        )
         delayed_shift: np.ndarray | None = None
         if rng.random() < _intervention_probability(
             current_state, config.intervention_rate

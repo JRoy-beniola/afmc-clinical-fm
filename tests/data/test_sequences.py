@@ -6,11 +6,12 @@ import numpy as np
 
 import afmc_fm.data.encoding as encoding_module
 import afmc_fm.data.sequences as sequences_module
+import afmc_fm.simulator.cohort as cohort_module
 from afmc_fm.data.encoding import SummaryHistoryEncoder
 from afmc_fm.data.sequences import build_patient_sequence
 from afmc_fm.data.tasks import LongitudinalTask
 from afmc_fm.schema.events import ClinicalEvent, EventType, PatientTimeline
-from afmc_fm.simulator.cohort import simulate_cohort
+from afmc_fm.simulator.cohort import simulate_cohort, simulate_patient
 from afmc_fm.simulator.config import SimulatorConfig
 
 SYNTHETIC_TASK = LongitudinalTask(("LAB_FAST", "LAB_SLOW", "LAB_BURDEN"))
@@ -71,3 +72,30 @@ def test_data_pipeline_accepts_generic_timeline_and_task_channels():
 def test_data_modules_do_not_import_simulator_internals():
     assert "afmc_fm.simulator" not in Path(encoding_module.__file__).read_text()
     assert "afmc_fm.simulator" not in Path(sequences_module.__file__).read_text()
+
+
+def test_all_zero_measurement_opportunities_survive_sequence_construction(monkeypatch):
+    monkeypatch.setattr(
+        cohort_module,
+        "observation_probability",
+        lambda *_args: 0.0,
+    )
+    patient = simulate_patient(
+        "zero-observation-patient",
+        SimulatorConfig(
+            followup_days=60.0,
+            intervention_rate=0.0,
+        ),
+        np.random.default_rng(44),
+        site_id=0,
+    )
+    encoder = SummaryHistoryEncoder(
+        SYNTHETIC_TASK,
+        representation_dim=8,
+        seed=2,
+    )
+    sequence = build_patient_sequence(patient, encoder, SYNTHETIC_TASK)
+    assert len(sequence.times) == len(patient.complete_outcomes.times)
+    assert np.all(sequence.masks.sum(axis=1) == 0)
+    encounter_index = list(EventType).index(EventType.ENCOUNTER)
+    assert np.all(sequence.event_features[:, encounter_index] == 1)

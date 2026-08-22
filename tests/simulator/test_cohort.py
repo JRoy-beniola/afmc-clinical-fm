@@ -140,3 +140,28 @@ def test_site_shift_balances_sites_without_shifting_latent_physiology():
     mean_zero = np.mean([patient.parameters.baseline_state for patient in site_zero], axis=0)
     mean_one = np.mean([patient.parameters.baseline_state for patient in site_one], axis=0)
     np.testing.assert_allclose(mean_zero, mean_one, atol=0.2)
+
+
+def test_every_candidate_time_has_a_measurement_opportunity_anchor():
+    patient = simulate_cohort(
+        SimulatorConfig(
+            cohort_size=1,
+            followup_days=60.0,
+            intervention_rate=0.0,
+        ),
+        seed=43,
+    ).patients[0]
+    anchors = [
+        event
+        for event in patient.timeline.events
+        if event.event_type == EventType.ENCOUNTER
+        and event.metadata.get("measurement_opportunity") is True
+    ]
+    anchor_days = np.asarray(
+        [
+            (event.start_time - patient.complete_outcomes.origin_time).total_seconds()
+            / 86400.0
+            for event in anchors
+        ]
+    )
+    np.testing.assert_allclose(anchor_days, patient.complete_outcomes.times)

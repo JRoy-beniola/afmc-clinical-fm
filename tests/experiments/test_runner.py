@@ -112,6 +112,7 @@ def test_complete_truth_targets_do_not_condition_on_observation_masks():
         task,
     )
     targets, masks = build_complete_truth_targets(patient)
+    assert len(sequence.times) == len(patient.complete_outcomes.times)
     assert targets.shape == sequence.target_next_values.shape
     assert masks.shape == sequence.target_next_masks.shape
     assert masks.sum() >= sequence.target_next_masks.sum()
