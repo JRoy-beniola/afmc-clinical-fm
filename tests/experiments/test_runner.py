@@ -6,6 +6,7 @@ from afmc_fm.experiments.runner import (
     run_low_n_benchmark,
     run_observation_shift_benchmark,
     sample_low_n_train_ids,
+    select_low_n_budget,
 )
 from afmc_fm.simulator.cohort import simulate_cohort, simulate_world
 from afmc_fm.simulator.config import SimulatorConfig
@@ -40,6 +41,8 @@ def test_tiny_benchmark_returns_unique_tidy_metric_rows():
     )
     assert not results.empty
     assert results["model"].nunique() == 2
+    assert (results["n_fit"] + results["n_validation"] == results["n_train"]).all()
+    assert (results["n_validation"] >= 1).all()
     key = ["model", "n_train", "seed", "site_or_shift", "metric"]
     assert not results.duplicated(key).any()
 
@@ -73,3 +76,19 @@ def test_observation_shift_reports_both_sites_for_observation_models():
             "site_0",
             "site_1",
         }
+
+
+def test_fit_and_validation_patients_stay_within_total_low_n_budget():
+    development = [f"dev-{index}" for index in range(80)]
+    final_test = {f"test-{index}" for index in range(20)}
+    budget = select_low_n_budget(
+        development,
+        n=5,
+        subset_seed=11,
+        validation_fraction=0.2,
+    )
+    labelled = set(budget.fit_ids) | set(budget.validation_ids)
+    assert len(labelled) == 5
+    assert set(budget.fit_ids).isdisjoint(budget.validation_ids)
+    assert labelled <= set(development)
+    assert labelled.isdisjoint(final_test)

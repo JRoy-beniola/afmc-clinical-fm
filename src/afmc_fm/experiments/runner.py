@@ -41,11 +41,37 @@ class ExperimentConfig:
     lambda_obs: float = 0.2
 
 
+@dataclass(frozen=True)
+class LowNBudget:
+    fit_ids: tuple[str, ...]
+    validation_ids: tuple[str, ...]
+
+
 def sample_low_n_train_ids(train_pool: Sequence[str], n: int, seed: int) -> list[str]:
     if n <= 0 or n > len(train_pool):
         raise ValueError("n must be positive and no larger than the training pool")
     indices = np.random.default_rng(seed).choice(len(train_pool), size=n, replace=False)
     return [train_pool[index] for index in indices]
+
+
+def select_low_n_budget(
+    development_pool: Sequence[str],
+    n: int,
+    subset_seed: int,
+    validation_fraction: float = 0.2,
+) -> LowNBudget:
+    if n < 2:
+        raise ValueError("low-N budget must contain at least two patients")
+    if not 0 < validation_fraction < 1:
+        raise ValueError("validation_fraction must be between 0 and 1")
+    budget_ids = sample_low_n_train_ids(development_pool, n, subset_seed)
+    shuffled = np.asarray(budget_ids, dtype=object)
+    np.random.default_rng(subset_seed + 1).shuffle(shuffled)
+    validation_count = max(1, min(n - 1, round(n * validation_fraction)))
+    return LowNBudget(
+        fit_ids=tuple(shuffled[validation_count:].tolist()),
+        validation_ids=tuple(shuffled[:validation_count].tolist()),
+    )
 
 
 def _static_examples(sequences: Sequence[PatientSequence]) -> tuple[np.ndarray, np.ndarray]:
@@ -202,7 +228,9 @@ def run_low_n_benchmark(
     torch.set_num_threads(1)
     patient_by_id = {patient.patient_id: patient for patient in cohort.patients}
     all_ids = list(patient_by_id)
-    train_pool, validation_ids, test_ids = split_patient_ids(all_ids, seed=0)
+    development_pool, _, test_ids = split_patient_ids(
+        all_ids, seed=0, train_fraction=0.8, val_fraction=0.0
+    )
     encoder = SummaryHistoryEncoder(representation_dim=16, seed=0)
     sequences = {
         patient_id: build_patient_sequence(patient, encoder)
@@ -213,9 +241,12 @@ def run_low_n_benchmark(
         np.random.seed(seed)
         torch.manual_seed(seed)
         for n_train in config.train_sizes:
-            train_ids = sample_low_n_train_ids(train_pool, n_train, seed)
+            budget = select_low_n_budget(development_pool, n_train, seed)
+            train_ids = budget.fit_ids
             train_sequences = [sequences[patient_id] for patient_id in train_ids]
-            validation_sequences = [sequences[patient_id] for patient_id in validation_ids]
+            validation_sequences = [
+                sequences[patient_id] for patient_id in budget.validation_ids
+            ]
             test_sequences = [sequences[patient_id] for patient_id in test_ids]
             for model_name in model_names:
                 parameters = 0
@@ -259,6 +290,8 @@ def run_low_n_benchmark(
                         {
                             "model": model_name,
                             "n_train": n_train,
+                            "n_fit": len(budget.fit_ids),
+                            "n_validation": len(budget.validation_ids),
                             "seed": seed,
                             "split": "test",
                             "site_or_shift": "all",
@@ -282,7 +315,9 @@ def run_observation_shift_benchmark(
     ]
     if not site_zero_ids or not site_one_ids:
         raise ValueError("observation-shift evaluation requires patients from sites 0 and 1")
-    train_pool, validation_ids, site_zero_test_ids = split_patient_ids(site_zero_ids, seed=0)
+    development_pool, _, site_zero_test_ids = split_patient_ids(
+        site_zero_ids, seed=0, train_fraction=0.8, val_fraction=0.0
+    )
     patient_by_id = {patient.patient_id: patient for patient in cohort.patients}
     encoder = SummaryHistoryEncoder(representation_dim=16, seed=0)
     sequences = {
@@ -294,12 +329,13 @@ def run_observation_shift_benchmark(
         np.random.seed(seed)
         torch.manual_seed(seed)
         for n_train in config.train_sizes:
-            train_ids = sample_low_n_train_ids(train_pool, n_train, seed)
+            budget = select_low_n_budget(development_pool, n_train, seed)
+            train_ids = budget.fit_ids
             train_batch = _padded_batch(
                 [sequences[patient_id] for patient_id in train_ids], cohort.config.n_sites
             )
             validation_batch = _padded_batch(
-                [sequences[patient_id] for patient_id in validation_ids],
+                [sequences[patient_id] for patient_id in budget.validation_ids],
                 cohort.config.n_sites,
             )
             evaluation_batches = {
@@ -335,6 +371,8 @@ def run_observation_shift_benchmark(
                             {
                                 "model": model_name,
                                 "n_train": n_train,
+                            "n_fit": len(budget.fit_ids),
+                            "n_validation": len(budget.validation_ids),
                                 "seed": seed,
                                 "split": "test",
                                 "site_or_shift": site,
@@ -348,6 +386,8 @@ def run_observation_shift_benchmark(
                         {
                             "model": model_name,
                             "n_train": n_train,
+                            "n_fit": len(budget.fit_ids),
+                            "n_validation": len(budget.validation_ids),
                             "seed": seed,
                             "split": "test",
                             "site_or_shift": "site_1_minus_site_0",
