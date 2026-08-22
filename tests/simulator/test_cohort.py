@@ -1,7 +1,8 @@
 import numpy as np
 
+import afmc_fm.simulator.cohort as cohort_module
 from afmc_fm.schema.events import EventType
-from afmc_fm.simulator.cohort import simulate_cohort
+from afmc_fm.simulator.cohort import simulate_cohort, simulate_patient
 from afmc_fm.simulator.config import SimulatorConfig
 
 
@@ -52,3 +53,72 @@ def test_complete_outcome_truth_is_retained_before_observation_masking():
         time_index = int(np.argmin(np.abs(truth.times - elapsed)))
         value_index = truth.value_codes.index(event.code)
         assert event.value == truth.values[time_index, value_index]
+
+
+def test_immediate_intervention_state_drives_next_dynamics_step(monkeypatch):
+    advance_inputs: list[np.ndarray] = []
+    intervention_calls = 0
+
+    def intervention_probability(*_args):
+        nonlocal intervention_calls
+        intervention_calls += 1
+        return 1.0 if intervention_calls == 1 else 0.0
+
+    def advance_state(state, *_args):
+        advance_inputs.append(state.copy())
+        return state + 0.5
+
+    monkeypatch.setattr(cohort_module, "_intervention_probability", intervention_probability)
+    monkeypatch.setattr(cohort_module, "advance_latent_state", advance_state)
+    monkeypatch.setattr(
+        cohort_module,
+        "apply_intervention_jump",
+        lambda state, *_args: state + 2.0,
+    )
+    patient = simulate_patient(
+        "patient",
+        SimulatorConfig(
+            followup_days=30.0,
+            mean_event_interval_days=5.0,
+            process_noise=0.0,
+            intervention_rate=1.0,
+        ),
+        np.random.default_rng(7),
+    )
+    np.testing.assert_allclose(advance_inputs[0], patient.latent.states[0])
+    np.testing.assert_allclose(patient.latent.states[1], patient.latent.states[0] + 0.5)
+
+
+def test_delayed_intervention_enters_at_next_state(monkeypatch):
+    advance_inputs: list[np.ndarray] = []
+    intervention_calls = 0
+
+    def intervention_probability(*_args):
+        nonlocal intervention_calls
+        intervention_calls += 1
+        return 1.0 if intervention_calls == 1 else 0.0
+
+    def advance_state(state, *_args):
+        advance_inputs.append(state.copy())
+        return state + 0.5
+
+    monkeypatch.setattr(cohort_module, "_intervention_probability", intervention_probability)
+    monkeypatch.setattr(cohort_module, "advance_latent_state", advance_state)
+    monkeypatch.setattr(
+        cohort_module,
+        "apply_intervention_jump",
+        lambda state, *_args: state + 2.0,
+    )
+    patient = simulate_patient(
+        "patient",
+        SimulatorConfig(
+            followup_days=30.0,
+            mean_event_interval_days=5.0,
+            process_noise=0.0,
+            intervention_rate=1.0,
+            delayed_intervention_effect=True,
+        ),
+        np.random.default_rng(7),
+    )
+    np.testing.assert_allclose(advance_inputs[0], patient.latent.states[0])
+    np.testing.assert_allclose(patient.latent.states[1], patient.latent.states[0] + 2.5)

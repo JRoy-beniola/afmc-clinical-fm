@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from itertools import pairwise
 
 import numpy as np
 
@@ -40,34 +41,53 @@ def _drift(state: np.ndarray, progression: np.ndarray, t_days: float) -> np.ndar
     return -0.03 * progression * state + coupling + seasonal
 
 
+def sample_event_times(
+    config: SimulatorConfig,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    times = [0.0]
+    current_time = 0.0
+    while current_time < config.followup_days:
+        interval = float(rng.exponential(config.mean_event_interval_days))
+        next_time = min(current_time + max(interval, 1e-6), config.followup_days)
+        if next_time <= current_time:
+            break
+        times.append(next_time)
+        current_time = next_time
+    return np.asarray(times)
+
+
+def advance_latent_state(
+    state: np.ndarray,
+    current_time: float,
+    next_time: float,
+    params: PatientParameters,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    dt = next_time - current_time
+    if dt <= 0:
+        raise ValueError("next_time must be later than current_time")
+    next_state = state + dt * _drift(state, params.progression_scale, current_time) / 30.0
+    next_state += (
+        np.sqrt(max(dt, 1e-6) / 30.0)
+        * params.noise_scale
+        * rng.normal(size=state.shape)
+    )
+    return next_state
+
+
 def simulate_latent_trajectory(
     config: SimulatorConfig,
     params: PatientParameters,
     rng: np.random.Generator,
 ) -> LatentTrajectory:
-    times = [0.0]
+    times = sample_event_times(config, rng)
     states = [np.array(params.baseline_state, dtype=float, copy=True)]
-    current_time = 0.0
-
-    while current_time < config.followup_days:
-        interval = float(rng.exponential(config.mean_event_interval_days))
-        next_time = min(current_time + max(interval, 1e-6), config.followup_days)
-        dt = next_time - current_time
-        if dt <= 0:
-            break
-
-        state = states[-1]
-        next_state = state + dt * _drift(state, params.progression_scale, current_time) / 30.0
-        next_state += (
-            np.sqrt(max(dt, 1e-6) / 30.0)
-            * params.noise_scale
-            * rng.normal(size=config.latent_dim)
+    for current_time, next_time in pairwise(times):
+        states.append(
+            advance_latent_state(states[-1], current_time, next_time, params, rng)
         )
-        times.append(next_time)
-        states.append(next_state)
-        current_time = next_time
-
-    return LatentTrajectory(times=np.asarray(times), states=np.asarray(states))
+    return LatentTrajectory(times=times, states=np.asarray(states))
 
 
 def apply_intervention_jump(

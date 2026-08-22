@@ -8,9 +8,10 @@ from afmc_fm.simulator.config import SimulatorConfig
 from afmc_fm.simulator.dynamics import (
     LatentTrajectory,
     PatientParameters,
+    advance_latent_state,
     apply_intervention_jump,
+    sample_event_times,
     sample_patient_parameters,
-    simulate_latent_trajectory,
 )
 from afmc_fm.simulator.observation import LAB_CODES, emit_labs, observation_probability
 
@@ -53,27 +54,35 @@ def simulate_patient(
     rng: np.random.Generator,
 ) -> SimulatedPatient:
     parameters = sample_patient_parameters(config, rng)
-    initial_latent = simulate_latent_trajectory(config, parameters, rng)
-    states = np.array(initial_latent.states, copy=True)
-    if config.hidden_regime_switch and len(states) > 2:
-        midpoint = len(states) // 2
-        regime_offset = np.linspace(0.0, 0.6, len(states) - midpoint)[:, None]
-        states[midpoint:] += regime_offset
+    times = sample_event_times(config, rng)
+    states: list[np.ndarray] = []
+    current_state = np.array(parameters.baseline_state, dtype=float, copy=True)
     events: list[ClinicalEvent] = []
     complete_values: list[list[float]] = []
     previous_observed_value: float | None = None
+    midpoint = len(times) // 2
+    previous_regime_offset = 0.0
 
-    for index, elapsed_days in enumerate(initial_latent.times):
-        state = states[index]
+    for index, elapsed_days in enumerate(times):
+        if config.hidden_regime_switch and index >= midpoint:
+            denominator = max(len(times) - midpoint - 1, 1)
+            regime_offset = 0.6 * (index - midpoint) / denominator
+            current_state = current_state + (regime_offset - previous_regime_offset)
+            previous_regime_offset = regime_offset
+
         timestamp = _ORIGIN + timedelta(days=float(elapsed_days))
-
-        if rng.random() < _intervention_probability(state, config.intervention_rate):
+        delayed_shift: np.ndarray | None = None
+        if rng.random() < _intervention_probability(
+            current_state, config.intervention_rate
+        ):
             strength = float(rng.uniform(0.5, 1.5))
-            jumped_state = apply_intervention_jump(state, strength, parameters, rng)
-            shift = jumped_state - state
-            effect_index = index + 1 if config.delayed_intervention_effect else index
-            states[effect_index:] += shift
-            state = states[index]
+            jumped_state = apply_intervention_jump(
+                current_state, strength, parameters, rng
+            )
+            if config.delayed_intervention_effect:
+                delayed_shift = jumped_state - current_state
+            else:
+                current_state = jumped_state
             events.append(
                 ClinicalEvent(
                     patient_id=patient_id,
@@ -87,11 +96,12 @@ def simulate_patient(
                 )
             )
 
-        candidate_labs = emit_labs(state, rng, config.measurement_noise)
+        states.append(np.array(current_state, copy=True))
+        candidate_labs = emit_labs(current_state, rng, config.measurement_noise)
         complete_values.append([candidate_labs[code] for code in LAB_CODES])
         probability = observation_probability(
             config.observation_regime,
-            state,
+            current_state,
             previous_observed_value,
             parameters.site_id,
         )
@@ -112,7 +122,19 @@ def simulate_patient(
             )
             previous_observed_value = value
 
-    latent = LatentTrajectory(times=np.array(initial_latent.times, copy=True), states=states)
+        if index + 1 < len(times):
+            next_state = advance_latent_state(
+                current_state,
+                float(elapsed_days),
+                float(times[index + 1]),
+                parameters,
+                rng,
+            )
+            if delayed_shift is not None:
+                next_state = next_state + delayed_shift
+            current_state = next_state
+
+    latent = LatentTrajectory(times=np.array(times, copy=True), states=np.asarray(states))
     return SimulatedPatient(
         patient_id=patient_id,
         site_id=parameters.site_id,
@@ -120,7 +142,7 @@ def simulate_patient(
         latent=latent,
         complete_outcomes=CompleteOutcomeTruth(
             origin_time=_ORIGIN,
-            times=np.array(initial_latent.times, copy=True),
+            times=np.array(times, copy=True),
             value_codes=LAB_CODES,
             values=np.asarray(complete_values, dtype=float),
         ),
