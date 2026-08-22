@@ -21,7 +21,6 @@ class FlowJumpAdapter(nn.Module):
         value_dim: int,
         event_dim: int,
         state_dim: int = 24,
-        site_dim: int = 0,
         model_observation_process: bool = False,
         no_flow: bool = False,
         no_jump: bool = False,
@@ -29,7 +28,6 @@ class FlowJumpAdapter(nn.Module):
     ) -> None:
         super().__init__()
         self.state_dim = state_dim
-        self.site_dim = site_dim
         self.model_observation_process = model_observation_process
         self.no_flow = no_flow
         self.no_jump = no_jump
@@ -44,7 +42,7 @@ class FlowJumpAdapter(nn.Module):
         self.observation_head: nn.Module | None = None
         if model_observation_process:
             self.observation_head = nn.Sequential(
-                nn.Linear(state_dim + site_dim, state_dim),
+                nn.Linear(state_dim, state_dim),
                 nn.Tanh(),
                 nn.Linear(state_dim, value_dim),
             )
@@ -75,12 +73,10 @@ class FlowJumpAdapter(nn.Module):
     def predict_observation(
         self,
         pre_event_state: torch.Tensor,
-        site_context: torch.Tensor,
     ) -> torch.Tensor:
         if self.observation_head is None:
             raise RuntimeError("observation-process modelling is disabled")
-        features = torch.cat([pre_event_state, site_context], dim=-1)
-        return self.observation_head(features)
+        return self.observation_head(pre_event_state)
 
     def forward(
         self,
@@ -89,10 +85,7 @@ class FlowJumpAdapter(nn.Module):
         masks: torch.Tensor,
         event_features: torch.Tensor,
         times: torch.Tensor,
-        site_context: torch.Tensor | None = None,
     ) -> FlowJumpOutput:
-        if self.model_observation_process and site_context is None:
-            raise ValueError("site_context is required for observation-process modelling")
         batch, steps, _ = representations.shape
         state = representations.new_zeros((batch, self.state_dim))
         pre_states = []
@@ -105,10 +98,7 @@ class FlowJumpAdapter(nn.Module):
             delta_t = times[:, index] if index == 0 else times[:, index] - times[:, index - 1]
             pre_state = self.flow(state, delta_t)
             if self.model_observation_process:
-                assert site_context is not None
-                observation_logits.append(
-                    self.predict_observation(pre_state, site_context[:, index])
-                )
+                observation_logits.append(self.predict_observation(pre_state))
             state = self.jump(
                 pre_state,
                 representations[:, index],

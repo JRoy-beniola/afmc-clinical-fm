@@ -19,7 +19,7 @@ class SummaryHistoryEncoder:
             raise ValueError("representation_dim must be positive")
         self.representation_dim = representation_dim
         rng = np.random.default_rng(seed)
-        self._projection = rng.normal(0.0, 0.25, size=(12, representation_dim))
+        self._projection = rng.normal(0.0, 0.25, size=(11, representation_dim))
         self._bias = rng.normal(0.0, 0.05, size=representation_dim)
 
     def encode(self, timeline: PatientTimeline, cutoff_time: datetime) -> np.ndarray:
@@ -47,7 +47,6 @@ class SummaryHistoryEncoder:
         intervention_count = sum(
             event.event_type == EventType.INTERVENTION for event in history
         )
-        site_id = float(history[0].metadata.get("site_id", 0)) if history else 0.0
-        features.extend((float(intervention_count), elapsed_days, site_id))
+        features.extend((float(intervention_count), elapsed_days))
         summary = np.asarray(features, dtype=float)
         return np.tanh(summary @ self._projection + self._bias)

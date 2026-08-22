@@ -10,7 +10,6 @@ def _model():
         value_dim=3,
         event_dim=3,
         state_dim=24,
-        site_dim=2,
     )
 
 
@@ -45,7 +44,6 @@ def test_forward_returns_pre_and_post_event_states():
         masks=torch.ones(batch, steps, 3),
         event_features=torch.zeros(batch, steps, 3),
         times=torch.arange(steps).float().repeat(batch, 1),
-        site_context=torch.zeros(batch, steps, 2),
     )
     assert out.pre_event_states.shape == (batch, steps, 24)
     assert out.post_event_states.shape == (batch, steps, 24)
@@ -62,7 +60,6 @@ def test_forward_and_losses_have_finite_gradients():
         masks=torch.ones(batch, steps, 3),
         event_features=torch.zeros(batch, steps, 3),
         times=torch.arange(steps).float().repeat(batch, 1),
-        site_context=torch.zeros(batch, steps, 2),
     )
     target = torch.randn(batch, steps, 3)
     event_target = torch.zeros(batch, steps)
@@ -80,24 +77,21 @@ def test_observation_logits_are_computed_from_pre_event_state():
         value_dim=3,
         event_dim=3,
         state_dim=24,
-        site_dim=2,
         model_observation_process=True,
     )
     pre = torch.randn(4, 24)
-    site = torch.zeros(4, 2)
-    logits = model.predict_observation(pre, site)
+    logits = model.predict_observation(pre)
     assert logits.shape == (4, 3)
 
 
 def test_observation_forward_outputs_one_logit_per_mask_value():
-    model = FlowJumpAdapter(16, 3, 3, state_dim=24, site_dim=2, model_observation_process=True)
+    model = FlowJumpAdapter(16, 3, 3, state_dim=24, model_observation_process=True)
     output = model(
         representations=torch.randn(2, 4, 16),
         values=torch.randn(2, 4, 3),
         masks=torch.ones(2, 4, 3),
         event_features=torch.zeros(2, 4, 3),
         times=torch.arange(4).float().repeat(2, 1),
-        site_context=torch.zeros(2, 4, 2),
     )
     assert output.observation_logits is not None
     assert output.observation_logits.shape == (2, 4, 3)
@@ -127,3 +121,22 @@ def test_ablation_flags_disable_flow_jump_and_probabilistic_scale():
         torch.arange(3).float().repeat(2, 1),
     )
     assert torch.count_nonzero(output.value_log_scale) == 0
+
+
+def test_observation_model_requires_no_site_identity_input():
+    model = FlowJumpAdapter(
+        representation_dim=16,
+        value_dim=3,
+        event_dim=3,
+        state_dim=24,
+        model_observation_process=True,
+    )
+    output = model(
+        representations=torch.randn(2, 4, 16),
+        values=torch.randn(2, 4, 3),
+        masks=torch.ones(2, 4, 3),
+        event_features=torch.zeros(2, 4, 3),
+        times=torch.arange(4).float().repeat(2, 1),
+    )
+    assert output.observation_logits is not None
+    assert output.observation_logits.shape == (2, 4, 3)

@@ -88,7 +88,7 @@ def _static_examples(sequences: Sequence[PatientSequence]) -> tuple[np.ndarray, 
     return np.asarray(features), np.asarray(targets)
 
 
-def _padded_batch(sequences: Sequence[PatientSequence], n_sites: int) -> dict[str, torch.Tensor]:
+def _padded_batch(sequences: Sequence[PatientSequence]) -> dict[str, torch.Tensor]:
     batch = len(sequences)
     steps = max(len(sequence.times) for sequence in sequences)
     rep_dim = sequences[0].representations.shape[1]
@@ -100,7 +100,6 @@ def _padded_batch(sequences: Sequence[PatientSequence], n_sites: int) -> dict[st
         "masks": np.zeros((batch, steps, value_dim), dtype=np.float32),
         "event_features": np.zeros((batch, steps, event_dim), dtype=np.float32),
         "times": np.zeros((batch, steps), dtype=np.float32),
-        "site_context": np.zeros((batch, steps, n_sites), dtype=np.float32),
         "target_values": np.zeros((batch, steps, value_dim), dtype=np.float32),
         "target_masks": np.zeros((batch, steps, value_dim), dtype=np.float32),
         "target_events": np.zeros((batch, steps), dtype=np.float32),
@@ -121,7 +120,6 @@ def _padded_batch(sequences: Sequence[PatientSequence], n_sites: int) -> dict[st
             ("target_events", sequence.target_event_within_horizon),
         ):
             arrays[name][row, :length] = source
-        arrays["site_context"][row, :length, sequence.site_id] = 1.0
         arrays["valid"][row, :length] = 1.0
     return {name: torch.from_numpy(value) for name, value in arrays.items()}
 
@@ -149,9 +147,8 @@ def build_complete_truth_targets(
 def _complete_truth_batch(
     sequences: Sequence[PatientSequence],
     patients: Sequence[SimulatedPatient],
-    n_sites: int,
 ) -> dict[str, torch.Tensor]:
-    batch = _padded_batch(sequences, n_sites)
+    batch = _padded_batch(sequences)
     for row, patient in enumerate(patients):
         targets, masks = build_complete_truth_targets(patient)
         length = len(targets)
@@ -172,7 +169,6 @@ def _neural_loss(
         masks=batch["masks"],
         event_features=batch["event_features"],
         times=batch["times"],
-        **({"site_context": batch["site_context"]} if isinstance(model, FlowJumpAdapter) else {}),
     )
     loss = masked_gaussian_nll(
         output.value_mean,
@@ -240,7 +236,6 @@ def _evaluate_neural(model: nn.Module, batch: dict[str, torch.Tensor]) -> dict[s
             masks=batch["masks"],
             event_features=batch["event_features"],
             times=batch["times"],
-            **({"site_context": batch["site_context"]} if isinstance(model, FlowJumpAdapter) else {}),
         )
     selected = batch["target_masks"].bool()
     error = output.value_mean[selected] - batch["target_values"][selected]
@@ -299,9 +294,9 @@ def run_low_n_benchmark(
                         "rmse": float(np.sqrt(np.mean(error**2))),
                     }
                 else:
-                    train_batch = _padded_batch(train_sequences, cohort.config.n_sites)
-                    validation_batch = _padded_batch(validation_sequences, cohort.config.n_sites)
-                    test_batch = _padded_batch(test_sequences, cohort.config.n_sites)
+                    train_batch = _padded_batch(train_sequences)
+                    validation_batch = _padded_batch(validation_sequences)
+                    test_batch = _padded_batch(test_sequences)
                     if model_name == "gru_from_scratch":
                         model: nn.Module = GRUBaseline(16, 3, 3)
                         observation_aware = False
@@ -311,7 +306,6 @@ def run_low_n_benchmark(
                             16,
                             3,
                             3,
-                            site_dim=cohort.config.n_sites,
                             model_observation_process=observation_aware,
                         )
                     model = _fit_neural(
@@ -365,12 +359,9 @@ def run_observation_shift_benchmark(
         for n_train in config.train_sizes:
             budget = select_low_n_budget(development_pool, n_train, seed)
             train_ids = budget.fit_ids
-            train_batch = _padded_batch(
-                [sequences[patient_id] for patient_id in train_ids], cohort.config.n_sites
-            )
+            train_batch = _padded_batch([sequences[patient_id] for patient_id in train_ids])
             validation_batch = _padded_batch(
-                [sequences[patient_id] for patient_id in budget.validation_ids],
-                cohort.config.n_sites,
+                [sequences[patient_id] for patient_id in budget.validation_ids]
             )
             site_zero_patients = [
                 patient_by_id[patient_id] for patient_id in site_zero_test_ids
@@ -382,12 +373,10 @@ def run_observation_shift_benchmark(
                 "site_0": _complete_truth_batch(
                     [sequences[patient.patient_id] for patient in site_zero_patients],
                     site_zero_patients,
-                    cohort.config.n_sites,
                 ),
                 "site_1": _complete_truth_batch(
                     [sequences[patient.patient_id] for patient in site_one_patients],
                     site_one_patients,
-                    cohort.config.n_sites,
                 ),
             }
             for model_name in ("flow_jump", "flow_jump_observation"):
@@ -396,7 +385,6 @@ def run_observation_shift_benchmark(
                     16,
                     3,
                     3,
-                    site_dim=cohort.config.n_sites,
                     model_observation_process=observation_aware,
                 )
                 model = _fit_neural(

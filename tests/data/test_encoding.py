@@ -20,3 +20,31 @@ def test_encoder_does_not_use_future_events():
     a = encoder.encode(first_only, cutoff_time=origin)
     b = encoder.encode(full, cutoff_time=origin)
     np.testing.assert_allclose(a, b)
+
+
+def test_encoder_ignores_site_metadata():
+    origin = datetime(2026, 1, 1, tzinfo=UTC)
+    site_zero = ClinicalEvent(
+        "p",
+        origin,
+        "LAB_FAST",
+        1.0,
+        "arb",
+        EventType.OBSERVATION,
+        "synthetic",
+        metadata={"site_id": 0},
+    )
+    unseen_site = ClinicalEvent(
+        "p",
+        origin,
+        "LAB_FAST",
+        1.0,
+        "arb",
+        EventType.OBSERVATION,
+        "synthetic",
+        metadata={"site_id": 999},
+    )
+    encoder = SummaryHistoryEncoder(representation_dim=16, seed=4)
+    a = encoder.encode(PatientTimeline("p", [site_zero]), cutoff_time=origin)
+    b = encoder.encode(PatientTimeline("p", [unseen_site]), cutoff_time=origin)
+    np.testing.assert_allclose(a, b)
