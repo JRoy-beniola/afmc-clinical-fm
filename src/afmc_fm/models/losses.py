@@ -37,5 +37,16 @@ def event_bce(logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return F.binary_cross_entropy_with_logits(logits, target.float())
 
 
-def observation_bce(logits: torch.Tensor, target_mask: torch.Tensor) -> torch.Tensor:
-    return F.binary_cross_entropy_with_logits(logits, target_mask.float())
+def observation_bce(
+    logits: torch.Tensor,
+    target_mask: torch.Tensor,
+    valid: torch.Tensor,
+) -> torch.Tensor:
+    terms = F.binary_cross_entropy_with_logits(
+        logits, target_mask.float(), reduction="none"
+    )
+    weights = valid.to(dtype=terms.dtype)
+    if weights.ndim == terms.ndim - 1:
+        weights = weights.unsqueeze(-1)
+    weights = weights.expand_as(terms)
+    return (terms * weights).sum() / weights.sum().clamp_min(1.0)

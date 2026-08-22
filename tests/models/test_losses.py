@@ -24,5 +24,16 @@ def test_gaussian_nll_is_finite_for_extreme_log_scale():
 def test_observation_bce_accepts_binary_mask_targets():
     logits = torch.zeros(2, 3, requires_grad=True)
     target = torch.tensor([[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]])
-    loss = observation_bce(logits, target)
+    loss = observation_bce(logits, target, torch.ones(logits.shape[0]))
     loss.backward()
+
+
+def test_observation_bce_ignores_padded_timesteps():
+    logits = torch.tensor([[[0.0]], [[100.0]]])
+    targets = torch.tensor([[[1.0]], [[0.0]]])
+    valid = torch.tensor([[1.0], [0.0]])
+    loss = observation_bce(logits, targets, valid)
+    expected = torch.nn.functional.binary_cross_entropy_with_logits(
+        logits[:1], targets[:1]
+    )
+    torch.testing.assert_close(loss, expected)

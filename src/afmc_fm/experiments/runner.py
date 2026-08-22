@@ -103,6 +103,7 @@ def _padded_batch(sequences: Sequence[PatientSequence]) -> dict[str, torch.Tenso
         "target_values": np.zeros((batch, steps, value_dim), dtype=np.float32),
         "target_masks": np.zeros((batch, steps, value_dim), dtype=np.float32),
         "target_events": np.zeros((batch, steps), dtype=np.float32),
+        "event_valid": np.zeros((batch, steps), dtype=np.float32),
         "valid": np.zeros((batch, steps), dtype=np.float32),
     }
     for row, sequence in enumerate(sequences):
@@ -118,6 +119,7 @@ def _padded_batch(sequences: Sequence[PatientSequence]) -> dict[str, torch.Tenso
             ("target_values", sequence.target_next_values),
             ("target_masks", sequence.target_next_masks),
             ("target_events", sequence.target_event_within_horizon),
+            ("event_valid", sequence.target_event_valid),
         ):
             arrays[name][row, :length] = source
         arrays["valid"][row, :length] = 1.0
@@ -179,14 +181,14 @@ def _neural_loss(
     event_loss = torch.nn.functional.binary_cross_entropy_with_logits(
         output.event_logits,
         batch["target_events"],
-        weight=batch["valid"],
+        weight=batch["event_valid"],
         reduction="sum",
-    ) / batch["valid"].sum().clamp_min(1.0)
+    ) / batch["event_valid"].sum().clamp_min(1.0)
     loss = loss + config.lambda_event * event_loss
     if observation_aware:
         assert output.observation_logits is not None
         loss = loss + config.lambda_obs * observation_bce(
-            output.observation_logits, batch["masks"]
+            output.observation_logits, batch["masks"], batch["valid"]
         )
     return loss
 

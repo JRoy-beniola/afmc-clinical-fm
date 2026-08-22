@@ -21,6 +21,7 @@ class PatientSequence:
     target_next_values: np.ndarray
     target_next_masks: np.ndarray
     target_event_within_horizon: np.ndarray
+    target_event_valid: np.ndarray
 
 
 def _group_by_time(events: list[ClinicalEvent]) -> list[tuple[datetime, list[ClinicalEvent]]]:
@@ -66,10 +67,12 @@ def build_patient_sequence(
     target_values = np.zeros_like(values)
     target_masks = np.zeros_like(masks)
     target_events = np.zeros(steps, dtype=np.float32)
+    target_event_valid = np.zeros(steps, dtype=np.float32)
     if steps > 1:
         target_values[:-1] = values[1:]
         target_masks[:-1] = masks[1:]
         target_events[:-1] = event_features[1:, 1]
+        target_event_valid[:-1] = 1.0
 
     return PatientSequence(
         patient_id=patient.patient_id,
@@ -82,4 +85,5 @@ def build_patient_sequence(
         target_next_values=target_values,
         target_next_masks=target_masks,
         target_event_within_horizon=target_events,
+        target_event_valid=target_event_valid,
     )

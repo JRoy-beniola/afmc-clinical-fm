@@ -16,4 +16,7 @@ def test_patient_sequence_contains_aligned_time_and_mask_arrays():
     assert sequence.representations.shape == (steps, 16)
     assert sequence.values.shape[0] == steps
     assert sequence.masks.shape == sequence.values.shape
+    assert sequence.target_event_valid.shape == (steps,)
+    assert not sequence.target_event_valid[-1]
+    assert sequence.target_event_valid[:-1].all()
     assert np.all(np.diff(sequence.times) >= 0)
