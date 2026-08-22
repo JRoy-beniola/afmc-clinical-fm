@@ -1,6 +1,6 @@
 import torch
 
-from afmc_fm.models.losses import gaussian_nll, masked_gaussian_nll
+from afmc_fm.models.losses import gaussian_nll, masked_gaussian_nll, observation_bce
 
 
 def test_masked_gaussian_nll_ignores_unobserved_targets():
@@ -19,3 +19,10 @@ def test_gaussian_nll_is_finite_for_extreme_log_scale():
         torch.ones(2),
     )
     assert torch.isfinite(loss)
+
+
+def test_observation_bce_accepts_binary_mask_targets():
+    logits = torch.zeros(2, 3, requires_grad=True)
+    target = torch.tensor([[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]])
+    loss = observation_bce(logits, target)
+    loss.backward()

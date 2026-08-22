@@ -35,3 +35,7 @@ def masked_gaussian_nll(
 
 def event_bce(logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return F.binary_cross_entropy_with_logits(logits, target.float())
+
+
+def observation_bce(logits: torch.Tensor, target_mask: torch.Tensor) -> torch.Tensor:
+    return F.binary_cross_entropy_with_logits(logits, target_mask.float())

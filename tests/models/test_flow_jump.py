@@ -72,3 +72,32 @@ def test_forward_and_losses_have_finite_gradients():
     gradients = [parameter.grad for parameter in model.parameters() if parameter.requires_grad]
     assert all(gradient is not None for gradient in gradients)
     assert all(torch.isfinite(gradient).all() for gradient in gradients)
+
+
+def test_observation_logits_are_computed_from_pre_event_state():
+    model = FlowJumpAdapter(
+        representation_dim=16,
+        value_dim=3,
+        event_dim=3,
+        state_dim=24,
+        site_dim=2,
+        model_observation_process=True,
+    )
+    pre = torch.randn(4, 24)
+    site = torch.zeros(4, 2)
+    logits = model.predict_observation(pre, site)
+    assert logits.shape == (4, 3)
+
+
+def test_observation_forward_outputs_one_logit_per_mask_value():
+    model = FlowJumpAdapter(16, 3, 3, state_dim=24, site_dim=2, model_observation_process=True)
+    output = model(
+        representations=torch.randn(2, 4, 16),
+        values=torch.randn(2, 4, 3),
+        masks=torch.ones(2, 4, 3),
+        event_features=torch.zeros(2, 4, 3),
+        times=torch.arange(4).float().repeat(2, 1),
+        site_context=torch.zeros(2, 4, 2),
+    )
+    assert output.observation_logits is not None
+    assert output.observation_logits.shape == (2, 4, 3)

@@ -22,10 +22,12 @@ class FlowJumpAdapter(nn.Module):
         event_dim: int,
         state_dim: int = 24,
         site_dim: int = 0,
+        model_observation_process: bool = False,
     ) -> None:
         super().__init__()
         self.state_dim = state_dim
         self.site_dim = site_dim
+        self.model_observation_process = model_observation_process
         flow_dim = state_dim + 1
         self.flow_gate = nn.Linear(flow_dim, state_dim)
         self.flow_candidate = nn.Linear(flow_dim, state_dim)
@@ -33,6 +35,13 @@ class FlowJumpAdapter(nn.Module):
         self.jump_cell = nn.GRUCell(jump_dim, state_dim)
         self.value_head = nn.Linear(state_dim, 2 * value_dim)
         self.event_head = nn.Linear(state_dim, 1)
+        self.observation_head: nn.Module | None = None
+        if model_observation_process:
+            self.observation_head = nn.Sequential(
+                nn.Linear(state_dim + site_dim, state_dim),
+                nn.Tanh(),
+                nn.Linear(state_dim, value_dim),
+            )
 
     def flow(self, state: torch.Tensor, delta_t: torch.Tensor) -> torch.Tensor:
         flow_input = torch.cat([state, torch.log1p(delta_t.clamp_min(0)).unsqueeze(-1)], dim=-1)
@@ -53,6 +62,16 @@ class FlowJumpAdapter(nn.Module):
         )
         return self.jump_cell(jump_input, state)
 
+    def predict_observation(
+        self,
+        pre_event_state: torch.Tensor,
+        site_context: torch.Tensor,
+    ) -> torch.Tensor:
+        if self.observation_head is None:
+            raise RuntimeError("observation-process modelling is disabled")
+        features = torch.cat([pre_event_state, site_context], dim=-1)
+        return self.observation_head(features)
+
     def forward(
         self,
         representations: torch.Tensor,
@@ -62,7 +81,8 @@ class FlowJumpAdapter(nn.Module):
         times: torch.Tensor,
         site_context: torch.Tensor | None = None,
     ) -> FlowJumpOutput:
-        del site_context
+        if self.model_observation_process and site_context is None:
+            raise ValueError("site_context is required for observation-process modelling")
         batch, steps, _ = representations.shape
         state = representations.new_zeros((batch, self.state_dim))
         pre_states = []
@@ -70,9 +90,15 @@ class FlowJumpAdapter(nn.Module):
         means = []
         log_scales = []
         event_logits = []
+        observation_logits = []
         for index in range(steps):
             delta_t = times[:, index] if index == 0 else times[:, index] - times[:, index - 1]
             pre_state = self.flow(state, delta_t)
+            if self.model_observation_process:
+                assert site_context is not None
+                observation_logits.append(
+                    self.predict_observation(pre_state, site_context[:, index])
+                )
             state = self.jump(
                 pre_state,
                 representations[:, index],
@@ -93,5 +119,9 @@ class FlowJumpAdapter(nn.Module):
             value_mean=torch.stack(means, dim=1),
             value_log_scale=torch.stack(log_scales, dim=1),
             event_logits=torch.stack(event_logits, dim=1),
-            observation_logits=None,
+            observation_logits=(
+                torch.stack(observation_logits, dim=1)
+                if observation_logits
+                else None
+            ),
         )
