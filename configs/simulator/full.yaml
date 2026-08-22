@@ -1,0 +1,10 @@
+seed: 42
+cohort_size: 5000
+n_sites: 3
+latent_dim: 4
+followup_days: 365.0
+mean_event_interval_days: 14.0
+process_noise: 0.03
+measurement_noise: 0.10
+intervention_rate: 0.06
+observation_regime: site_shift
