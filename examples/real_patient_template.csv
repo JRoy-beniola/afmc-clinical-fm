@@ -1,0 +1,4 @@
+patient_id,start_time,code,value,unit,event_type,source,metadata
+example_patient,2026-01-01T09:00:00+00:00,ENCOUNTER,,,encounter,example,"{}"
+example_patient,2026-01-01T09:15:00+00:00,LAB_A,1.5,arb,observation,example,"{}"
+example_patient,2026-01-21T10:00:00+00:00,THERAPY_A,1.0,dose,intervention,example,"{}"
