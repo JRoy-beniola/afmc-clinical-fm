@@ -140,3 +140,33 @@ def test_observation_model_requires_no_site_identity_input():
     )
     assert output.observation_logits is not None
     assert output.observation_logits.shape == (2, 4, 3)
+
+
+def test_no_representation_ablation_ignores_representation_values():
+    model = FlowJumpAdapter(16, 3, 3, no_representation=True)
+    values = torch.randn(2, 4, 3)
+    masks = torch.ones(2, 4, 3)
+    events = torch.zeros(2, 4, 3)
+    times = torch.arange(4).float().repeat(2, 1)
+    zeros = model(torch.zeros(2, 4, 16), values, masks, events, times)
+    random = model(torch.randn(2, 4, 16), values, masks, events, times)
+    torch.testing.assert_close(zeros.value_mean, random.value_mean)
+    torch.testing.assert_close(zeros.event_logits, random.event_logits)
+
+
+def test_no_observation_head_ablation_removes_observation_logits():
+    model = FlowJumpAdapter(
+        16,
+        3,
+        3,
+        model_observation_process=True,
+        no_observation_head=True,
+    )
+    output = model(
+        torch.randn(2, 3, 16),
+        torch.randn(2, 3, 3),
+        torch.ones(2, 3, 3),
+        torch.zeros(2, 3, 3),
+        torch.arange(3).float().repeat(2, 1),
+    )
+    assert output.observation_logits is None

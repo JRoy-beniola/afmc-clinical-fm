@@ -32,6 +32,15 @@ MODEL_NAMES = (
     "flow_jump_observation",
 )
 
+ABLATION_IDS = (
+    "none",
+    "no_representation",
+    "no_flow",
+    "no_jump",
+    "no_observation_head",
+    "no_prob_scale",
+)
+
 
 @dataclass(frozen=True)
 class ExperimentConfig:
@@ -285,14 +294,52 @@ def _parameter_count(model: nn.Module) -> int:
     return sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
 
 
+
+def _flow_jump_variant(
+    model_name: str,
+    ablation: str,
+    representation_dim: int,
+    value_dim: int,
+    event_dim: int,
+) -> tuple[FlowJumpAdapter, bool]:
+    observation_aware = model_name == "flow_jump_observation"
+    model = FlowJumpAdapter(
+        representation_dim,
+        value_dim,
+        event_dim,
+        model_observation_process=observation_aware,
+        no_representation=ablation == "no_representation",
+        no_flow=ablation == "no_flow",
+        no_jump=ablation == "no_jump",
+        no_observation_head=ablation == "no_observation_head",
+        no_probabilistic_scale=ablation == "no_prob_scale",
+    )
+    return model, model.model_observation_process
+
+
 def run_low_n_benchmark(
     cohort: SimulatedCohort,
     config: ExperimentConfig,
     model_names: Sequence[str] = MODEL_NAMES,
+    ablations: Sequence[str] = ("none",),
 ) -> pd.DataFrame:
     unknown = set(model_names).difference(MODEL_NAMES)
     if unknown:
         raise ValueError(f"unknown models: {sorted(unknown)}")
+    unknown_ablations = set(ablations).difference(ABLATION_IDS)
+    if unknown_ablations:
+        raise ValueError(f"unknown ablations: {sorted(unknown_ablations)}")
+    variants = [
+        (model_name, ablation)
+        for model_name in model_names
+        for ablation in (
+            ablations if model_name.startswith("flow_jump") else ("none",)
+        )
+        if not (
+            ablation == "no_observation_head"
+            and model_name != "flow_jump_observation"
+        )
+    ]
     torch.set_num_threads(1)
     patient_by_id = {patient.patient_id: patient for patient in cohort.patients}
     all_ids = list(patient_by_id)
@@ -319,7 +366,7 @@ def run_low_n_benchmark(
                 sequences[patient_id] for patient_id in budget.validation_ids
             ]
             test_sequences = [sequences[patient_id] for patient_id in test_ids]
-            for model_name in model_names:
+            for model_name, ablation in variants:
                 parameters = 0
                 if model_name in {
                     "engineered_linear",
@@ -356,12 +403,12 @@ def run_low_n_benchmark(
                         )
                         observation_aware = False
                     else:
-                        observation_aware = model_name == "flow_jump_observation"
-                        model = FlowJumpAdapter(
+                        model, observation_aware = _flow_jump_variant(
+                            model_name,
+                            ablation,
                             16,
                             len(task.value_codes),
                             len(EventType),
-                            model_observation_process=observation_aware,
                         )
                     model = _fit_neural(
                         model, train_batch, validation_batch, config, observation_aware
@@ -372,6 +419,7 @@ def run_low_n_benchmark(
                     rows.append(
                         {
                             "model": model_name,
+                            "ablation": ablation,
                             "n_train": n_train,
                             "n_fit": len(budget.fit_ids),
                             "n_validation": len(budget.validation_ids),
@@ -458,6 +506,7 @@ def run_observation_shift_benchmark(
                         rows.append(
                             {
                                 "model": model_name,
+                                "ablation": "none",
                                 "n_train": n_train,
                             "n_fit": len(budget.fit_ids),
                             "n_validation": len(budget.validation_ids),
@@ -473,6 +522,7 @@ def run_observation_shift_benchmark(
                     rows.append(
                         {
                             "model": model_name,
+                            "ablation": "none",
                             "n_train": n_train,
                             "n_fit": len(budget.fit_ids),
                             "n_validation": len(budget.validation_ids),

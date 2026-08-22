@@ -5,6 +5,7 @@ from afmc_fm.data.sequences import build_patient_sequence
 from afmc_fm.data.splits import split_patient_ids
 from afmc_fm.data.tasks import LongitudinalTask
 from afmc_fm.experiments.runner import (
+    ABLATION_IDS,
     ExperimentConfig,
     build_complete_truth_targets,
     run_low_n_benchmark,
@@ -140,3 +141,19 @@ def test_tiny_benchmark_runs_explicit_baseline_decomposition():
         "gru_from_scratch",
         "flow_jump",
     }
+
+
+def test_required_ablation_variants_are_runnable_and_tidy():
+    cohort = simulate_cohort(
+        SimulatorConfig(cohort_size=30, followup_days=45.0), seed=15
+    )
+    config = ExperimentConfig(train_sizes=(5,), seeds=(1,), max_epochs=1, patience=1)
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("flow_jump_observation",),
+        ablations=ABLATION_IDS,
+    )
+    assert set(results["ablation"]) == set(ABLATION_IDS)
+    key = ["model", "ablation", "n_train", "seed", "site_or_shift", "metric"]
+    assert not results.duplicated(key).any()

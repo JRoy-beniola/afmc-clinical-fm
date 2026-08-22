@@ -22,25 +22,30 @@ class FlowJumpAdapter(nn.Module):
         event_dim: int,
         state_dim: int = 24,
         model_observation_process: bool = False,
+        no_representation: bool = False,
         no_flow: bool = False,
         no_jump: bool = False,
         no_probabilistic_scale: bool = False,
+        no_observation_head: bool = False,
     ) -> None:
         super().__init__()
         self.state_dim = state_dim
-        self.model_observation_process = model_observation_process
+        self.model_observation_process = (
+            model_observation_process and not no_observation_head
+        )
+        self.no_representation = no_representation
         self.no_flow = no_flow
         self.no_jump = no_jump
         self.no_probabilistic_scale = no_probabilistic_scale
         flow_dim = state_dim + 1
         self.flow_gate = nn.Linear(flow_dim, state_dim)
         self.flow_candidate = nn.Linear(flow_dim, state_dim)
-        jump_dim = representation_dim + 2 * value_dim + event_dim
+        jump_dim = (0 if no_representation else representation_dim) + 2 * value_dim + event_dim
         self.jump_cell = nn.GRUCell(jump_dim, state_dim)
         self.value_head = nn.Linear(state_dim, 2 * value_dim)
         self.event_head = nn.Linear(state_dim, 1)
         self.observation_head: nn.Module | None = None
-        if model_observation_process:
+        if self.model_observation_process:
             self.observation_head = nn.Sequential(
                 nn.Linear(state_dim, state_dim),
                 nn.Tanh(),
@@ -65,9 +70,10 @@ class FlowJumpAdapter(nn.Module):
     ) -> torch.Tensor:
         if self.no_jump:
             return state
-        jump_input = torch.cat(
-            [representation, values * masks, masks, event_features], dim=-1
-        )
+        jump_parts = [values * masks, masks, event_features]
+        if not self.no_representation:
+            jump_parts.insert(0, representation)
+        jump_input = torch.cat(jump_parts, dim=-1)
         return self.jump_cell(jump_input, state)
 
     def predict_observation(
