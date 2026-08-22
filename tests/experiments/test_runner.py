@@ -231,3 +231,24 @@ def test_model_results_do_not_depend_on_registry_iteration_order():
     forward = forward.sort_values(key).reset_index(drop=True)
     reverse = reverse.sort_values(key).reset_index(drop=True)
     np.testing.assert_allclose(forward["value"], reverse["value"], equal_nan=True)
+
+
+def test_observation_shift_honors_configured_train_and_test_sites():
+    cohort = simulate_world(
+        "site_shift",
+        SimulatorConfig(cohort_size=30, followup_days=45.0),
+        seed=21,
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        subset_seeds=(1,),
+        model_seeds=(1,),
+        train_site=1,
+        test_sites=(1, 0),
+        max_epochs=1,
+        patience=1,
+    )
+    results = run_observation_shift_benchmark(cohort, config)
+    assert {"site_1", "site_0", "site_0_minus_site_1"} <= set(
+        results["site_or_shift"]
+    )

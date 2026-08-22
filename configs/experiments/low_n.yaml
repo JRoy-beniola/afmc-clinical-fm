@@ -6,6 +6,23 @@ max_epochs: 100
 patience: 12
 learning_rate: 0.001
 weight_decay: 0.0001
-batch_size: 16
 lambda_event: 1.0
 lambda_obs: 0.2
+worlds: [smooth, jumps, informative_observation, site_shift, misspecified]
+models:
+  - engineered_linear
+  - gradient_boosting
+  - gru_from_scratch
+  - representation_linear
+  - representation_mlp
+  - flow_jump
+  - flow_jump_observation
+ablations:
+  - none
+  - no_representation
+  - no_flow
+  - no_jump
+  - no_observation_head
+  - no_prob_scale
+train_site: 0
+test_sites: [0, 1]

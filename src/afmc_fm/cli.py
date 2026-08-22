@@ -1,20 +1,29 @@
 import argparse
 import json
 from collections.abc import Sequence
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
 import matplotlib
 import numpy as np
+import pandas as pd
 
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 
 from afmc_fm.config import load_yaml
-from afmc_fm.experiments.runner import ExperimentConfig, run_low_n_benchmark
+from afmc_fm.experiments.runner import (
+    ExperimentConfig,
+    run_low_n_benchmark,
+    run_observation_shift_benchmark,
+)
 from afmc_fm.schema.events import events_to_frame
-from afmc_fm.simulator.cohort import SimulatedCohort, simulate_cohort
+from afmc_fm.simulator.cohort import (
+    SimulatedCohort,
+    simulate_cohort,
+    simulate_world,
+)
 from afmc_fm.simulator.config import SimulatorConfig
 
 
@@ -26,9 +35,16 @@ def _simulator_from_yaml(path: str | Path) -> tuple[SimulatorConfig, int]:
 
 def _experiment_from_yaml(path: str | Path) -> ExperimentConfig:
     raw = load_yaml(path)
-    raw.pop("train_site", None)
-    raw.pop("test_sites", None)
-    for key in ("train_sizes", "cohort_seeds", "subset_seeds", "model_seeds"):
+    for key in (
+        "train_sizes",
+        "cohort_seeds",
+        "subset_seeds",
+        "model_seeds",
+        "worlds",
+        "models",
+        "ablations",
+        "test_sites",
+    ):
         if key in raw:
             raw[key] = tuple(raw[key])
     return ExperimentConfig(**raw)
@@ -76,6 +92,53 @@ def _plot_learning_curves(metrics, output: Path) -> None:
     plt.close(figure)
 
 
+
+def _phase0_gate_summary(metrics: pd.DataFrame) -> pd.DataFrame:
+    selected = metrics[
+        (metrics["benchmark"] == "low_n")
+        & (metrics["site_or_shift"] == "all")
+        & (metrics["ablation"] == "none")
+        & (metrics["metric"] == "mae")
+    ]
+    summary = (
+        selected.groupby(["world", "n_train", "model"], as_index=False)["value"]
+        .mean()
+        .pivot(index=["world", "n_train"], columns="model", values="value")
+        .reset_index()
+    )
+    summary.columns.name = None
+    for model in ("flow_jump", "representation_linear", "gru_from_scratch"):
+        if model not in summary:
+            summary[model] = np.nan
+    comparisons_available = summary[
+        ["flow_jump", "representation_linear", "gru_from_scratch"]
+    ].notna().all(axis=1)
+    summary["flow_jump_beats_both_primary_comparators"] = pd.array(
+        [
+            bool(flow < representation and flow < gru) if available else pd.NA
+            for flow, representation, gru, available in zip(
+                summary["flow_jump"],
+                summary["representation_linear"],
+                summary["gru_from_scratch"],
+                comparisons_available,
+                strict=True,
+            )
+        ],
+        dtype="boolean",
+    )
+    return summary
+
+
+def _world_cohort(
+    world: str,
+    config: SimulatorConfig,
+    seed: int,
+) -> SimulatedCohort:
+    if world == "custom":
+        return simulate_cohort(config, seed)
+    return simulate_world(world, config, seed)
+
+
 def _simulate(args: argparse.Namespace) -> int:
     config, seed = _simulator_from_yaml(args.config)
     _write_simulation(simulate_cohort(config, seed), Path(args.output))
@@ -84,23 +147,34 @@ def _simulate(args: argparse.Namespace) -> int:
 
 def _benchmark(args: argparse.Namespace) -> int:
     sim_config, seed = _simulator_from_yaml(args.sim_config)
-    cohort = simulate_cohort(sim_config, seed)
     experiment = _experiment_from_yaml(args.exp_config)
-    max_train = int(sim_config.cohort_size * 0.7)
-    experiment = replace(
-        experiment,
-        train_sizes=tuple(size for size in experiment.train_sizes if size <= max_train),
-    )
-    if not experiment.train_sizes:
-        raise ValueError("cohort is too small for every configured training size")
-    metrics = run_low_n_benchmark(cohort, experiment)
+    template_seed = experiment.cohort_seeds[0] if experiment.cohort_seeds else seed
+    frames: list[pd.DataFrame] = []
+    for world in experiment.worlds:
+        cohort = _world_cohort(world, sim_config, template_seed)
+        low_n = run_low_n_benchmark(cohort, experiment)
+        low_n["world"] = world
+        low_n["benchmark"] = "low_n"
+        frames.append(low_n)
+        if world == "site_shift" and any(
+            model.startswith("flow_jump") for model in experiment.models
+        ):
+            shift = run_observation_shift_benchmark(cohort, experiment)
+            shift["world"] = world
+            shift["benchmark"] = "observation_shift"
+            frames.append(shift)
+    metrics = pd.concat(frames, ignore_index=True)
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     metrics.to_csv(output / "metrics.csv", index=False)
+    metrics[metrics["ablation"] != "none"].to_csv(
+        output / "ablation_metrics.csv", index=False
+    )
+    _phase0_gate_summary(metrics).to_csv(output / "gate_summary.csv", index=False)
     _plot_learning_curves(metrics, output / "learning_curves.png")
     manifest = {
         "synthetic": True,
-        "seed": seed,
+        "template_seed": seed,
         "simulator_config": asdict(sim_config),
         "experiment_config": asdict(experiment),
         "generated_at": datetime.now(UTC).isoformat(),

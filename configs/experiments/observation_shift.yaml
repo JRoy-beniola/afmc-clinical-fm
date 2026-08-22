@@ -6,8 +6,10 @@ max_epochs: 100
 patience: 12
 learning_rate: 0.001
 weight_decay: 0.0001
-batch_size: 16
 lambda_event: 1.0
 lambda_obs: 0.2
 train_site: 0
 test_sites: [0, 1]
+worlds: [site_shift]
+models: [flow_jump, flow_jump_observation]
+ablations: [none, no_observation_head]

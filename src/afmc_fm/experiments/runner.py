@@ -63,9 +63,13 @@ class ExperimentConfig:
     patience: int = 12
     learning_rate: float = 1e-3
     weight_decay: float = 1e-4
-    batch_size: int = 16
     lambda_event: float = 1.0
     lambda_obs: float = 0.2
+    worlds: tuple[str, ...] = ("custom",)
+    models: tuple[str, ...] = MODEL_NAMES
+    ablations: tuple[str, ...] = ("none",)
+    train_site: int = 0
+    test_sites: tuple[int, ...] = (0, 1)
 
     def seed_bundles(self, supplied_cohort_seed: int) -> tuple[tuple[int, int, int], ...]:
         cohort_seeds = self.cohort_seeds or (supplied_cohort_seed,)
@@ -522,17 +526,21 @@ def _cohort_for_seed(template: SimulatedCohort, cohort_seed: int) -> SimulatedCo
 def run_low_n_benchmark(
     cohort: SimulatedCohort,
     config: ExperimentConfig,
-    model_names: Sequence[str] = MODEL_NAMES,
-    ablations: Sequence[str] = ("none",),
+    model_names: Sequence[str] | None = None,
+    ablations: Sequence[str] | None = None,
 ) -> pd.DataFrame:
+    selected_models = tuple(config.models if model_names is None else model_names)
+    selected_ablations = tuple(
+        config.ablations if ablations is None else ablations
+    )
     frames = [
         _run_low_n_on_cohort(
             _cohort_for_seed(cohort, cohort_seed),
             config,
             subset_seed,
             model_seed,
-            model_names,
-            ablations,
+            selected_models,
+            selected_ablations,
         )
         for cohort_seed, subset_seed, model_seed in config.seed_bundles(cohort.seed)
     ]
@@ -544,17 +552,25 @@ def _run_observation_shift_on_cohort(
     config: ExperimentConfig,
     subset_seed: int,
     model_seed: int,
+    model_names: Sequence[str],
+    ablations: Sequence[str],
 ) -> pd.DataFrame:
-    site_zero_ids = [
-        patient.patient_id for patient in cohort.patients if patient.site_id == 0
-    ]
-    site_one_ids = [
-        patient.patient_id for patient in cohort.patients if patient.site_id == 1
-    ]
-    if not site_zero_ids or not site_one_ids:
-        raise ValueError("observation-shift evaluation requires patients from sites 0 and 1")
-    development_pool, _, site_zero_test_ids = split_patient_ids(
-        site_zero_ids, seed=0, train_fraction=0.8, val_fraction=0.0
+    ids_by_site = {
+        site_id: [
+            patient.patient_id
+            for patient in cohort.patients
+            if patient.site_id == site_id
+        ]
+        for site_id in set(config.test_sites) | {config.train_site}
+    }
+    missing_sites = [site for site, ids in ids_by_site.items() if not ids]
+    if missing_sites:
+        raise ValueError(f"observation-shift sites have no patients: {missing_sites}")
+    development_pool, _, train_site_test_ids = split_patient_ids(
+        ids_by_site[config.train_site],
+        seed=0,
+        train_fraction=0.8,
+        val_fraction=0.0,
     )
     patient_by_id = {patient.patient_id: patient for patient in cohort.patients}
     task = LongitudinalTask(
@@ -565,39 +581,51 @@ def _run_observation_shift_on_cohort(
         patient_id: build_patient_sequence(patient, encoder, task)
         for patient_id, patient in patient_by_id.items()
     }
+    variants = [
+        (model_name, ablation)
+        for model_name in model_names
+        for ablation in ablations
+        if not (
+            ablation == "no_observation_head"
+            and model_name != "flow_jump_observation"
+        )
+    ]
     rows: list[dict[str, object]] = []
     for n_train in config.train_sizes:
         budget = select_low_n_budget(development_pool, n_train, subset_seed)
-        train_ids = budget.fit_ids
-        train_batch = _padded_batch([sequences[patient_id] for patient_id in train_ids])
+        train_batch = _padded_batch(
+            [sequences[patient_id] for patient_id in budget.fit_ids]
+        )
         validation_batch = _padded_batch(
             [sequences[patient_id] for patient_id in budget.validation_ids]
         )
-        site_zero_patients = [
-            patient_by_id[patient_id] for patient_id in site_zero_test_ids
-        ]
-        site_one_patients = [
-            patient_by_id[patient_id] for patient_id in site_one_ids
-        ]
-        evaluation_batches = {
-            "site_0": _complete_truth_batch(
-                [sequences[patient.patient_id] for patient in site_zero_patients],
-                site_zero_patients,
-            ),
-            "site_1": _complete_truth_batch(
-                [sequences[patient.patient_id] for patient in site_one_patients],
-                site_one_patients,
-            ),
+        evaluation_patients = {
+            site: [
+                patient_by_id[patient_id]
+                for patient_id in (
+                    train_site_test_ids
+                    if site == config.train_site
+                    else ids_by_site[site]
+                )
+            ]
+            for site in config.test_sites
         }
-        for model_name in ("flow_jump", "flow_jump_observation"):
+        evaluation_batches = {
+            site: _complete_truth_batch(
+                [sequences[patient.patient_id] for patient in patients],
+                patients,
+            )
+            for site, patients in evaluation_patients.items()
+        }
+        for model_name, ablation in variants:
             np.random.seed(model_seed)
             torch.manual_seed(model_seed)
-            observation_aware = model_name == "flow_jump_observation"
-            model = FlowJumpAdapter(
+            model, observation_aware = _flow_jump_variant(
+                model_name,
+                ablation,
                 16,
                 len(task.value_codes),
                 len(EventType),
-                model_observation_process=observation_aware,
             )
             model = _fit_neural(
                 model, train_batch, validation_batch, config, observation_aware
@@ -612,53 +640,72 @@ def _run_observation_shift_on_cohort(
                     rows.append(
                         {
                             "model": model_name,
-                            "ablation": "none",
+                            "ablation": ablation,
                             "n_train": n_train,
-                        "n_fit": len(budget.fit_ids),
-                        "n_validation": len(budget.validation_ids),
+                            "n_fit": len(budget.fit_ids),
+                            "n_validation": len(budget.validation_ids),
                             "seed": subset_seed,
                             "cohort_seed": cohort.seed,
                             "subset_seed": subset_seed,
                             "model_seed": model_seed,
                             "split": "test",
-                            "site_or_shift": site,
+                            "site_or_shift": f"site_{site}",
                             "metric": metric,
                             "value": value,
                             "trainable_parameters": parameters,
                         }
                     )
-            for metric in by_site["site_0"]:
-                rows.append(
-                    {
-                        "model": model_name,
-                        "ablation": "none",
-                        "n_train": n_train,
-                        "n_fit": len(budget.fit_ids),
-                        "n_validation": len(budget.validation_ids),
-                        "seed": subset_seed,
-                        "cohort_seed": cohort.seed,
-                        "subset_seed": subset_seed,
-                        "model_seed": model_seed,
-                        "split": "test",
-                        "site_or_shift": "site_1_minus_site_0",
-                        "metric": metric,
-                        "value": by_site["site_1"][metric] - by_site["site_0"][metric],
-                        "trainable_parameters": parameters,
-                    }
-                )
+            reference = by_site[config.train_site]
+            for site, metrics in by_site.items():
+                if site == config.train_site:
+                    continue
+                for metric, value in metrics.items():
+                    rows.append(
+                        {
+                            "model": model_name,
+                            "ablation": ablation,
+                            "n_train": n_train,
+                            "n_fit": len(budget.fit_ids),
+                            "n_validation": len(budget.validation_ids),
+                            "seed": subset_seed,
+                            "cohort_seed": cohort.seed,
+                            "subset_seed": subset_seed,
+                            "model_seed": model_seed,
+                            "split": "test",
+                            "site_or_shift": (
+                                f"site_{site}_minus_site_{config.train_site}"
+                            ),
+                            "metric": metric,
+                            "value": value - reference[metric],
+                            "trainable_parameters": parameters,
+                        }
+                    )
     return pd.DataFrame(rows)
 
 
 def run_observation_shift_benchmark(
     cohort: SimulatedCohort,
     config: ExperimentConfig,
+    model_names: Sequence[str] | None = None,
+    ablations: Sequence[str] | None = None,
 ) -> pd.DataFrame:
+    configured_models = config.models if model_names is None else model_names
+    selected_models = tuple(
+        model for model in configured_models if model.startswith("flow_jump")
+    )
+    if not selected_models:
+        raise ValueError("observation-shift benchmark requires a flow-jump model")
+    selected_ablations = tuple(
+        config.ablations if ablations is None else ablations
+    )
     frames = [
         _run_observation_shift_on_cohort(
             _cohort_for_seed(cohort, cohort_seed),
             config,
             subset_seed,
             model_seed,
+            selected_models,
+            selected_ablations,
         )
         for cohort_seed, subset_seed, model_seed in config.seed_bundles(cohort.seed)
     ]
