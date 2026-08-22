@@ -10,6 +10,7 @@ from torch import nn
 from afmc_fm.data.encoding import SummaryHistoryEncoder
 from afmc_fm.data.sequences import PatientSequence, build_patient_sequence
 from afmc_fm.data.splits import split_patient_ids
+from afmc_fm.data.tasks import LongitudinalTask
 from afmc_fm.models.baselines import (
     GradientBoostingRegressorBaseline,
     GRUBaseline,
@@ -17,6 +18,7 @@ from afmc_fm.models.baselines import (
 )
 from afmc_fm.models.flow_jump import FlowJumpAdapter
 from afmc_fm.models.losses import masked_gaussian_nll, observation_bce
+from afmc_fm.schema.events import EventType
 from afmc_fm.simulator.cohort import SimulatedCohort, SimulatedPatient
 
 MODEL_NAMES = (
@@ -262,9 +264,12 @@ def run_low_n_benchmark(
     development_pool, _, test_ids = split_patient_ids(
         all_ids, seed=0, train_fraction=0.8, val_fraction=0.0
     )
-    encoder = SummaryHistoryEncoder(representation_dim=16, seed=0)
+    task = LongitudinalTask(
+        value_codes=cohort.patients[0].complete_outcomes.value_codes
+    )
+    encoder = SummaryHistoryEncoder(task, representation_dim=16, seed=0)
     sequences = {
-        patient_id: build_patient_sequence(patient, encoder)
+        patient_id: build_patient_sequence(patient, encoder, task)
         for patient_id, patient in patient_by_id.items()
     }
     rows: list[dict[str, object]] = []
@@ -300,14 +305,16 @@ def run_low_n_benchmark(
                     validation_batch = _padded_batch(validation_sequences)
                     test_batch = _padded_batch(test_sequences)
                     if model_name == "gru_from_scratch":
-                        model: nn.Module = GRUBaseline(16, 3, 3)
+                        model: nn.Module = GRUBaseline(
+                            16, len(task.value_codes), len(EventType)
+                        )
                         observation_aware = False
                     else:
                         observation_aware = model_name == "flow_jump_observation"
                         model = FlowJumpAdapter(
                             16,
-                            3,
-                            3,
+                            len(task.value_codes),
+                            len(EventType),
                             model_observation_process=observation_aware,
                         )
                     model = _fit_neural(
@@ -349,9 +356,12 @@ def run_observation_shift_benchmark(
         site_zero_ids, seed=0, train_fraction=0.8, val_fraction=0.0
     )
     patient_by_id = {patient.patient_id: patient for patient in cohort.patients}
-    encoder = SummaryHistoryEncoder(representation_dim=16, seed=0)
+    task = LongitudinalTask(
+        value_codes=cohort.patients[0].complete_outcomes.value_codes
+    )
+    encoder = SummaryHistoryEncoder(task, representation_dim=16, seed=0)
     sequences = {
-        patient_id: build_patient_sequence(patient, encoder)
+        patient_id: build_patient_sequence(patient, encoder, task)
         for patient_id, patient in patient_by_id.items()
     }
     rows: list[dict[str, object]] = []
@@ -385,8 +395,8 @@ def run_observation_shift_benchmark(
                 observation_aware = model_name == "flow_jump_observation"
                 model = FlowJumpAdapter(
                     16,
-                    3,
-                    3,
+                    len(task.value_codes),
+                    len(EventType),
                     model_observation_process=observation_aware,
                 )
                 model = _fit_neural(

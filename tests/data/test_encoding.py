@@ -3,7 +3,10 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 
 from afmc_fm.data.encoding import SummaryHistoryEncoder
+from afmc_fm.data.tasks import LongitudinalTask
 from afmc_fm.schema.events import ClinicalEvent, EventType, PatientTimeline
+
+TASK = LongitudinalTask(("LAB_FAST", "LAB_SLOW", "LAB_BURDEN"))
 
 
 def test_encoder_does_not_use_future_events():
@@ -14,7 +17,7 @@ def test_encoder_does_not_use_future_events():
             "p", origin + timedelta(days=10), "LAB_FAST", 9.0, "arb", EventType.OBSERVATION, "synthetic"
         ),
     ]
-    encoder = SummaryHistoryEncoder(representation_dim=16, seed=4)
+    encoder = SummaryHistoryEncoder(TASK, representation_dim=16, seed=4)
     first_only = PatientTimeline("p", [base[0]])
     full = PatientTimeline("p", base)
     a = encoder.encode(first_only, cutoff_time=origin)
@@ -44,7 +47,7 @@ def test_encoder_ignores_site_metadata():
         "synthetic",
         metadata={"site_id": 999},
     )
-    encoder = SummaryHistoryEncoder(representation_dim=16, seed=4)
+    encoder = SummaryHistoryEncoder(TASK, representation_dim=16, seed=4)
     a = encoder.encode(PatientTimeline("p", [site_zero]), cutoff_time=origin)
     b = encoder.encode(PatientTimeline("p", [unseen_site]), cutoff_time=origin)
     np.testing.assert_allclose(a, b)

@@ -1,18 +1,22 @@
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Protocol
 
 import numpy as np
 
 from afmc_fm.data.encoding import HistoryEncoder
-from afmc_fm.schema.events import ClinicalEvent, EventType
-from afmc_fm.simulator.cohort import SimulatedPatient
-from afmc_fm.simulator.observation import LAB_CODES
+from afmc_fm.data.tasks import LongitudinalTask
+from afmc_fm.schema.events import ClinicalEvent, EventType, PatientTimeline
+
+
+class TimelinePatient(Protocol):
+    patient_id: str
+    timeline: PatientTimeline
 
 
 @dataclass(frozen=True)
 class PatientSequence:
     patient_id: str
-    site_id: int
     times: np.ndarray
     representations: np.ndarray
     values: np.ndarray
@@ -35,12 +39,13 @@ def _group_by_time(events: list[ClinicalEvent]) -> list[tuple[datetime, list[Cli
 
 
 def build_patient_sequence(
-    patient: SimulatedPatient,
+    patient: TimelinePatient,
     encoder: HistoryEncoder,
+    task: LongitudinalTask,
 ) -> PatientSequence:
     groups = _group_by_time(patient.timeline.events)
     steps = len(groups)
-    value_dim = len(LAB_CODES)
+    value_dim = len(task.value_codes)
     values = np.zeros((steps, value_dim), dtype=np.float32)
     masks = np.zeros_like(values)
     event_features = np.zeros((steps, 3), dtype=np.float32)
@@ -50,8 +55,8 @@ def build_patient_sequence(
         representations[index] = encoder.encode(patient.timeline, timestamp)
         for event in events:
             event_features[index, list(EventType).index(event.event_type)] = 1.0
-            if event.event_type == EventType.OBSERVATION and event.code in LAB_CODES:
-                lab_index = LAB_CODES.index(event.code)
+            if event.event_type == EventType.OBSERVATION and event.code in task.value_codes:
+                lab_index = task.value_codes.index(event.code)
                 values[index, lab_index] = float(event.value)
                 masks[index, lab_index] = 1.0
 
@@ -71,12 +76,12 @@ def build_patient_sequence(
     if steps > 1:
         target_values[:-1] = values[1:]
         target_masks[:-1] = masks[1:]
-        target_events[:-1] = event_features[1:, 1]
+        event_target_index = list(EventType).index(task.event_target_type)
+        target_events[:-1] = event_features[1:, event_target_index]
         target_event_valid[:-1] = 1.0
 
     return PatientSequence(
         patient_id=patient.patient_id,
-        site_id=patient.site_id,
         times=times,
         representations=representations,
         values=values,

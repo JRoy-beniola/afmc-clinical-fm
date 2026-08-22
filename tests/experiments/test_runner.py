@@ -3,6 +3,7 @@ import numpy as np
 from afmc_fm.data.encoding import SummaryHistoryEncoder
 from afmc_fm.data.sequences import build_patient_sequence
 from afmc_fm.data.splits import split_patient_ids
+from afmc_fm.data.tasks import LongitudinalTask
 from afmc_fm.experiments.runner import (
     ExperimentConfig,
     build_complete_truth_targets,
@@ -103,9 +104,11 @@ def test_complete_truth_targets_do_not_condition_on_observation_masks():
         SimulatorConfig(cohort_size=1, followup_days=90.0),
         seed=14,
     ).patients[0]
+    task = LongitudinalTask(patient.complete_outcomes.value_codes)
     sequence = build_patient_sequence(
         patient,
-        SummaryHistoryEncoder(representation_dim=16, seed=0),
+        SummaryHistoryEncoder(task, representation_dim=16, seed=0),
+        task,
     )
     targets, masks = build_complete_truth_targets(patient)
     assert targets.shape == sequence.target_next_values.shape

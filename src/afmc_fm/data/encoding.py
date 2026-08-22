@@ -3,8 +3,8 @@ from typing import Protocol
 
 import numpy as np
 
+from afmc_fm.data.tasks import LongitudinalTask
 from afmc_fm.schema.events import EventType, PatientTimeline
-from afmc_fm.simulator.observation import LAB_CODES
 
 
 class HistoryEncoder(Protocol):
@@ -14,12 +14,18 @@ class HistoryEncoder(Protocol):
 
 
 class SummaryHistoryEncoder:
-    def __init__(self, representation_dim: int = 16, seed: int = 0) -> None:
+    def __init__(
+        self,
+        task: LongitudinalTask,
+        representation_dim: int = 16,
+        seed: int = 0,
+    ) -> None:
         if representation_dim <= 0:
             raise ValueError("representation_dim must be positive")
+        self.task = task
         self.representation_dim = representation_dim
         rng = np.random.default_rng(seed)
-        self._projection = rng.normal(0.0, 0.25, size=(11, representation_dim))
+        self._projection = rng.normal(0.0, 0.25, size=(3 * len(task.value_codes) + 2, representation_dim))
         self._bias = rng.normal(0.0, 0.05, size=representation_dim)
 
     def encode(self, timeline: PatientTimeline, cutoff_time: datetime) -> np.ndarray:
@@ -27,7 +33,7 @@ class SummaryHistoryEncoder:
         first_time = history[0].start_time if history else cutoff_time
         elapsed_days = max((cutoff_time - first_time).total_seconds() / 86400.0, 0.0)
         features: list[float] = []
-        for code in LAB_CODES:
+        for code in self.task.value_codes:
             observations = [
                 event
                 for event in history
