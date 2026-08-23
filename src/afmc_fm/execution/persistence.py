@@ -1,9 +1,10 @@
+import hashlib
 import json
 import math
 import os
 import re
-from collections.abc import Iterator
-from dataclasses import asdict, dataclass
+from collections.abc import Iterator, Mapping
+from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ import pandas as pd
 from afmc_fm.execution.jobs import CellResult, ShardSpec, benchmark_cell_id
 
 CELL_SCHEMA_VERSION = 1
+PROTOCOL_ANCHOR = "be5a66b2e45362f60c90844e4e25673fb7bb3e21"
 METRIC_ROW_KEYS = frozenset(
     {
         "ablation",
@@ -40,6 +42,27 @@ class RunIdentity:
     protocol_anchor: str
     simulator_config_hash: str
     experiment_config_hash: str
+
+
+def canonical_config_bytes(config: object) -> bytes:
+    """Serialize configuration content with Task 8's canonical JSON contract."""
+    if is_dataclass(config) and not isinstance(config, type):
+        content: object = asdict(config)
+    elif isinstance(config, Mapping):
+        content = dict(config)
+    else:
+        raise TypeError("config must be a dataclass instance or mapping")
+    return json.dumps(
+        content,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+def canonical_config_hash(config: object) -> str:
+    """Return a stable SHA-256 content hash for supported configurations."""
+    return hashlib.sha256(canonical_config_bytes(config)).hexdigest()
 
 
 class RunStore:

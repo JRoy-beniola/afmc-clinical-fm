@@ -1,13 +1,7 @@
-"""Spawn-based scheduling for deterministic benchmark shards.
-
-This module deliberately owns only execution identity needed by ``RunStore``.
-Full run manifests and final derived artifacts belong to the later manifest layer.
-"""
+"""Spawn-based scheduling and persisted finalization for benchmark shards."""
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 import multiprocessing
 import os
@@ -15,6 +9,7 @@ import time
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -30,11 +25,22 @@ from afmc_fm.execution.jobs import (
     plan_shards,
     run_shard,
 )
-from afmc_fm.execution.persistence import RunIdentity, RunStore
+from afmc_fm.execution.manifest import (
+    aggregate_persisted_metrics,
+    baseline_backend_ids,
+    build_run_manifest,
+    write_derived_artifacts,
+    write_run_manifest,
+)
+from afmc_fm.execution.persistence import (
+    PROTOCOL_ANCHOR,
+    RunIdentity,
+    RunStore,
+    canonical_config_hash,
+)
 from afmc_fm.experiments.runner import ExperimentConfig
 from afmc_fm.simulator.config import SimulatorConfig
 
-PROTOCOL_ANCHOR = "be5a66b2e45362f60c90844e4e25673fb7bb3e21"
 THREAD_ENVIRONMENT_VARIABLES = (
     "OMP_NUM_THREADS",
     "MKL_NUM_THREADS",
@@ -143,25 +149,14 @@ class _WorkerResult:
     returned_columns: tuple[str, ...]
 
 
-def _canonical_config_hash(config: SimulatorConfig | ExperimentConfig) -> str:
-    """Derive the minimal stable content identity required by Task 8 persistence."""
-    encoded = json.dumps(
-        asdict(config),
-        allow_nan=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
 def _run_identity(
     simulator: SimulatorConfig,
     experiment: ExperimentConfig,
 ) -> RunIdentity:
     return RunIdentity(
         protocol_anchor=PROTOCOL_ANCHOR,
-        simulator_config_hash=_canonical_config_hash(simulator),
-        experiment_config_hash=_canonical_config_hash(experiment),
+        simulator_config_hash=canonical_config_hash(simulator),
+        experiment_config_hash=canonical_config_hash(experiment),
     )
 
 
@@ -429,11 +424,13 @@ def run_scheduled_benchmark(
     experiment: ExperimentConfig,
     output: Path,
     options: ExecutionOptions,
+    *,
+    template_seed: int = 0,
 ) -> pd.DataFrame:
     """Run deterministic whole-shard futures and rebuild rows from persistence."""
     output = Path(output).resolve()
     _validate_experiment_axes(experiment)
-    shards = plan_shards(experiment, supplied_seed=0)
+    shards = plan_shards(experiment, supplied_seed=template_seed)
     if not shards:
         raise ValueError("benchmark plan must contain at least one shard")
     if len({shard.shard_id for shard in shards}) != len(shards):
@@ -454,6 +451,7 @@ def run_scheduled_benchmark(
     store.validate_resume()
     initial_snapshot = store.load_completed_cell_ids_by_shard()
     _validate_persisted_scope(initial_snapshot, expected_cell_ids)
+    started_at = datetime.now(UTC)
     started = time.monotonic()
     failures: list[ShardFailure] = []
     progress_events: list[dict[str, Any]] = []
@@ -569,13 +567,30 @@ def run_scheduled_benchmark(
     store.validate_resume()
     final_snapshot = store.load_completed_cell_ids_by_shard()
     _validate_persisted_scope(final_snapshot, expected_cell_ids)
-    frame = pd.DataFrame(store.iter_metric_rows(expected_cell_ids))
+    frame = aggregate_persisted_metrics(store, expected_by_shard)
     frame.attrs["failures"] = [asdict(failure) for failure in failures]
     frame.attrs["progress_events"] = progress_events
     frame.attrs["worker_metadata"] = [
         _worker_metadata(result)
         for result in sorted(worker_results, key=lambda item: item.shard.shard_id)
     ]
+    write_derived_artifacts(frame, output)
+    ended_at = datetime.now(UTC)
+    manifest = build_run_manifest(
+        simulator=sim_config,
+        experiment=experiment,
+        resolved_device=device,
+        worker_count=options.workers,
+        backend_ids=baseline_backend_ids(experiment),
+        started_at=started_at,
+        ended_at=ended_at,
+        wall_time_seconds=time.monotonic() - started,
+        expected_by_shard=expected_by_shard,
+        completed_by_shard=final_snapshot,
+        failures=failures,
+        template_seed=template_seed,
+    )
+    write_run_manifest(manifest, output)
     return frame
 
 
