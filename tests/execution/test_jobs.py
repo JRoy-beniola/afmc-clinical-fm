@@ -1,11 +1,12 @@
 from dataclasses import FrozenInstanceError
 
+import pandas as pd
 import pytest
 import torch
 
 from afmc_fm.cli import _experiment_from_yaml
 from afmc_fm.execution import jobs
-from afmc_fm.execution.jobs import ShardSpec, plan_shards, run_shard
+from afmc_fm.execution.jobs import CellResult, ShardSpec, plan_shards, run_shard
 from afmc_fm.experiments import runner
 from afmc_fm.experiments.runner import ExperimentConfig
 from afmc_fm.simulator.config import SimulatorConfig
@@ -128,6 +129,52 @@ def test_run_shard_runs_every_configured_low_n_cell():
     assert set(results["model_seed"]) == {29}
 
 
+def test_run_shard_emits_one_typed_callback_per_completed_cell():
+    experiment = ExperimentConfig(
+        train_sizes=(5, 10),
+        worlds=("smooth",),
+        models=("engineered_linear", "flow_jump_observation"),
+        ablations=("none", "no_flow"),
+        max_epochs=1,
+        patience=1,
+    )
+    spec = ShardSpec("smooth", 17, 23, 29)
+    emitted: list[CellResult] = []
+
+    aggregate = run_shard(
+        spec,
+        SimulatorConfig(cohort_size=30, followup_days=45.0),
+        experiment,
+        torch.device("cpu"),
+        cell_callback=emitted.append,
+    )
+
+    assert len(emitted) == 6
+    assert {
+        (cell.benchmark, cell.n_train, cell.model, cell.ablation)
+        for cell in emitted
+    } == {
+        ("low_n", 5, "engineered_linear", "none"),
+        ("low_n", 10, "engineered_linear", "none"),
+        ("low_n", 5, "flow_jump_observation", "none"),
+        ("low_n", 5, "flow_jump_observation", "no_flow"),
+        ("low_n", 10, "flow_jump_observation", "none"),
+        ("low_n", 10, "flow_jump_observation", "no_flow"),
+    }
+    for cell in emitted:
+        assert cell.shard == spec
+        assert cell.shard_id == spec.shard_id
+        assert not cell.metrics.empty
+        assert cell.metrics["benchmark"].eq(cell.benchmark).all()
+        assert cell.metrics["n_train"].eq(cell.n_train).all()
+        assert cell.metrics["model"].eq(cell.model).all()
+        assert cell.metrics["ablation"].eq(cell.ablation).all()
+    pd.testing.assert_frame_equal(
+        pd.concat([cell.metrics for cell in emitted], ignore_index=True),
+        aggregate,
+    )
+
+
 def test_run_shard_simulates_once_and_encodes_each_patient_once(monkeypatch):
     simulation_calls: list[tuple[str, int]] = []
     encoded_patient_ids: list[str] = []
@@ -154,12 +201,14 @@ def test_run_shard_simulates_once_and_encodes_each_patient_once(monkeypatch):
         max_epochs=1,
         patience=1,
     )
+    emitted: list[CellResult] = []
 
     results = run_shard(
         ShardSpec("site_shift", 31, 37, 41),
         SimulatorConfig(cohort_size=30, followup_days=45.0),
         experiment,
         torch.device("cpu"),
+        cell_callback=emitted.append,
     )
 
     assert simulation_calls == [("site_shift", 31)]
@@ -173,3 +222,11 @@ def test_run_shard_simulates_once_and_encodes_each_patient_once(monkeypatch):
         ("low_n", 5, "flow_jump", "none"),
         ("observation_shift", 5, "flow_jump", "none"),
     }
+    assert [(cell.benchmark, cell.model, cell.ablation) for cell in emitted] == [
+        ("low_n", "flow_jump", "none"),
+        ("observation_shift", "flow_jump", "none"),
+    ]
+    shift = emitted[1].metrics
+    assert {"site_0", "site_1", "site_1_minus_site_0"} <= set(
+        shift["site_or_shift"]
+    )

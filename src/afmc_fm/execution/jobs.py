@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import pandas as pd
@@ -26,6 +27,20 @@ class ShardSpec:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class CellResult:
+    shard: ShardSpec
+    benchmark: str
+    n_train: int
+    model: str
+    ablation: str
+    metrics: pd.DataFrame
+
+    @property
+    def shard_id(self) -> str:
+        return self.shard.shard_id
+
+
 def plan_shards(
     experiment: ExperimentConfig,
     supplied_seed: int,
@@ -44,16 +59,34 @@ def run_shard(
     sim_config: SimulatorConfig,
     experiment: ExperimentConfig,
     device: torch.device,
+    cell_callback: Callable[[CellResult], None] | None = None,
 ) -> pd.DataFrame:
     cohort = (
         simulate_cohort(sim_config, spec.cohort_seed)
         if spec.world == "custom"
         else simulate_world(spec.world, sim_config, spec.cohort_seed)
     )
+
+    def emit_cell(benchmark: str, metrics: pd.DataFrame) -> None:
+        if cell_callback is None:
+            return
+        first = metrics.iloc[0]
+        cell_callback(
+            CellResult(
+                shard=spec,
+                benchmark=benchmark,
+                n_train=int(first["n_train"]),
+                model=str(first["model"]),
+                ablation=str(first["ablation"]),
+                metrics=metrics,
+            )
+        )
+
     return _run_configured_benchmarks_on_cohort(
         cohort,
         experiment,
         spec.subset_seed,
         spec.model_seed,
         device,
+        cell_callback=emit_cell if cell_callback is not None else None,
     )

@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 
@@ -450,6 +450,7 @@ def _run_low_n_on_cohort(
     device: torch.device = _CPU_DEVICE,
     mlp_backend: str = "torch",
     prepared: _PreparedCohort | None = None,
+    cell_callback: Callable[[pd.DataFrame], None] | None = None,
 ) -> pd.DataFrame:
     unknown = set(model_names).difference(MODEL_NAMES)
     if unknown:
@@ -562,26 +563,29 @@ def _run_low_n_on_cohort(
                 )
                 metrics = _evaluate_neural(model, test_batch, device)
                 parameters = _parameter_count(model)
-            for metric, value in metrics.items():
-                rows.append(
-                    {
-                        "model": model_name,
-                        "ablation": ablation,
-                        "n_train": n_train,
-                        "n_fit": len(budget.fit_ids),
-                        "n_validation": len(budget.validation_ids),
-                        "seed": subset_seed,
-                        "cohort_seed": cohort.seed,
-                        "subset_seed": subset_seed,
-                        "model_seed": model_seed,
-                        "split": "test",
-                        "site_or_shift": "all",
-                        "metric": metric,
-                        "value": value,
-                        "trainable_parameters": parameters,
-                        "backend": backend,
-                    }
-                )
+            cell_rows = [
+                {
+                    "model": model_name,
+                    "ablation": ablation,
+                    "n_train": n_train,
+                    "n_fit": len(budget.fit_ids),
+                    "n_validation": len(budget.validation_ids),
+                    "seed": subset_seed,
+                    "cohort_seed": cohort.seed,
+                    "subset_seed": subset_seed,
+                    "model_seed": model_seed,
+                    "split": "test",
+                    "site_or_shift": "all",
+                    "metric": metric,
+                    "value": value,
+                    "trainable_parameters": parameters,
+                    "backend": backend,
+                }
+                for metric, value in metrics.items()
+            ]
+            rows.extend(cell_rows)
+            if cell_callback is not None:
+                cell_callback(pd.DataFrame(cell_rows))
     return pd.DataFrame(rows)
 
 
@@ -630,6 +634,7 @@ def _run_observation_shift_on_cohort(
     ablations: Sequence[str],
     device: torch.device,
     prepared: _PreparedCohort | None = None,
+    cell_callback: Callable[[pd.DataFrame], None] | None = None,
 ) -> pd.DataFrame:
     ids_by_site = {
         site_id: [
@@ -711,9 +716,10 @@ def _run_observation_shift_on_cohort(
                 for site, batch in evaluation_batches.items()
             }
             parameters = _parameter_count(model)
+            cell_rows: list[dict[str, object]] = []
             for site, metrics in by_site.items():
                 for metric, value in metrics.items():
-                    rows.append(
+                    cell_rows.append(
                         {
                             "model": model_name,
                             "ablation": ablation,
@@ -736,7 +742,7 @@ def _run_observation_shift_on_cohort(
                 if site == config.train_site:
                     continue
                 for metric, value in metrics.items():
-                    rows.append(
+                    cell_rows.append(
                         {
                             "model": model_name,
                             "ablation": ablation,
@@ -756,6 +762,9 @@ def _run_observation_shift_on_cohort(
                             "trainable_parameters": parameters,
                         }
                     )
+            rows.extend(cell_rows)
+            if cell_callback is not None:
+                cell_callback(pd.DataFrame(cell_rows))
     return pd.DataFrame(rows)
 
 
@@ -765,8 +774,22 @@ def _run_configured_benchmarks_on_cohort(
     subset_seed: int,
     model_seed: int,
     device: torch.device,
+    cell_callback: Callable[[str, pd.DataFrame], None] | None = None,
 ) -> pd.DataFrame:
     prepared = _prepare_cohort(cohort)
+
+    def emit_cell(benchmark: str, metrics: pd.DataFrame) -> None:
+        metrics["world"] = cohort.config.world_name
+        metrics["benchmark"] = benchmark
+        if cell_callback is not None:
+            cell_callback(benchmark, metrics)
+
+    def emit_low_n_cell(metrics: pd.DataFrame) -> None:
+        emit_cell("low_n", metrics)
+
+    def emit_observation_shift_cell(metrics: pd.DataFrame) -> None:
+        emit_cell("observation_shift", metrics)
+
     low_n = _run_low_n_on_cohort(
         cohort,
         config,
@@ -776,6 +799,7 @@ def _run_configured_benchmarks_on_cohort(
         config.ablations,
         device,
         prepared=prepared,
+        cell_callback=(emit_low_n_cell if cell_callback is not None else None),
     )
     low_n["world"] = cohort.config.world_name
     low_n["benchmark"] = "low_n"
@@ -793,6 +817,11 @@ def _run_configured_benchmarks_on_cohort(
             config.ablations,
             device,
             prepared=prepared,
+            cell_callback=(
+                emit_observation_shift_cell
+                if cell_callback is not None
+                else None
+            ),
         )
         observation_shift["world"] = cohort.config.world_name
         observation_shift["benchmark"] = "observation_shift"
