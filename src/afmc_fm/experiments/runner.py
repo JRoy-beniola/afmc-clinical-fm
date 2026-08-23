@@ -11,6 +11,7 @@ from afmc_fm.data.encoding import SummaryHistoryEncoder
 from afmc_fm.data.sequences import PatientSequence, build_patient_sequence
 from afmc_fm.data.splits import split_patient_ids
 from afmc_fm.data.tasks import LongitudinalTask
+from afmc_fm.execution.device import move_batch
 from afmc_fm.metrics.forecasting import (
     binary_metrics,
     gaussian_forecasting_metrics,
@@ -51,6 +52,8 @@ ABLATION_IDS = (
     "no_observation_head",
     "no_prob_scale",
 )
+
+_CPU_DEVICE = torch.device("cpu")
 
 
 @dataclass(frozen=True)
@@ -307,7 +310,11 @@ def _fit_neural(
     validation: dict[str, torch.Tensor],
     config: ExperimentConfig,
     observation_aware: bool,
+    device: torch.device,
 ) -> nn.Module:
+    model = model.to(device)
+    train = move_batch(train, device)
+    validation = move_batch(validation, device)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
     )
@@ -337,7 +344,12 @@ def _fit_neural(
     return model
 
 
-def _evaluate_neural(model: nn.Module, batch: dict[str, torch.Tensor]) -> dict[str, float]:
+def _evaluate_neural(
+    model: nn.Module,
+    batch: dict[str, torch.Tensor],
+    device: torch.device,
+) -> dict[str, float]:
+    batch = move_batch(batch, device)
     model.eval()
     with torch.no_grad():
         output = model(
@@ -353,16 +365,16 @@ def _evaluate_neural(model: nn.Module, batch: dict[str, torch.Tensor]) -> dict[s
             ),
         )
     selected = batch["target_masks"].bool()
-    truth = batch["target_values"][selected].numpy()
-    mean = output.value_mean[selected].numpy()
-    log_scale = output.value_log_scale[selected].numpy()
+    truth = batch["target_values"][selected].detach().cpu().numpy()
+    mean = output.value_mean[selected].detach().cpu().numpy()
+    log_scale = output.value_log_scale[selected].detach().cpu().numpy()
     metrics = regression_metrics(truth, mean)
     metrics.update(gaussian_forecasting_metrics(truth, mean, log_scale))
 
     event_selected = batch["event_valid"].bool()
     event_metrics = binary_metrics(
-        batch["target_events"][event_selected].numpy(),
-        torch.sigmoid(output.event_logits[event_selected]).numpy(),
+        batch["target_events"][event_selected].detach().cpu().numpy(),
+        torch.sigmoid(output.event_logits[event_selected]).detach().cpu().numpy(),
     )
     metrics.update({f"event_{name}": value for name, value in event_metrics.items()})
 
@@ -374,8 +386,8 @@ def _evaluate_neural(model: nn.Module, batch: dict[str, torch.Tensor]) -> dict[s
             else output.states
         )
         metrics["latent_aligned_r2"] = aligned_latent_r2(
-            batch["latent_targets"][latent_selected].numpy(),
-            learned_states[latent_selected].numpy(),
+            batch["latent_targets"][latent_selected].detach().cpu().numpy(),
+            learned_states[latent_selected].detach().cpu().numpy(),
         )
     return metrics
 
@@ -414,6 +426,7 @@ def _run_low_n_on_cohort(
     model_seed: int,
     model_names: Sequence[str] = MODEL_NAMES,
     ablations: Sequence[str] = ("none",),
+    device: torch.device = _CPU_DEVICE,
 ) -> pd.DataFrame:
     unknown = set(model_names).difference(MODEL_NAMES)
     if unknown:
@@ -503,9 +516,14 @@ def _run_low_n_on_cohort(
                         len(EventType),
                     )
                 model = _fit_neural(
-                    model, train_batch, validation_batch, config, observation_aware
+                    model,
+                    train_batch,
+                    validation_batch,
+                    config,
+                    observation_aware,
+                    device,
                 )
-                metrics = _evaluate_neural(model, test_batch)
+                metrics = _evaluate_neural(model, test_batch, device)
                 parameters = _parameter_count(model)
             for metric, value in metrics.items():
                 rows.append(
@@ -542,6 +560,7 @@ def run_low_n_benchmark(
     config: ExperimentConfig,
     model_names: Sequence[str] | None = None,
     ablations: Sequence[str] | None = None,
+    device: torch.device = _CPU_DEVICE,
 ) -> pd.DataFrame:
     selected_models = tuple(config.models if model_names is None else model_names)
     selected_ablations = tuple(
@@ -555,6 +574,7 @@ def run_low_n_benchmark(
             model_seed,
             selected_models,
             selected_ablations,
+            device,
         )
         for cohort_seed, subset_seed, model_seed in config.seed_bundles(cohort.seed)
     ]
@@ -568,6 +588,7 @@ def _run_observation_shift_on_cohort(
     model_seed: int,
     model_names: Sequence[str],
     ablations: Sequence[str],
+    device: torch.device,
 ) -> pd.DataFrame:
     ids_by_site = {
         site_id: [
@@ -642,10 +663,15 @@ def _run_observation_shift_on_cohort(
                 len(EventType),
             )
             model = _fit_neural(
-                model, train_batch, validation_batch, config, observation_aware
+                model,
+                train_batch,
+                validation_batch,
+                config,
+                observation_aware,
+                device,
             )
             by_site = {
-                site: _evaluate_neural(model, batch)
+                site: _evaluate_neural(model, batch, device)
                 for site, batch in evaluation_batches.items()
             }
             parameters = _parameter_count(model)
@@ -702,6 +728,7 @@ def run_observation_shift_benchmark(
     config: ExperimentConfig,
     model_names: Sequence[str] | None = None,
     ablations: Sequence[str] | None = None,
+    device: torch.device = _CPU_DEVICE,
 ) -> pd.DataFrame:
     configured_models = config.models if model_names is None else model_names
     selected_models = tuple(
@@ -720,6 +747,7 @@ def run_observation_shift_benchmark(
             model_seed,
             selected_models,
             selected_ablations,
+            device,
         )
         for cohort_seed, subset_seed, model_seed in config.seed_bundles(cohort.seed)
     ]

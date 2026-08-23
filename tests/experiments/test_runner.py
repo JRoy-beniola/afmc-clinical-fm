@@ -1,4 +1,6 @@
 import numpy as np
+import pandas as pd
+import torch
 
 from afmc_fm.data.encoding import SummaryHistoryEncoder
 from afmc_fm.data.sequences import build_patient_sequence
@@ -194,6 +196,7 @@ def test_neural_benchmark_reports_forecasting_event_and_latent_metrics():
         cohort,
         config,
         model_names=("flow_jump",),
+        device=torch.device("cpu"),
     )
     assert {
         "mae",
@@ -205,6 +208,38 @@ def test_neural_benchmark_reports_forecasting_event_and_latent_metrics():
         "event_log_loss",
         "latent_aligned_r2",
     } <= set(results["metric"])
+    assert np.isfinite(results["value"]).all()
+
+
+def test_explicit_cpu_matches_default_neural_results():
+    cohort = simulate_cohort(
+        SimulatorConfig(cohort_size=30, followup_days=45.0), seed=27
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        subset_seeds=(2,),
+        model_seeds=(3,),
+        max_epochs=1,
+        patience=1,
+    )
+
+    default = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("gru_from_scratch",),
+    )
+    explicit_cpu = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("gru_from_scratch",),
+        device=torch.device("cpu"),
+    )
+
+    key = ["model", "ablation", "metric", "site_or_shift"]
+    pd.testing.assert_frame_equal(
+        default.sort_values(key).reset_index(drop=True),
+        explicit_cpu.sort_values(key).reset_index(drop=True),
+    )
 
 
 def test_repetitions_regenerate_independent_cohorts_and_report_seed_roles():
@@ -273,3 +308,29 @@ def test_observation_shift_honors_configured_train_and_test_sites():
     assert {"site_1", "site_0", "site_0_minus_site_1"} <= set(
         results["site_or_shift"]
     )
+
+
+def test_observation_shift_runs_on_explicit_cpu_device():
+    cohort = simulate_world(
+        "site_shift",
+        SimulatorConfig(cohort_size=30, followup_days=45.0),
+        seed=29,
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        subset_seeds=(2,),
+        model_seeds=(3,),
+        max_epochs=1,
+        patience=1,
+    )
+
+    results = run_observation_shift_benchmark(
+        cohort,
+        config,
+        model_names=("flow_jump",),
+        device=torch.device("cpu"),
+    )
+
+    assert not results.empty
+    defined_metrics = results[results["metric"] != "event_roc_auc"]
+    assert np.isfinite(defined_metrics["value"]).all()
