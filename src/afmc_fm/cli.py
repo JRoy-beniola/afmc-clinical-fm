@@ -13,6 +13,7 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 
 from afmc_fm.config import load_yaml
+from afmc_fm.execution.device import runtime_diagnostics
 from afmc_fm.experiments.runner import (
     ExperimentConfig,
     run_low_n_benchmark,
@@ -145,6 +146,19 @@ def _simulate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _diagnostics(args: argparse.Namespace) -> int:
+    diagnostics = runtime_diagnostics(args.device, args.workers)
+    print(json.dumps(diagnostics, indent=2, sort_keys=True))
+    return 0
+
+
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("workers must be at least 1")
+    return parsed
+
+
 def _benchmark(args: argparse.Namespace) -> int:
     sim_config, seed = _simulator_from_yaml(args.sim_config)
     experiment = _experiment_from_yaml(args.exp_config)
@@ -192,6 +206,10 @@ def _parser() -> argparse.ArgumentParser:
     simulate.add_argument("--config", required=True)
     simulate.add_argument("--output", required=True)
     simulate.set_defaults(handler=_simulate)
+    diagnostics = subparsers.add_parser("diagnostics")
+    diagnostics.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    diagnostics.add_argument("--workers", type=_positive_int, default=1)
+    diagnostics.set_defaults(handler=_diagnostics)
     benchmark = subparsers.add_parser("benchmark")
     benchmark.add_argument("--sim-config", required=True)
     benchmark.add_argument("--exp-config", required=True)
