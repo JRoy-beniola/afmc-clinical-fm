@@ -99,6 +99,7 @@ class RunStore:
         return cell_id
 
     def validate_resume(self) -> None:
+        self._shards_root()
         expected_identity = asdict(self.identity)
         for path in self.output.glob("shards/*/cells/*.json"):
             self._require_contained(path)
@@ -110,7 +111,11 @@ class RunStore:
                 continue
             if not isinstance(payload, dict):
                 continue
-            if payload.get("schema_version") != CELL_SCHEMA_VERSION:
+            if (
+                type(payload.get("schema_version")) is not int
+                or payload["schema_version"] != CELL_SCHEMA_VERSION
+            ):
+                self._invalidate_marker_for_cell_path(path)
                 raise ValueError(f"incompatible execution schema in persisted cell: {path}")
             actual_identity = payload.get("run_identity")
             if actual_identity == expected_identity:
@@ -120,7 +125,9 @@ class RunStore:
                     not isinstance(actual_identity, dict)
                     or actual_identity.get(field) != expected_value
                 ):
+                    self._invalidate_marker_for_cell_path(path)
                     raise ValueError(f"incompatible run identity in persisted cell: {field}")
+            self._invalidate_marker_for_cell_path(path)
             raise ValueError("incompatible run identity in persisted cell: unknown fields")
         self._remove_stale_complete_markers()
 
@@ -195,6 +202,7 @@ class RunStore:
             valid_shape = (
                 isinstance(payload, dict)
                 and set(payload) == {"cell_ids", "run_identity", "schema_version", "shard_id"}
+                and type(payload["schema_version"]) is int
                 and payload["schema_version"] == CELL_SCHEMA_VERSION
                 and payload["run_identity"] == expected_identity
                 and payload["shard_id"] == shard_id
@@ -210,18 +218,30 @@ class RunStore:
 
     def _shard_dir(self, shard_id: str) -> Path:
         _require_safe_segment(shard_id, "shard ID")
-        shards_root = (self.output / "shards").resolve()
+        shards_root = self._shards_root()
         shard_dir = (shards_root / shard_id).resolve()
         if shard_dir.parent != shards_root:
             raise ValueError("shard ID must resolve beneath output/shards")
         return shard_dir
 
-    def _require_contained(self, path: Path) -> None:
+    def _shards_root(self) -> Path:
+        resolved_output = self.output.resolve()
         shards_root = (self.output / "shards").resolve()
+        if shards_root.parent != resolved_output:
+            raise ValueError("shards root must resolve directly beneath output")
+        return shards_root
+
+    def _require_contained(self, path: Path) -> None:
+        shards_root = self._shards_root()
         try:
             path.resolve().relative_to(shards_root)
         except ValueError as exc:
             raise ValueError("persisted path must resolve beneath output/shards") from exc
+
+    def _invalidate_marker_for_cell_path(self, path: Path) -> None:
+        marker = path.parent.parent / "COMPLETE"
+        self._require_contained(marker)
+        marker.unlink(missing_ok=True)
 
     def iter_metric_rows(self) -> Iterator[dict[str, Any]]:
         self.validate_resume()

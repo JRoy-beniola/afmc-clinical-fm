@@ -142,12 +142,13 @@ def test_validate_resume_hard_fails_for_incompatible_scientific_identity(
         incompatible_store.validate_resume()
 
 
-def test_validate_resume_hard_fails_for_incompatible_execution_schema(tmp_path):
+@pytest.mark.parametrize("invalid_schema", [999, True])
+def test_validate_resume_hard_fails_for_incompatible_execution_schema(tmp_path, invalid_schema):
     store = RunStore(tmp_path / "run", _identity())
     cell_id = store.write_cell(_cell())
     path = tmp_path / "run" / "shards" / _cell().shard.shard_id / "cells" / f"{cell_id}.json"
     payload = json.loads(path.read_text())
-    path.write_text(json.dumps({**payload, "schema_version": 999}))
+    path.write_text(json.dumps({**payload, "schema_version": invalid_schema}))
 
     with pytest.raises(ValueError, match="incompatible execution schema"):
         store.validate_resume()
@@ -434,18 +435,31 @@ def test_mark_shard_complete_requires_exact_nonempty_expected_cell_set(tmp_path)
     assert second_id != first_id
 
 
-def test_revalidation_removes_stale_complete_marker_when_a_cell_becomes_invalid(
-    tmp_path,
-):
+@pytest.mark.parametrize("mutation", ["truncated", "schema", "identity"])
+def test_revalidation_removes_stale_complete_marker_when_a_cell_becomes_invalid(tmp_path, mutation):
     store = RunStore(tmp_path / "run", _identity())
     cell = _cell()
     cell_id = store.write_cell(cell)
     marker = tmp_path / "run" / "shards" / cell.shard.shard_id / "COMPLETE"
     store.mark_shard_complete(cell.shard.shard_id, {cell_id})
     path = marker.parent / "cells" / f"{cell_id}.json"
-    path.write_text('{"schema_version": 1')
+    if mutation == "truncated":
+        path.write_text('{"schema_version": 1')
+    else:
+        payload = json.loads(path.read_text())
+        if mutation == "schema":
+            payload["schema_version"] = 999
+            message = "incompatible execution schema"
+        else:
+            payload["run_identity"]["experiment_config_hash"] = "different"
+            message = "incompatible run identity"
+        path.write_text(json.dumps(payload))
 
-    store.validate_resume()
+    if mutation == "truncated":
+        store.validate_resume()
+    else:
+        with pytest.raises(ValueError, match=message):
+            store.validate_resume()
 
     assert not marker.exists()
 
@@ -577,6 +591,41 @@ def test_global_reader_rejects_noncanonical_persisted_shard_directory(tmp_path):
 
     with pytest.raises(ValueError, match="canonical safe path segment"):
         store.load_completed_cell_ids()
+
+
+@pytest.mark.parametrize("operation", ["write", "validate", "load"])
+def test_entrypoints_reject_symlinked_shards_root_outside_output(tmp_path, operation):
+    output = tmp_path / "run"
+    output.mkdir()
+    external_shards = tmp_path / "external-shards"
+    external_shards.mkdir()
+    (output / "shards").symlink_to(external_shards, target_is_directory=True)
+    store = RunStore(output, _identity())
+
+    with pytest.raises(ValueError, match="shards root must resolve directly beneath output"):
+        if operation == "write":
+            store.write_cell(_cell())
+        elif operation == "validate":
+            store.validate_resume()
+        else:
+            store.load_completed_cell_ids()
+
+    assert list(external_shards.iterdir()) == []
+
+
+def test_resume_validation_removes_marker_with_boolean_schema_version(tmp_path):
+    store = RunStore(tmp_path / "run", _identity())
+    cell = _cell()
+    cell_id = store.write_cell(cell)
+    marker = tmp_path / "run" / "shards" / cell.shard.shard_id / "COMPLETE"
+    store.mark_shard_complete(cell.shard.shard_id, {cell_id})
+    payload = json.loads(marker.read_text())
+    payload["schema_version"] = True
+    marker.write_text(json.dumps(payload))
+
+    store.validate_resume()
+
+    assert not marker.exists()
 
 
 def test_iter_metric_rows_derives_rows_only_from_valid_persisted_cells(tmp_path):
