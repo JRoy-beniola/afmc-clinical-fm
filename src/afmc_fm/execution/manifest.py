@@ -6,10 +6,12 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, is_dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -77,8 +79,7 @@ _COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 def collect_runtime_metadata(resolved_device: str) -> dict[str, object]:
     """Collect portable software, host, and accelerator provenance."""
     cuda_available = torch.cuda.is_available()
-    using_cuda = resolved_device == "cuda"
-    capability = torch.cuda.get_device_capability(0) if using_cuda else None
+    capability = torch.cuda.get_device_capability(0) if cuda_available else None
     return {
         "python_version": platform.python_version(),
         "library_versions": {
@@ -93,7 +94,7 @@ def collect_runtime_metadata(resolved_device: str) -> dict[str, object]:
         "wsl": _is_wsl(),
         "cuda_available": cuda_available,
         "cuda_runtime": torch.version.cuda,
-        "gpu_name": torch.cuda.get_device_name(0) if using_cuda else None,
+        "gpu_name": torch.cuda.get_device_name(0) if cuda_available else None,
         "gpu_compute_capability": (
             f"{capability[0]}.{capability[1]}" if capability is not None else None
         ),
@@ -153,38 +154,76 @@ def build_run_manifest(
     expected_by_shard: Mapping[str, frozenset[str]],
     completed_by_shard: Mapping[str, frozenset[str]],
     failures: Sequence[object] = (),
+    cancelled_shard_ids: frozenset[str] = frozenset(),
     execution_commit_sha: str | None = None,
     runtime_metadata: Mapping[str, object] | None = None,
     template_seed: int = 0,
+    original_started_at: datetime | None = None,
+    invocation_started_at: datetime | None = None,
+    invocation_number: int = 1,
+    invocation_wall_time_seconds: float | None = None,
+    cumulative_wall_time_seconds: float | None = None,
 ) -> dict[str, object]:
     """Build the complete JSON-compatible scientific and execution manifest."""
     if worker_count < 1:
         raise ValueError("worker_count must be at least 1")
     if resolved_device not in {"cpu", "cuda"}:
         raise ValueError("resolved_device must be cpu or cuda")
-    if ended_at < started_at:
+    original_start = started_at if original_started_at is None else original_started_at
+    invocation_start = (
+        started_at if invocation_started_at is None else invocation_started_at
+    )
+    invocation_wall = (
+        wall_time_seconds
+        if invocation_wall_time_seconds is None
+        else invocation_wall_time_seconds
+    )
+    cumulative_wall = (
+        wall_time_seconds
+        if cumulative_wall_time_seconds is None
+        else cumulative_wall_time_seconds
+    )
+    if ended_at < invocation_start:
         raise ValueError("ended_at must not precede started_at")
-    if wall_time_seconds < 0:
+    if invocation_wall < 0 or cumulative_wall < 0:
         raise ValueError("wall_time_seconds must be non-negative")
+    if invocation_number < 1:
+        raise ValueError("invocation_number must be at least 1")
 
     failure_payloads = [_failure_payload(failure) for failure in failures]
+    planned_shard_ids = set(expected_by_shard)
     failed_shard_ids = {
         str(failure["shard_id"])
         for failure in failure_payloads
         if "shard_id" in failure
-    }
+    } & planned_shard_ids
+    cancelled_ids = (set(cancelled_shard_ids) & planned_shard_ids) - failed_shard_ids
+    complete_ids = {
+        shard_id
+        for shard_id, expected in expected_by_shard.items()
+        if completed_by_shard.get(shard_id, frozenset()) == expected
+    } - failed_shard_ids - cancelled_ids
+    incomplete_ids = (
+        planned_shard_ids - complete_ids - failed_shard_ids - cancelled_ids
+    )
     completed_cell_count = sum(
         len(expected.intersection(completed_by_shard.get(shard_id, frozenset())))
-        for shard_id, expected in expected_by_shard.items()
-    )
-    completed_shard_count = sum(
-        completed_by_shard.get(shard_id, frozenset()) == expected
         for shard_id, expected in expected_by_shard.items()
     )
     failed_cell_count = sum(
         len(expected - completed_by_shard.get(shard_id, frozenset()))
         for shard_id, expected in expected_by_shard.items()
         if shard_id in failed_shard_ids
+    )
+    cancelled_cell_count = sum(
+        len(expected - completed_by_shard.get(shard_id, frozenset()))
+        for shard_id, expected in expected_by_shard.items()
+        if shard_id in cancelled_ids
+    )
+    incomplete_cell_count = sum(
+        len(expected - completed_by_shard.get(shard_id, frozenset()))
+        for shard_id, expected in expected_by_shard.items()
+        if shard_id in incomplete_ids
     )
     runtime = dict(
         collect_runtime_metadata(resolved_device)
@@ -232,16 +271,28 @@ def build_run_manifest(
         "cpu_logical_count": runtime["cpu_logical_count"],
         "worker_count": worker_count,
         "backend_ids": dict(sorted(backend_ids.items())),
-        "started_at": started_at.isoformat(),
+        "started_at": original_start.isoformat(),
+        "original_started_at": original_start.isoformat(),
         "ended_at": ended_at.isoformat(),
         "generated_at": ended_at.isoformat(),
-        "wall_time_seconds": wall_time_seconds,
+        "wall_time_seconds": cumulative_wall,
+        "cumulative_wall_time_seconds": cumulative_wall,
+        "invocation_started_at": invocation_start.isoformat(),
+        "invocation_ended_at": ended_at.isoformat(),
+        "invocation_wall_time_seconds": invocation_wall,
+        "invocation_number": invocation_number,
         "expected_shard_count": len(expected_by_shard),
-        "completed_shard_count": completed_shard_count,
+        "completed_shard_count": len(complete_ids),
         "failed_shard_count": len(failed_shard_ids),
+        "cancelled_shard_count": len(cancelled_ids),
+        "incomplete_shard_count": len(incomplete_ids),
+        "cancelled_shard_ids": sorted(cancelled_ids),
+        "incomplete_shard_ids": sorted(incomplete_ids),
         "expected_cell_count": sum(map(len, expected_by_shard.values())),
         "completed_cell_count": completed_cell_count,
         "failed_cell_count": failed_cell_count,
+        "cancelled_cell_count": cancelled_cell_count,
+        "incomplete_cell_count": incomplete_cell_count,
         "failures": failure_payloads,
         "cell_schema_version": CELL_SCHEMA_VERSION,
         "schema_version": OUTPUT_SCHEMA_VERSION,
@@ -351,18 +402,39 @@ def _write_csv(frame: pandas.DataFrame, output: Path) -> None:
 
 
 def write_derived_artifacts(metrics: pandas.DataFrame, output: Path) -> None:
-    """Write the unchanged public CSV and learning-curve definitions atomically."""
+    """Stage and rollback-safely publish one complete artifact generation."""
     output.mkdir(parents=True, exist_ok=True)
-    _write_csv(metrics, output / "metrics.csv")
-    _write_csv(
-        metrics[metrics["ablation"] != "none"],
-        output / "ablation_metrics.csv",
-    )
-    _write_csv(_phase0_gate_summary(metrics), output / "gate_summary.csv")
-    plot_output = output / "learning_curves.png"
-    temporary_plot = plot_output.with_name(f".{plot_output.name}.tmp")
-    _plot_learning_curves(metrics, temporary_plot)
-    temporary_plot.replace(plot_output)
+    staging = Path(tempfile.mkdtemp(prefix=".artifacts-", dir=output))
+    backup = staging / "previous"
+    try:
+        _write_csv(metrics, staging / "metrics.csv")
+        _write_csv(
+            metrics[metrics["ablation"] != "none"],
+            staging / "ablation_metrics.csv",
+        )
+        _write_csv(_phase0_gate_summary(metrics), staging / "gate_summary.csv")
+        _plot_learning_curves(metrics, staging / "learning_curves.png")
+
+        backup.mkdir()
+        backed_up: list[str] = []
+        published: list[str] = []
+        try:
+            for name in DERIVED_ARTIFACT_NAMES:
+                final = output / name
+                if final.exists():
+                    final.replace(backup / name)
+                    backed_up.append(name)
+            for name in DERIVED_ARTIFACT_NAMES:
+                (staging / name).replace(output / name)
+                published.append(name)
+        except Exception:
+            for name in published:
+                (output / name).unlink(missing_ok=True)
+            for name in backed_up:
+                (backup / name).replace(output / name)
+            raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
 
 
 def write_run_manifest(manifest: Mapping[str, object], output: Path) -> None:
@@ -398,6 +470,12 @@ def reaggregate_benchmark_outputs(
         for shard in shards
     }
     store = RunStore(output, _run_identity(simulator, experiment))
+    store.initialize_run(
+        expected_by_shard,
+        execution_commit_sha=execution_commit_sha(),
+        original_started_at=datetime.now(UTC),
+        resume=True,
+    )
     metrics = aggregate_persisted_metrics(store, expected_by_shard)
     write_derived_artifacts(metrics, output)
     return metrics

@@ -1,6 +1,7 @@
 import json
 import shutil
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -516,6 +517,135 @@ def test_writing_a_new_cell_invalidates_prior_shard_completion(tmp_path):
     store.write_cell(replace(first, n_train=10, metrics=second_metrics))
 
     assert not marker.exists()
+
+
+def test_root_run_record_atomically_persists_and_validates_exact_identity_and_plan(
+    tmp_path,
+):
+    from afmc_fm.execution.persistence import ROOT_RUN_SCHEMA_VERSION
+
+    output = tmp_path / "run"
+    expected = {
+        "smooth__cohort17__subset23__model31": frozenset(("cell-b", "cell-a")),
+        "jumps__cohort17__subset23__model31": frozenset(("cell-c",)),
+    }
+    started_at = datetime(2026, 8, 23, 12, tzinfo=UTC)
+    store = RunStore(output, _identity())
+
+    record = store.initialize_run(
+        expected,
+        execution_commit_sha="a" * 40,
+        original_started_at=started_at,
+        resume=False,
+    )
+
+    assert record == {
+        "completed_invocation_count": 0,
+        "cumulative_wall_time_seconds": 0.0,
+        "execution_commit_sha": "a" * 40,
+        "expected_shards": [
+            {
+                "cell_ids": ["cell-c"],
+                "shard_id": "jumps__cohort17__subset23__model31",
+            },
+            {
+                "cell_ids": ["cell-a", "cell-b"],
+                "shard_id": "smooth__cohort17__subset23__model31",
+            },
+        ],
+        "last_invocation": None,
+        "original_started_at": "2026-08-23T12:00:00+00:00",
+        "run_identity": {
+            "experiment_config_hash": "experiment-sha256",
+            "protocol_anchor": PROTOCOL_ANCHOR,
+            "simulator_config_hash": "simulator-sha256",
+        },
+        "schema_version": ROOT_RUN_SCHEMA_VERSION,
+    }
+    path = output / "run_record.json"
+    assert json.loads(path.read_text(encoding="utf-8")) == record
+    assert not (output / ".run_record.json.tmp").exists()
+    assert store.initialize_run(
+        expected,
+        execution_commit_sha="a" * 40,
+        original_started_at=datetime(2099, 1, 1, tzinfo=UTC),
+        resume=True,
+    ) == record
+
+    with pytest.raises(ValueError, match="incompatible run plan"):
+        store.initialize_run(
+            {**expected, "extra-shard": frozenset(("extra-cell",))},
+            execution_commit_sha="a" * 40,
+            original_started_at=started_at,
+            resume=True,
+        )
+    with pytest.raises(ValueError, match="incompatible execution commit"):
+        store.initialize_run(
+            expected,
+            execution_commit_sha="b" * 40,
+            original_started_at=started_at,
+            resume=True,
+        )
+
+
+def test_resume_requires_compatible_root_record_even_when_no_cells_exist(tmp_path):
+    output = tmp_path / "run"
+    output.mkdir()
+    (output / "metrics.csv").write_text("old,incompatible\n")
+    store = RunStore(output, _identity())
+
+    with pytest.raises(ValueError, match="missing run root record"):
+        store.initialize_run(
+            {"shard": frozenset(("cell",))},
+            execution_commit_sha="a" * 40,
+            original_started_at=datetime.now(UTC),
+            resume=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation", ["schema", "identity", "plan", "timing", "timestamp"]
+)
+def test_resume_rejects_corrupt_or_incompatible_root_record_without_cells(
+    tmp_path,
+    mutation,
+):
+    output = tmp_path / "run"
+    store = RunStore(output, _identity())
+    expected = {"shard": frozenset(("cell",))}
+    store.initialize_run(
+        expected,
+        execution_commit_sha="a" * 40,
+        original_started_at=datetime.now(UTC),
+        resume=False,
+    )
+    path = output / "run_record.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if mutation == "schema":
+        payload["schema_version"] = 999
+        message = "incompatible run root schema"
+    elif mutation == "identity":
+        payload["run_identity"]["protocol_anchor"] = "different"
+        message = "incompatible run identity"
+    else:
+        if mutation == "plan":
+            payload["expected_shards"][0]["cell_ids"] = ["different-cell"]
+            message = "incompatible run plan"
+        elif mutation == "timing":
+            payload["cumulative_wall_time_seconds"] = -1.0
+            message = "invalid run root record"
+        else:
+            payload["original_started_at"] = "not-a-timestamp"
+            message = "invalid run root record"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        store.initialize_run(
+            expected,
+            execution_commit_sha="a" * 40,
+            original_started_at=datetime.now(UTC),
+            resume=True,
+        )
 
 
 def test_public_shard_paths_reject_traversal_without_touching_outside_marker(

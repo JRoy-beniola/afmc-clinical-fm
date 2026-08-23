@@ -1,5 +1,6 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pandas as pd
 import pytest
@@ -31,6 +32,74 @@ def test_canonical_config_hash_is_order_independent_and_task8_compatible():
     )
 
 
+def test_canonical_config_normalizes_nested_dataclasses_sets_and_path_flavours():
+    from afmc_fm.execution.persistence import canonical_config_bytes
+
+    @dataclass(frozen=True)
+    class NestedConfig:
+        labels: frozenset[str]
+        root: object
+
+    first = {
+        "choices": {2, 1},
+        "nested": NestedConfig(
+            labels=frozenset(("zeta", "alpha")),
+            root=PureWindowsPath("C:\\research\\run"),
+        ),
+        "posix": PurePosixPath("/research/run"),
+    }
+    second = {
+        "posix": PurePosixPath("/research/run"),
+        "nested": NestedConfig(
+            root=PureWindowsPath("C:/research/run"),
+            labels=frozenset(("alpha", "zeta")),
+        ),
+        "choices": {1, 2},
+    }
+
+    expected = (
+        b'{"choices":{"__afmc_type__":"set","items":[1,2]},'
+        b'"nested":{"labels":{"__afmc_type__":"frozenset",'
+        b'"items":["alpha","zeta"]},"root":{"__afmc_type__":"path",'
+        b'"flavour":"windows","value":"C:/research/run"}},'
+        b'"posix":{"__afmc_type__":"path","flavour":"posix",'
+        b'"value":"/research/run"}}'
+    )
+    assert canonical_config_bytes(first) == expected
+    assert canonical_config_bytes(second) == expected
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_canonical_config_rejects_nonfinite_values_at_any_depth(value):
+    from afmc_fm.execution.persistence import canonical_config_bytes
+
+    with pytest.raises(ValueError, match="finite"):
+        canonical_config_bytes({"nested": [value]})
+
+
+def test_canonical_config_rejects_unsupported_nested_types():
+    from afmc_fm.execution.persistence import canonical_config_bytes
+
+    with pytest.raises(TypeError, match="unsupported canonical config type.*object"):
+        canonical_config_bytes({"nested": object()})
+
+
+def test_cpu_manifest_reports_available_gpu_independently_of_selected_device(
+    monkeypatch,
+):
+    from afmc_fm.execution.manifest import collect_runtime_metadata
+
+    monkeypatch.setattr("torch.cuda.is_available", lambda: True)
+    monkeypatch.setattr("torch.cuda.get_device_name", lambda index: "Test GPU")
+    monkeypatch.setattr("torch.cuda.get_device_capability", lambda index: (8, 9))
+
+    runtime = collect_runtime_metadata("cpu")
+
+    assert runtime["cuda_available"] is True
+    assert runtime["gpu_name"] == "Test GPU"
+    assert runtime["gpu_compute_capability"] == "8.9"
+
+
 def test_build_run_manifest_records_complete_reproducibility_and_failure_counts():
     from afmc_fm.execution.manifest import build_run_manifest
     from afmc_fm.execution.scheduler import ShardFailure
@@ -50,6 +119,9 @@ def test_build_run_manifest_records_complete_reproducibility_and_failure_counts(
     expected = {
         "smooth__cohort17__subset23__model31": frozenset({"cell-a", "cell-b"}),
         "jumps__cohort17__subset23__model31": frozenset({"cell-c"}),
+        "cancelled__cohort17__subset23__model31": frozenset(
+            {"cell-d", "cell-e"}
+        ),
     }
     completed = {
         "smooth__cohort17__subset23__model31": frozenset({"cell-a", "cell-b"}),
@@ -98,6 +170,9 @@ def test_build_run_manifest_records_complete_reproducibility_and_failure_counts(
         expected_by_shard=expected,
         completed_by_shard=completed,
         failures=(failure,),
+        cancelled_shard_ids=frozenset(
+            {"cancelled__cohort17__subset23__model31"}
+        ),
         execution_commit_sha="a" * 40,
         runtime_metadata=runtime,
         template_seed=7,
@@ -132,12 +207,20 @@ def test_build_run_manifest_records_complete_reproducibility_and_failure_counts(
     assert manifest["ended_at"] == "2026-08-23T12:00:03+00:00"
     assert manifest["generated_at"] == manifest["ended_at"]
     assert manifest["wall_time_seconds"] == 3.25
-    assert manifest["expected_shard_count"] == 2
+    assert manifest["expected_shard_count"] == 3
     assert manifest["completed_shard_count"] == 1
     assert manifest["failed_shard_count"] == 1
-    assert manifest["expected_cell_count"] == 3
+    assert manifest["cancelled_shard_count"] == 1
+    assert manifest["incomplete_shard_count"] == 0
+    assert manifest["cancelled_shard_ids"] == [
+        "cancelled__cohort17__subset23__model31"
+    ]
+    assert manifest["incomplete_shard_ids"] == []
+    assert manifest["expected_cell_count"] == 5
     assert manifest["completed_cell_count"] == 2
     assert manifest["failed_cell_count"] == 1
+    assert manifest["cancelled_cell_count"] == 2
+    assert manifest["incomplete_cell_count"] == 0
     assert manifest["failures"] == [
         {
             "cohort_seed": 17,
@@ -214,6 +297,7 @@ def _metric_cell(
 
 
 def _persist_complete_aggregation_fixture(output: Path):
+    from afmc_fm.execution.manifest import execution_commit_sha
     from afmc_fm.execution.scheduler import _run_identity
 
     simulator = SimulatorConfig(cohort_size=30, followup_days=45.0)
@@ -227,7 +311,15 @@ def _persist_complete_aggregation_fixture(output: Path):
         _metric_cell(shard, "flow_jump", "no_flow", 0.5),
     ]
     store = RunStore(output, _run_identity(simulator, experiment))
-    expected = {store.write_cell(cell) for cell in reversed(cells)}
+    expected = frozenset(cell.cell_id for cell in cells)
+    store.initialize_run(
+        {shard.shard_id: expected},
+        execution_commit_sha=execution_commit_sha(),
+        original_started_at=datetime(2026, 8, 23, 12, tzinfo=UTC),
+        resume=False,
+    )
+    for cell in reversed(cells):
+        store.write_cell(cell)
     store.mark_shard_complete(shard.shard_id, expected)
     return simulator, experiment, store, cells
 
@@ -260,10 +352,28 @@ def test_reaggregation_is_deterministic_and_never_trains_or_simulates(
         raise AssertionError("reaggregation attempted simulation or model fitting")
 
     monkeypatch.setattr(RunStore, "iter_metric_rows", reversed_metric_rows)
-    monkeypatch.setattr("afmc_fm.execution.jobs.run_shard", forbidden)
+    monkeypatch.setattr("afmc_fm.execution.scheduler.run_shard", forbidden)
+    monkeypatch.setattr("afmc_fm.execution.jobs.simulate_cohort", forbidden)
+    monkeypatch.setattr("afmc_fm.execution.jobs.simulate_world", forbidden)
+    monkeypatch.setattr(
+        "afmc_fm.execution.jobs._run_configured_benchmarks_on_cohort", forbidden
+    )
     monkeypatch.setattr("afmc_fm.simulator.cohort.simulate_cohort", forbidden)
     monkeypatch.setattr("afmc_fm.simulator.cohort.simulate_world", forbidden)
     monkeypatch.setattr("afmc_fm.experiments.runner._run_low_n_on_cohort", forbidden)
+    monkeypatch.setattr(
+        "afmc_fm.experiments.runner._run_observation_shift_on_cohort", forbidden
+    )
+    monkeypatch.setattr("afmc_fm.experiments.runner._fit_neural", forbidden)
+    monkeypatch.setattr("afmc_fm.models.baselines.TorchRidgeRegressor.fit", forbidden)
+    monkeypatch.setattr(
+        "afmc_fm.models.baselines.GradientBoostingRegressorBaseline.fit",
+        forbidden,
+    )
+    monkeypatch.setattr(
+        "afmc_fm.models.baselines.TorchMLPRegressorBaseline.fit", forbidden
+    )
+    monkeypatch.setattr("afmc_fm.models.baselines.MLPRegressorBaseline.fit", forbidden)
 
     second = reaggregate_benchmark_outputs(simulator, experiment, output)
 
@@ -340,6 +450,52 @@ def test_reaggregation_rejects_duplicate_scientific_metric_keys(tmp_path):
 
     with pytest.raises(ValueError, match="duplicate scientific metric keys"):
         reaggregate_benchmark_outputs(simulator, experiment, output)
+
+
+def test_reaggregation_requires_the_exact_root_run_record(tmp_path):
+    from afmc_fm.execution.manifest import reaggregate_benchmark_outputs
+
+    output = tmp_path / "run"
+    simulator, experiment, _, _ = _persist_complete_aggregation_fixture(output)
+    (output / "run_record.json").unlink()
+
+    with pytest.raises(ValueError, match="missing run root record"):
+        reaggregate_benchmark_outputs(simulator, experiment, output)
+
+
+def test_artifact_generation_failure_preserves_prior_complete_generation(
+    tmp_path,
+    monkeypatch,
+):
+    import json
+
+    from afmc_fm.execution import manifest
+
+    output = tmp_path / "run"
+    simulator, experiment, _, _ = _persist_complete_aggregation_fixture(output)
+    manifest.reaggregate_benchmark_outputs(simulator, experiment, output)
+    original = {
+        name: (output / name).read_bytes()
+        for name in manifest.DERIVED_ARTIFACT_NAMES
+    }
+    cell_path = next(output.glob("shards/*/cells/*.json"))
+    payload = json.loads(cell_path.read_text(encoding="utf-8"))
+    payload["metric_rows"][0]["value"] += 10.0
+    cell_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    def injected_plot_failure(*args, **kwargs):
+        raise RuntimeError("injected staged plot failure")
+
+    monkeypatch.setattr(manifest, "_plot_learning_curves", injected_plot_failure)
+
+    with pytest.raises(RuntimeError, match="injected staged plot failure"):
+        manifest.reaggregate_benchmark_outputs(simulator, experiment, output)
+
+    assert {
+        name: (output / name).read_bytes()
+        for name in manifest.DERIVED_ARTIFACT_NAMES
+    } == original
+    assert not list(output.glob(".artifacts-*"))
 
 
 def test_scheduler_writes_partial_artifacts_and_truthful_structured_failure_manifest(

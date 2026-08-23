@@ -4,8 +4,9 @@ import math
 import os
 import re
 from collections.abc import Iterator, Mapping
-from dataclasses import asdict, dataclass, is_dataclass
-from pathlib import Path
+from dataclasses import asdict, dataclass, fields, is_dataclass
+from datetime import datetime
+from pathlib import Path, PurePath, PureWindowsPath
 from typing import Any
 
 import pandas as pd
@@ -13,6 +14,7 @@ import pandas as pd
 from afmc_fm.execution.jobs import CellResult, ShardSpec, benchmark_cell_id
 
 CELL_SCHEMA_VERSION = 1
+ROOT_RUN_SCHEMA_VERSION = 1
 PROTOCOL_ANCHOR = "be5a66b2e45362f60c90844e4e25673fb7bb3e21"
 METRIC_ROW_KEYS = frozenset(
     {
@@ -45,15 +47,18 @@ class RunIdentity:
 
 
 def canonical_config_bytes(config: object) -> bytes:
-    """Serialize configuration content with Task 8's canonical JSON contract."""
-    if is_dataclass(config) and not isinstance(config, type):
-        content: object = asdict(config)
-    elif isinstance(config, Mapping):
-        content = dict(config)
-    else:
+    """Serialize recursively normalized config content using canonical JSON.
+
+    Native paths use their platform flavour, while explicit ``PureWindowsPath``
+    values always use Windows parsing. All path text is emitted with ``/``.
+    """
+    if not (
+        (is_dataclass(config) and not isinstance(config, type))
+        or isinstance(config, Mapping)
+    ):
         raise TypeError("config must be a dataclass instance or mapping")
     return json.dumps(
-        content,
+        _normalize_config_value(config),
         allow_nan=False,
         separators=(",", ":"),
         sort_keys=True,
@@ -65,10 +70,139 @@ def canonical_config_hash(config: object) -> str:
     return hashlib.sha256(canonical_config_bytes(config)).hexdigest()
 
 
+def _normalize_config_value(value: object) -> object:
+    if is_dataclass(value) and not isinstance(value, type):
+        return {
+            field.name: _normalize_config_value(getattr(value, field.name))
+            for field in fields(value)
+        }
+    if isinstance(value, Mapping):
+        if any(type(key) is not str for key in value):
+            raise TypeError("canonical config mapping keys must be strings")
+        return {
+            key: _normalize_config_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, PurePath):
+        flavour = "windows" if isinstance(value, PureWindowsPath) else "posix"
+        return {
+            "__afmc_type__": "path",
+            "flavour": flavour,
+            "value": value.as_posix(),
+        }
+    if isinstance(value, (set, frozenset)):
+        normalized = [_normalize_config_value(item) for item in value]
+        normalized.sort(
+            key=lambda item: json.dumps(
+                item,
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
+        return {
+            "__afmc_type__": "frozenset" if isinstance(value, frozenset) else "set",
+            "items": normalized,
+        }
+    if isinstance(value, (list, tuple)):
+        return [_normalize_config_value(item) for item in value]
+    if value is None or type(value) in {str, bool, int}:
+        return value
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise ValueError("canonical config float values must be finite")
+        return value
+    raise TypeError(
+        f"unsupported canonical config type: {type(value).__qualname__}"
+    )
+
+
 class RunStore:
     def __init__(self, output: Path, identity: RunIdentity) -> None:
         self.output = Path(output)
         self.identity = identity
+
+    def initialize_run(
+        self,
+        expected_by_shard: Mapping[str, frozenset[str]],
+        *,
+        execution_commit_sha: str,
+        original_started_at: datetime,
+        resume: bool,
+    ) -> dict[str, Any]:
+        """Create or validate the immutable root identity and exact run plan."""
+        expected_plan = _canonical_expected_plan(expected_by_shard)
+        _require_commit_sha(execution_commit_sha)
+        root_path = self.output / "run_record.json"
+        if resume:
+            if not root_path.is_file():
+                raise ValueError("missing run root record for resume")
+            record = _load_root_record(root_path)
+            if record["schema_version"] != ROOT_RUN_SCHEMA_VERSION:
+                raise ValueError("incompatible run root schema")
+            if record["run_identity"] != asdict(self.identity):
+                raise ValueError("incompatible run identity in root record")
+            if record["expected_shards"] != expected_plan:
+                raise ValueError("incompatible run plan in root record")
+            if record["execution_commit_sha"] != execution_commit_sha:
+                raise ValueError("incompatible execution commit in root record")
+            return record
+
+        if root_path.exists():
+            raise ValueError("run root record already exists")
+        record = {
+            "schema_version": ROOT_RUN_SCHEMA_VERSION,
+            "run_identity": asdict(self.identity),
+            "execution_commit_sha": execution_commit_sha,
+            "expected_shards": expected_plan,
+            "original_started_at": original_started_at.isoformat(),
+            "completed_invocation_count": 0,
+            "cumulative_wall_time_seconds": 0.0,
+            "last_invocation": None,
+        }
+        self.output.mkdir(parents=True, exist_ok=True)
+        _write_json_atomic(root_path, record)
+        return record
+
+    def complete_invocation(
+        self,
+        expected_by_shard: Mapping[str, frozenset[str]],
+        *,
+        execution_commit_sha: str,
+        invocation_started_at: datetime,
+        invocation_ended_at: datetime,
+        invocation_wall_time_seconds: float,
+        terminal_state: str,
+    ) -> dict[str, Any]:
+        """Atomically add one quiescent invocation to cumulative run timing."""
+        if invocation_wall_time_seconds < 0:
+            raise ValueError("invocation wall time must be non-negative")
+        if invocation_ended_at < invocation_started_at:
+            raise ValueError("invocation end must not precede start")
+        if terminal_state not in {"completed", "completed_with_failures", "fail_fast"}:
+            raise ValueError("unknown invocation terminal state")
+        record = self.initialize_run(
+            expected_by_shard,
+            execution_commit_sha=execution_commit_sha,
+            original_started_at=invocation_started_at,
+            resume=True,
+        )
+        updated = {
+            **record,
+            "completed_invocation_count": record["completed_invocation_count"] + 1,
+            "cumulative_wall_time_seconds": (
+                float(record["cumulative_wall_time_seconds"])
+                + invocation_wall_time_seconds
+            ),
+            "last_invocation": {
+                "ended_at": invocation_ended_at.isoformat(),
+                "started_at": invocation_started_at.isoformat(),
+                "terminal_state": terminal_state,
+                "wall_time_seconds": invocation_wall_time_seconds,
+            },
+        }
+        _write_json_atomic(self.output / "run_record.json", updated)
+        return updated
 
     def write_cell(self, result: CellResult) -> str:
         shard_dir = self._shard_dir(result.shard.shard_id)
@@ -455,3 +589,91 @@ def _require_safe_segment(value: Any, label: str) -> None:
         or value in {".", ".."}
     ):
         raise ValueError(f"{label} must be one canonical safe path segment")
+
+
+def _canonical_expected_plan(
+    expected_by_shard: Mapping[str, frozenset[str]],
+) -> list[dict[str, object]]:
+    if not expected_by_shard:
+        raise ValueError("expected run plan must contain at least one shard")
+    plan: list[dict[str, object]] = []
+    for shard_id, cell_ids in expected_by_shard.items():
+        _require_safe_segment(shard_id, "expected shard ID")
+        if not isinstance(cell_ids, frozenset) or not cell_ids:
+            raise ValueError("expected run-plan cell IDs must be non-empty frozensets")
+        for cell_id in cell_ids:
+            _require_safe_segment(cell_id, "expected cell ID")
+        plan.append({"shard_id": shard_id, "cell_ids": sorted(cell_ids)})
+    return sorted(plan, key=lambda item: str(item["shard_id"]))
+
+
+def _load_root_record(path: Path) -> dict[str, Any]:
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("invalid run root record") from error
+    expected_keys = {
+        "completed_invocation_count",
+        "cumulative_wall_time_seconds",
+        "execution_commit_sha",
+        "expected_shards",
+        "last_invocation",
+        "original_started_at",
+        "run_identity",
+        "schema_version",
+    }
+    if not isinstance(record, dict) or set(record) != expected_keys:
+        raise ValueError("invalid run root record")
+    if type(record["schema_version"]) is not int:
+        raise ValueError("invalid run root record")
+    if not isinstance(record["run_identity"], dict):
+        raise TypeError("invalid run root record")
+    if not isinstance(record["expected_shards"], list):
+        raise TypeError("invalid run root record")
+    if type(record["completed_invocation_count"]) is not int:
+        raise ValueError("invalid run root record")
+    if type(record["cumulative_wall_time_seconds"]) not in {int, float}:
+        raise ValueError("invalid run root record")
+    if (
+        record["completed_invocation_count"] < 0
+        or not math.isfinite(float(record["cumulative_wall_time_seconds"]))
+        or record["cumulative_wall_time_seconds"] < 0
+    ):
+        raise ValueError("invalid run root record")
+    if record["last_invocation"] is not None and not isinstance(
+        record["last_invocation"], dict
+    ):
+        raise ValueError("invalid run root record")
+    if isinstance(record["last_invocation"], dict) and set(
+        record["last_invocation"]
+    ) != {"ended_at", "started_at", "terminal_state", "wall_time_seconds"}:
+        raise ValueError("invalid run root record")
+    if not isinstance(record["original_started_at"], str):
+        raise TypeError("invalid run root record")
+    try:
+        original_start = datetime.fromisoformat(record["original_started_at"])
+    except ValueError as error:
+        raise ValueError("invalid run root record") from error
+    if original_start.tzinfo is None:
+        raise ValueError("invalid run root record")
+    _require_commit_sha(record["execution_commit_sha"])
+    return record
+
+
+def _require_commit_sha(value: object) -> None:
+    if type(value) is not str or re.fullmatch(r"[0-9a-f]{40}", value) is None:
+        raise ValueError("execution commit must be a full lowercase Git SHA")
+
+
+def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
+    temporary = path.with_name(f".{path.name}.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, allow_nan=False, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(path)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise

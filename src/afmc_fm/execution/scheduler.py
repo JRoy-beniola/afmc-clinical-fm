@@ -29,6 +29,7 @@ from afmc_fm.execution.manifest import (
     aggregate_persisted_metrics,
     baseline_backend_ids,
     build_run_manifest,
+    execution_commit_sha,
     write_derived_artifacts,
     write_run_manifest,
 )
@@ -38,7 +39,7 @@ from afmc_fm.execution.persistence import (
     RunStore,
     canonical_config_hash,
 )
-from afmc_fm.experiments.runner import ExperimentConfig
+from afmc_fm.experiments.runner import ABLATION_IDS, MODEL_NAMES, ExperimentConfig
 from afmc_fm.simulator.config import SimulatorConfig
 
 THREAD_ENVIRONMENT_VARIABLES = (
@@ -48,6 +49,16 @@ THREAD_ENVIRONMENT_VARIABLES = (
     "NUMEXPR_NUM_THREADS",
 )
 PROGRESS_POLL_SECONDS = 0.25
+KNOWN_RUN_ARTIFACTS = (
+    "run_record.json",
+    "run_manifest.json",
+    "run.log",
+    "shards",
+    "metrics.csv",
+    "ablation_metrics.csv",
+    "gate_summary.csv",
+    "learning_curves.png",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,9 +116,11 @@ class ScheduledBenchmarkError(RuntimeError):
         self.failure = failure
         self.cancelled_pending = cancelled_pending
         self.running_not_terminated = running_not_terminated
+        self.running_at_cancellation = running_not_terminated
         super().__init__(
             f"{ShardExecutionError(failure)}; cancelled {cancelled_pending} pending "
-            f"future(s); {running_not_terminated} running future(s) were not terminated"
+            f"future(s); {running_not_terminated} running future(s) reached a "
+            "quiescent boundary before finalization"
         )
 
 
@@ -325,6 +338,12 @@ def _validate_experiment_axes(experiment: ExperimentConfig) -> None:
         values = getattr(experiment, name)
         if len(values) != len(set(values)):
             raise ValueError(f"duplicate {name} are not allowed")
+    unknown_models = set(experiment.models) - set(MODEL_NAMES)
+    if unknown_models:
+        raise ValueError(f"unknown models: {sorted(unknown_models)}")
+    unknown_ablations = set(experiment.ablations) - set(ABLATION_IDS)
+    if unknown_ablations:
+        raise ValueError(f"unknown ablations: {sorted(unknown_ablations)}")
 
 
 def _validate_persisted_scope(
@@ -346,7 +365,7 @@ def _validate_persisted_scope(
 
 
 def _has_run_artifacts(output: Path) -> bool:
-    return os.path.lexists(output / "shards")
+    return any(os.path.lexists(output / name) for name in KNOWN_RUN_ARTIFACTS)
 
 
 def _progress_event(
@@ -441,21 +460,32 @@ def run_scheduled_benchmark(
     }
     expected_cell_ids = frozenset().union(*expected_by_shard.values())
     cells_expected = sum(len(expected) for expected in expected_by_shard.values())
-    if not options.resume and _has_run_artifacts(output):
+    existing_artifacts = _has_run_artifacts(output)
+    if not options.resume and existing_artifacts:
         raise ValueError(
             "output contains existing run artifacts; choose a fresh output or enable resume"
         )
     device = str(resolve_device(options.device))
     identity = _run_identity(sim_config, experiment)
     store = RunStore(output, identity)
+    captured_execution_commit = execution_commit_sha()
+    invocation_started_at = datetime.now(UTC)
+    started = time.monotonic()
+    store.initialize_run(
+        expected_by_shard,
+        execution_commit_sha=captured_execution_commit,
+        original_started_at=invocation_started_at,
+        resume=options.resume and existing_artifacts,
+    )
     store.validate_resume()
     initial_snapshot = store.load_completed_cell_ids_by_shard()
     _validate_persisted_scope(initial_snapshot, expected_cell_ids)
-    started_at = datetime.now(UTC)
-    started = time.monotonic()
     failures: list[ShardFailure] = []
+    cancelled_shard_ids: set[str] = set()
     progress_events: list[dict[str, Any]] = []
     worker_results: list[_WorkerResult] = []
+    fail_fast_error: ScheduledBenchmarkError | None = None
+    fail_fast_cause: BaseException | None = None
 
     requests = [
         _WorkerRequest(
@@ -478,7 +508,6 @@ def run_scheduled_benchmark(
     ctx = multiprocessing.get_context("spawn")
     executor: ProcessPoolExecutor | None = None
     futures: dict[Future[_WorkerResult], ShardSpec] = {}
-    shutdown_started = False
     last_progress: tuple[int, ...] | None = None
 
     def record_progress(*, force: bool = False, active_workers: int | None = None) -> None:
@@ -531,9 +560,13 @@ def run_scheduled_benchmark(
             for future in done:
                 pending.remove(future)
                 shard = futures[future]
+                if future.cancelled():
+                    cancelled_shard_ids.add(shard.shard_id)
+                    record_progress(force=True)
+                    continue
                 try:
                     worker_results.append(future.result())
-                except Exception as error:
+                except Exception as error:  # noqa: BLE001 - worker errors are data
                     failure = (
                         error.failure
                         if isinstance(error, ShardExecutionError)
@@ -541,7 +574,7 @@ def run_scheduled_benchmark(
                     )
                     failures.append(failure)
                     logger.error("benchmark shard failure: %s", asdict(failure))
-                    if options.fail_fast:
+                    if options.fail_fast and fail_fast_error is None:
                         candidates = [
                             candidate
                             for candidate in futures
@@ -551,17 +584,21 @@ def run_scheduled_benchmark(
                             candidates,
                             options.workers,
                         )
+                        cancelled_shard_ids.update(
+                            futures[candidate].shard_id
+                            for candidate in candidates
+                            if candidate.cancelled()
+                        )
                         record_progress(force=True, active_workers=running)
-                        executor.shutdown(wait=False, cancel_futures=True)
-                        shutdown_started = True
-                        raise ScheduledBenchmarkError(
+                        fail_fast_error = ScheduledBenchmarkError(
                             failure,
                             cancelled_pending=cancelled,
                             running_not_terminated=running,
-                        ) from error
+                        )
+                        fail_fast_cause = error
                 record_progress(force=True)
     finally:
-        if executor is not None and not shutdown_started:
+        if executor is not None:
             executor.shutdown(wait=True, cancel_futures=True)
 
     store.validate_resume()
@@ -569,6 +606,7 @@ def run_scheduled_benchmark(
     _validate_persisted_scope(final_snapshot, expected_cell_ids)
     frame = aggregate_persisted_metrics(store, expected_by_shard)
     frame.attrs["failures"] = [asdict(failure) for failure in failures]
+    frame.attrs["cancelled_shard_ids"] = sorted(cancelled_shard_ids)
     frame.attrs["progress_events"] = progress_events
     frame.attrs["worker_metadata"] = [
         _worker_metadata(result)
@@ -576,21 +614,46 @@ def run_scheduled_benchmark(
     ]
     write_derived_artifacts(frame, output)
     ended_at = datetime.now(UTC)
+    invocation_wall_time = time.monotonic() - started
+    root_record = store.complete_invocation(
+        expected_by_shard,
+        execution_commit_sha=captured_execution_commit,
+        invocation_started_at=invocation_started_at,
+        invocation_ended_at=ended_at,
+        invocation_wall_time_seconds=invocation_wall_time,
+        terminal_state=(
+            "fail_fast"
+            if fail_fast_error is not None
+            else "completed_with_failures" if failures else "completed"
+        ),
+    )
+    original_started_at = datetime.fromisoformat(root_record["original_started_at"])
     manifest = build_run_manifest(
         simulator=sim_config,
         experiment=experiment,
         resolved_device=device,
         worker_count=options.workers,
         backend_ids=baseline_backend_ids(experiment),
-        started_at=started_at,
+        started_at=original_started_at,
         ended_at=ended_at,
-        wall_time_seconds=time.monotonic() - started,
+        wall_time_seconds=float(root_record["cumulative_wall_time_seconds"]),
         expected_by_shard=expected_by_shard,
         completed_by_shard=final_snapshot,
         failures=failures,
+        cancelled_shard_ids=frozenset(cancelled_shard_ids),
+        execution_commit_sha=captured_execution_commit,
         template_seed=template_seed,
+        original_started_at=original_started_at,
+        invocation_started_at=invocation_started_at,
+        invocation_number=int(root_record["completed_invocation_count"]),
+        invocation_wall_time_seconds=invocation_wall_time,
+        cumulative_wall_time_seconds=float(
+            root_record["cumulative_wall_time_seconds"]
+        ),
     )
     write_run_manifest(manifest, output)
+    if fail_fast_error is not None:
+        raise fail_fast_error from fail_fast_cause
     return frame
 
 

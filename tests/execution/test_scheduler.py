@@ -216,6 +216,8 @@ def test_fail_fast_false_records_failure_and_independent_shard_persists(tmp_path
 def test_fail_fast_true_cancels_pending_futures_and_propagates_structured_failure(
     tmp_path,
 ):
+    import multiprocessing
+
     from afmc_fm.execution.scheduler import (
         ExecutionOptions,
         ScheduledBenchmarkError,
@@ -225,11 +227,13 @@ def test_fail_fast_true_cancels_pending_futures_and_propagates_structured_failur
     experiment = _tiny_experiment(
         worlds=tuple(f"not_a_world_{index}" for index in range(6))
     )
+    output = tmp_path / "run"
+    children_before = {child.pid for child in multiprocessing.active_children()}
     with pytest.raises(ScheduledBenchmarkError) as caught:
         run_scheduled_benchmark(
             SimulatorConfig(cohort_size=30, followup_days=45.0),
             experiment,
-            tmp_path / "run",
+            output,
             ExecutionOptions(device="cpu", workers=1, resume=False, fail_fast=True),
         )
 
@@ -239,6 +243,30 @@ def test_fail_fast_true_cancels_pending_futures_and_propagates_structured_failur
     assert error.failure.shard_id.startswith("not_a_world_")
     assert error.cancelled_pending >= 0
     assert error.running_not_terminated >= 0
+    assert {child.pid for child in multiprocessing.active_children()} <= children_before
+    manifest = json.loads((output / "run_manifest.json").read_text(encoding="utf-8"))
+    root = json.loads((output / "run_record.json").read_text(encoding="utf-8"))
+    assert (output / "metrics.csv").exists()
+    assert (output / "ablation_metrics.csv").exists()
+    assert (output / "gate_summary.csv").exists()
+    assert (output / "learning_curves.png").exists()
+    assert manifest["failures"][0]["shard_id"] == error.failure.shard_id
+    assert manifest["expected_shard_count"] == 6
+    assert (
+        manifest["completed_shard_count"]
+        + manifest["failed_shard_count"]
+        + manifest["cancelled_shard_count"]
+        + manifest["incomplete_shard_count"]
+        == 6
+    )
+    assert (
+        manifest["completed_cell_count"]
+        + manifest["failed_cell_count"]
+        + manifest["cancelled_cell_count"]
+        + manifest["incomplete_cell_count"]
+        == manifest["expected_cell_count"]
+    )
+    assert root["last_invocation"]["terminal_state"] == "fail_fast"
 
 
 def test_fail_fast_cancellation_distinguishes_pending_from_running_futures():
@@ -519,3 +547,122 @@ def test_partial_submission_failure_shuts_down_executor(tmp_path, monkeypatch):
         )
 
     assert shutdown_calls == [(True, True)]
+
+
+@pytest.mark.parametrize(
+    "artifact",
+    [
+        "run_record.json",
+        "run_manifest.json",
+        "metrics.csv",
+        "ablation_metrics.csv",
+        "gate_summary.csv",
+        "learning_curves.png",
+        "run.log",
+        "shards",
+    ],
+)
+def test_fresh_run_detects_every_known_run_artifact(tmp_path, artifact):
+    from afmc_fm.execution.scheduler import _has_run_artifacts
+
+    output = tmp_path / "run"
+    path = output / artifact
+    if artifact == "shards":
+        path.mkdir(parents=True)
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("existing", encoding="utf-8")
+
+    assert _has_run_artifacts(output)
+
+
+def test_scheduler_captures_commit_and_persists_root_before_executor(
+    tmp_path,
+    monkeypatch,
+):
+    from concurrent.futures import ProcessPoolExecutor as RealExecutor
+
+    from afmc_fm.execution import manifest, scheduler
+
+    output = tmp_path / "run"
+    executor_started = False
+    commit_calls = 0
+
+    def captured_commit():
+        nonlocal commit_calls
+        commit_calls += 1
+        assert not executor_started
+        return "a" * 40
+
+    def observed_executor(**kwargs):
+        nonlocal executor_started
+        executor_started = True
+        assert (output / "run_record.json").is_file()
+        return RealExecutor(**kwargs)
+
+    monkeypatch.setattr(scheduler, "execution_commit_sha", captured_commit, raising=False)
+    monkeypatch.setattr(manifest, "execution_commit_sha", captured_commit)
+    monkeypatch.setattr(scheduler, "ProcessPoolExecutor", observed_executor)
+
+    scheduler.run_scheduled_benchmark(
+        SimulatorConfig(cohort_size=30, followup_days=45.0),
+        _tiny_experiment(),
+        output,
+        scheduler.ExecutionOptions(
+            device="cpu", workers=1, resume=False, fail_fast=True
+        ),
+    )
+
+    root = json.loads((output / "run_record.json").read_text(encoding="utf-8"))
+    manifest_payload = json.loads(
+        (output / "run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert commit_calls == 1
+    assert root["execution_commit_sha"] == manifest_payload["execution_commit_sha"] == "a" * 40
+
+
+def test_resume_preserves_original_start_and_accumulates_invocation_timing(tmp_path):
+    from afmc_fm.execution.scheduler import ExecutionOptions, run_scheduled_benchmark
+
+    simulator = SimulatorConfig(cohort_size=30, followup_days=45.0)
+    experiment = _tiny_experiment()
+    output = tmp_path / "run"
+    options = ExecutionOptions(device="cpu", workers=1, resume=True, fail_fast=True)
+
+    run_scheduled_benchmark(simulator, experiment, output, options)
+    first = json.loads((output / "run_manifest.json").read_text(encoding="utf-8"))
+    run_scheduled_benchmark(simulator, experiment, output, options)
+    second = json.loads((output / "run_manifest.json").read_text(encoding="utf-8"))
+    root = json.loads((output / "run_record.json").read_text(encoding="utf-8"))
+
+    assert second["original_started_at"] == first["original_started_at"]
+    assert second["started_at"] == first["started_at"]
+    assert first["invocation_number"] == 1
+    assert second["invocation_number"] == 2
+    assert second["cumulative_wall_time_seconds"] >= (
+        first["cumulative_wall_time_seconds"]
+        + second["invocation_wall_time_seconds"]
+    )
+    assert second["wall_time_seconds"] == second["cumulative_wall_time_seconds"]
+    assert root["completed_invocation_count"] == 2
+    assert root["original_started_at"] == second["original_started_at"]
+    assert root["cumulative_wall_time_seconds"] == second["cumulative_wall_time_seconds"]
+    assert root["last_invocation"]["started_at"] == second["invocation_started_at"]
+    assert root["last_invocation"]["ended_at"] == second["invocation_ended_at"]
+
+
+def test_invalid_backend_identifiers_fail_before_output_or_workers(tmp_path):
+    from afmc_fm.execution.scheduler import ExecutionOptions, run_scheduled_benchmark
+
+    experiment = replace(_tiny_experiment(), models=("unknown_model",))
+    output = tmp_path / "run"
+
+    with pytest.raises(ValueError, match="unknown models.*unknown_model"):
+        run_scheduled_benchmark(
+            SimulatorConfig(cohort_size=30, followup_days=45.0),
+            experiment,
+            output,
+            ExecutionOptions(device="cpu", workers=1, resume=False, fail_fast=False),
+        )
+
+    assert not output.exists()
