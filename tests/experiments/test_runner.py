@@ -188,6 +188,7 @@ def test_representation_mlp_uses_torch_optimized_backend_by_default():
     assert results["trainable_parameters"].nunique() == 1
     assert results["trainable_parameters"].iloc[0] == 673
     assert set(results["backend"]) == {"torch_lbfgs"}
+    assert np.isfinite(results["value"]).all()
 
 
 def test_representation_mlp_can_select_sklearn_reference_backend():
