@@ -54,6 +54,29 @@ def test_tiny_benchmark_returns_unique_tidy_metric_rows():
     assert not results.duplicated(key).any()
 
 
+def test_linear_probe_models_report_torch_ridge_parameter_counts():
+    cohort = simulate_cohort(
+        SimulatorConfig(cohort_size=36, followup_days=45.0), seed=32
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        subset_seeds=(1,),
+        model_seeds=(1,),
+        max_epochs=1,
+        patience=1,
+    )
+
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("engineered_linear", "representation_linear"),
+        device=torch.device("cpu"),
+    )
+
+    parameter_counts = results.groupby("model")["trainable_parameters"].first()
+    assert (parameter_counts > 0).all()
+
+
 def test_named_worlds_preserve_interface_but_change_generating_assumptions():
     config = SimulatorConfig(cohort_size=4, followup_days=45.0)
     smooth = simulate_world("smooth", config, seed=5)

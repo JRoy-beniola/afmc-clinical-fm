@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 
 from afmc_fm.models.baselines import (
@@ -6,7 +7,20 @@ from afmc_fm.models.baselines import (
     MLPRegressorBaseline,
     ProbeClassifier,
     ProbeRegressor,
+    TorchRidgeRegressor,
 )
+
+RIDGE_PARITY_ATOL = 1e-10
+RIDGE_PARITY_RTOL = 1e-10
+
+
+def _well_conditioned_ridge_problem() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(20260823)
+    train_features = rng.normal(size=(96, 7))
+    coefficients = np.array([1.25, -0.75, 0.5, 2.0, -1.5, 0.25, 0.9])
+    targets = train_features @ coefficients + 4.25 + rng.normal(scale=0.05, size=96)
+    test_features = rng.normal(size=(24, 7))
+    return train_features, targets, test_features
 
 
 def test_probe_regressor_fits_small_signal():
@@ -15,6 +29,51 @@ def test_probe_regressor_fits_small_signal():
     model = ProbeRegressor().fit(x, y)
     pred = model.predict(x)
     assert np.mean((pred - y) ** 2) < 1e-6
+
+
+def test_torch_ridge_cpu_predictions_match_sklearn_reference():
+    train_x, train_y, test_x = _well_conditioned_ridge_problem()
+    reference = ProbeRegressor().fit(train_x, train_y).predict(test_x)
+
+    prediction = TorchRidgeRegressor(alpha=1.0, device="cpu").fit(
+        train_x, train_y
+    ).predict(test_x)
+
+    np.testing.assert_allclose(
+        prediction,
+        reference,
+        atol=RIDGE_PARITY_ATOL,
+        rtol=RIDGE_PARITY_RTOL,
+    )
+
+
+def test_torch_ridge_does_not_penalize_intercept():
+    train_x, _, test_x = _well_conditioned_ridge_problem()
+    constant_target = np.full(len(train_x), 7.25)
+
+    prediction = TorchRidgeRegressor(alpha=1.0, device="cpu").fit(
+        train_x, constant_target
+    ).predict(test_x)
+
+    np.testing.assert_allclose(prediction, 7.25, atol=1e-12, rtol=0.0)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+def test_torch_ridge_cuda_predictions_match_cpu():
+    train_x, train_y, test_x = _well_conditioned_ridge_problem()
+    cpu_model = TorchRidgeRegressor(alpha=1.0, device="cpu").fit(train_x, train_y)
+    cuda_model = TorchRidgeRegressor(alpha=1.0, device="cuda").fit(train_x, train_y)
+
+    cpu_prediction = cpu_model.predict(test_x)
+    cuda_prediction = cuda_model.predict(test_x)
+
+    assert cuda_model.coef_.device.type == "cuda"
+    np.testing.assert_allclose(
+        cuda_prediction,
+        cpu_prediction,
+        atol=RIDGE_PARITY_ATOL,
+        rtol=RIDGE_PARITY_RTOL,
+    )
 
 
 def test_probe_classifier_returns_probabilities():

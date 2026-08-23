@@ -23,6 +23,70 @@ class ProbeRegressor:
         return self.model.predict(features)
 
 
+class TorchRidgeRegressor:
+    """Torch ridge regression with an unpenalized intercept."""
+
+    def __init__(
+        self,
+        alpha: float = 1.0,
+        device: torch.device | str = "cpu",
+    ) -> None:
+        self.alpha = alpha
+        self.device = torch.device(device)
+        self.coef_: torch.Tensor | None = None
+        self.intercept_: torch.Tensor | None = None
+
+    def fit(
+        self,
+        features: np.ndarray,
+        targets: np.ndarray,
+    ) -> "TorchRidgeRegressor":
+        feature_tensor = torch.as_tensor(
+            features,
+            dtype=torch.float64,
+            device=self.device,
+        )
+        target_tensor = torch.as_tensor(
+            targets,
+            dtype=torch.float64,
+            device=self.device,
+        )
+        feature_mean = feature_tensor.mean(dim=0)
+        target_mean = target_tensor.mean()
+        centered_features = feature_tensor - feature_mean
+        centered_targets = target_tensor - target_mean
+        regularized_gram = centered_features.T @ centered_features
+        regularized_gram = regularized_gram + self.alpha * torch.eye(
+            feature_tensor.shape[1],
+            dtype=feature_tensor.dtype,
+            device=self.device,
+        )
+        right_hand_side = centered_features.T @ centered_targets
+        cholesky_factor = torch.linalg.cholesky(regularized_gram)
+        self.coef_ = torch.cholesky_solve(
+            right_hand_side.unsqueeze(-1),
+            cholesky_factor,
+        ).squeeze(-1)
+        self.intercept_ = target_mean - feature_mean @ self.coef_
+        return self
+
+    def predict(self, features: np.ndarray) -> np.ndarray:
+        if self.coef_ is None or self.intercept_ is None:
+            raise RuntimeError("TorchRidgeRegressor must be fitted before prediction")
+        feature_tensor = torch.as_tensor(
+            features,
+            dtype=torch.float64,
+            device=self.device,
+        )
+        prediction = feature_tensor @ self.coef_ + self.intercept_
+        return prediction.detach().cpu().numpy()
+
+    def trainable_parameter_count(self) -> int:
+        if self.coef_ is None or self.intercept_ is None:
+            raise RuntimeError("TorchRidgeRegressor must be fitted before counting parameters")
+        return self.coef_.numel() + self.intercept_.numel()
+
+
 class ProbeClassifier:
     def __init__(self) -> None:
         self.model = LogisticRegression(max_iter=1000, class_weight="balanced")

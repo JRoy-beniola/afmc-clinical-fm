@@ -22,7 +22,7 @@ from afmc_fm.models.baselines import (
     GradientBoostingRegressorBaseline,
     GRUBaseline,
     MLPRegressorBaseline,
-    ProbeRegressor,
+    TorchRidgeRegressor,
 )
 from afmc_fm.models.flow_jump import FlowJumpAdapter
 from afmc_fm.models.losses import masked_gaussian_nll, observation_bce
@@ -487,14 +487,17 @@ def _run_low_n_on_cohort(
                 train_x, train_y = example_builder(train_sequences)
                 test_x, test_y = example_builder(test_sequences)
                 if model_name in {"engineered_linear", "representation_linear"}:
-                    estimator = ProbeRegressor()
+                    estimator = TorchRidgeRegressor(device=device)
                 elif model_name == "representation_mlp":
                     estimator = MLPRegressorBaseline(seed=model_seed)
                 else:
                     estimator = GradientBoostingRegressorBaseline()
                 prediction = estimator.fit(train_x, train_y).predict(test_x)
                 metrics = regression_metrics(test_y, prediction)
-                if isinstance(estimator, MLPRegressorBaseline):
+                if isinstance(
+                    estimator,
+                    (MLPRegressorBaseline, TorchRidgeRegressor),
+                ):
                     parameters = estimator.trainable_parameter_count()
             else:
                 train_batch = _padded_batch(train_sequences)
