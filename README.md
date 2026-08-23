@@ -2,13 +2,55 @@
 
 This repository tests whether compact flow-jump adaptation improves low-data longitudinal forecasting and calibration under controlled synthetic dynamics and observation-policy shift. Phase 0 is a methodology-development benchmark, not a clinically validated model, healthcare foundation model, or causal treatment-effect system.
 
-## Install
+## Install and runtime diagnostics
+
+WSL/Linux is the canonical research runtime. Create and use a native Linux
+virtual environment there with the project interpreter:
 
 ```bash
-python -m venv .venv
-. .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+cd ~/afmc-clinical-fm
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
 pip install -e ".[dev]"
+which python
+python -m afmc_fm.cli diagnostics --device auto --workers 1
 ```
+
+Inside WSL, use `.venv/bin/python` and the native Linux console scripts. Do
+not invoke `.venv/Scripts/python.exe` or `.venv/Scripts/afmc-phase0.exe`; those
+are Windows virtual-environment entry points and can mix Windows Python with
+the WSL runtime. Windows-native execution remains a supported fallback. For
+example, from Windows PowerShell:
+
+```powershell
+python -m venv .venv
+. .venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev]"
+```
+
+To verify CUDA from the same project interpreter, run:
+
+```bash
+python - <<'PY'
+import torch
+
+print("torch.cuda.is_available()", torch.cuda.is_available())
+print("torch.version.cuda", torch.version.cuda)
+if torch.cuda.is_available():
+    print("torch.cuda.get_device_name(0)", torch.cuda.get_device_name(0))
+PY
+```
+
+For focused WSL checks, use the exact project interpreter commands:
+
+```bash
+TMPDIR=/tmp ./.venv/bin/pytest tests/test_readme.py tests/test_cli.py -v
+./.venv/bin/ruff check src tests
+git diff --check
+```
+
+`TMPDIR=/tmp` is a runtime guardrail for the test process in WSL, not a scientific workaround and not a change to benchmark data or metrics.
 
 ## Generate a synthetic cohort
 

@@ -60,6 +60,8 @@ def runtime_diagnostics(requested_device: str, workers: int) -> dict[str, object
     }
     if diagnostics["wsl"] and sys.executable.lower().endswith(".exe"):
         diagnostics["warning"] = (
-            "Windows Python detected inside WSL; use a native Linux virtual environment."
+            "Windows Python detected inside WSL; use native .venv/bin/python "
+            "from a native Linux virtual environment, not .venv/Scripts/python.exe "
+            "or .venv/Scripts/afmc-phase0.exe."
         )
     return diagnostics
