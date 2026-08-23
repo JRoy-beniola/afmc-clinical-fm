@@ -69,6 +69,16 @@ def test_canonical_config_normalizes_nested_dataclasses_sets_and_path_flavours()
     assert canonical_config_bytes(second) == expected
 
 
+def test_canonical_config_rejects_host_dependent_native_paths():
+    from afmc_fm.execution.persistence import canonical_config_bytes
+
+    with pytest.raises(
+        TypeError,
+        match="native Path is host-dependent; use PurePosixPath or PureWindowsPath",
+    ):
+        canonical_config_bytes({"root": Path("research/run")})
+
+
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
 def test_canonical_config_rejects_nonfinite_values_at_any_depth(value):
     from afmc_fm.execution.persistence import canonical_config_bytes
@@ -328,11 +338,11 @@ def test_reaggregation_is_deterministic_and_never_trains_or_simulates(
     tmp_path,
     monkeypatch,
 ):
-    from afmc_fm.execution.manifest import (
-        DERIVED_ARTIFACT_NAMES,
-        SCIENTIFIC_SORT_KEY,
-        reaggregate_benchmark_outputs,
-    )
+    from afmc_fm.execution import manifest
+
+    DERIVED_ARTIFACT_NAMES = manifest.DERIVED_ARTIFACT_NAMES
+    SCIENTIFIC_SORT_KEY = manifest.SCIENTIFIC_SORT_KEY
+    reaggregate_benchmark_outputs = manifest.reaggregate_benchmark_outputs
 
     output = tmp_path / "run"
     simulator, experiment, store, cells = _persist_complete_aggregation_fixture(output)
@@ -340,6 +350,7 @@ def test_reaggregation_is_deterministic_and_never_trains_or_simulates(
     first_bytes = {
         name: (output / name).read_bytes() for name in DERIVED_ARTIFACT_NAMES
     }
+    root_before = (output / "run_record.json").read_bytes()
     for name in DERIVED_ARTIFACT_NAMES:
         (output / name).unlink()
 
@@ -374,6 +385,7 @@ def test_reaggregation_is_deterministic_and_never_trains_or_simulates(
         "afmc_fm.models.baselines.TorchMLPRegressorBaseline.fit", forbidden
     )
     monkeypatch.setattr("afmc_fm.models.baselines.MLPRegressorBaseline.fit", forbidden)
+    monkeypatch.setattr(manifest, "execution_commit_sha", forbidden)
 
     second = reaggregate_benchmark_outputs(simulator, experiment, output)
 
@@ -403,6 +415,7 @@ def test_reaggregation_is_deterministic_and_never_trains_or_simulates(
     assert {
         name: (output / name).read_bytes() for name in DERIVED_ARTIFACT_NAMES
     } == first_bytes
+    assert (output / "run_record.json").read_bytes() == root_before
     assert pd.read_csv(output / "ablation_metrics.csv")["ablation"].tolist() == [
         "no_flow"
     ]

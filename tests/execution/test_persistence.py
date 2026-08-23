@@ -579,13 +579,13 @@ def test_root_run_record_atomically_persists_and_validates_exact_identity_and_pl
             original_started_at=started_at,
             resume=True,
         )
-    with pytest.raises(ValueError, match="incompatible execution commit"):
-        store.initialize_run(
-            expected,
-            execution_commit_sha="b" * 40,
-            original_started_at=started_at,
-            resume=True,
-        )
+    resumed = store.initialize_run(
+        expected,
+        execution_commit_sha="b" * 40,
+        original_started_at=started_at,
+        resume=True,
+    )
+    assert resumed["execution_commit_sha"] == "a" * 40
 
 
 def test_resume_requires_compatible_root_record_even_when_no_cells_exist(tmp_path):

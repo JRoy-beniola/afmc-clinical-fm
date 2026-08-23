@@ -621,7 +621,11 @@ def test_scheduler_captures_commit_and_persists_root_before_executor(
     assert root["execution_commit_sha"] == manifest_payload["execution_commit_sha"] == "a" * 40
 
 
-def test_resume_preserves_original_start_and_accumulates_invocation_timing(tmp_path):
+def test_resume_preserves_original_execution_sha_and_accumulates_timing(
+    tmp_path,
+    monkeypatch,
+):
+    from afmc_fm.execution import scheduler
     from afmc_fm.execution.scheduler import ExecutionOptions, run_scheduled_benchmark
 
     simulator = SimulatorConfig(cohort_size=30, followup_days=45.0)
@@ -631,12 +635,14 @@ def test_resume_preserves_original_start_and_accumulates_invocation_timing(tmp_p
 
     run_scheduled_benchmark(simulator, experiment, output, options)
     first = json.loads((output / "run_manifest.json").read_text(encoding="utf-8"))
+    monkeypatch.setattr(scheduler, "execution_commit_sha", lambda: "b" * 40)
     run_scheduled_benchmark(simulator, experiment, output, options)
     second = json.loads((output / "run_manifest.json").read_text(encoding="utf-8"))
     root = json.loads((output / "run_record.json").read_text(encoding="utf-8"))
 
     assert second["original_started_at"] == first["original_started_at"]
     assert second["started_at"] == first["started_at"]
+    assert second["execution_commit_sha"] == first["execution_commit_sha"]
     assert first["invocation_number"] == 1
     assert second["invocation_number"] == 2
     assert second["cumulative_wall_time_seconds"] >= (

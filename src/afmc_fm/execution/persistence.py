@@ -49,8 +49,9 @@ class RunIdentity:
 def canonical_config_bytes(config: object) -> bytes:
     """Serialize recursively normalized config content using canonical JSON.
 
-    Native paths use their platform flavour, while explicit ``PureWindowsPath``
-    values always use Windows parsing. All path text is emitted with ``/``.
+    Native ``Path`` values are rejected because their parsing depends on the
+    host. Explicit ``PurePosixPath`` and ``PureWindowsPath`` values are tagged
+    with their flavour, and all path text is emitted with ``/``.
     """
     if not (
         (is_dataclass(config) and not isinstance(config, type))
@@ -83,6 +84,10 @@ def _normalize_config_value(value: object) -> object:
             key: _normalize_config_value(item)
             for key, item in value.items()
         }
+    if isinstance(value, Path):
+        raise TypeError(
+            "native Path is host-dependent; use PurePosixPath or PureWindowsPath"
+        )
     if isinstance(value, PurePath):
         flavour = "windows" if isinstance(value, PureWindowsPath) else "posix"
         return {
@@ -131,25 +136,14 @@ class RunStore:
         resume: bool,
     ) -> dict[str, Any]:
         """Create or validate the immutable root identity and exact run plan."""
-        expected_plan = _canonical_expected_plan(expected_by_shard)
         _require_commit_sha(execution_commit_sha)
         root_path = self.output / "run_record.json"
         if resume:
-            if not root_path.is_file():
-                raise ValueError("missing run root record for resume")
-            record = _load_root_record(root_path)
-            if record["schema_version"] != ROOT_RUN_SCHEMA_VERSION:
-                raise ValueError("incompatible run root schema")
-            if record["run_identity"] != asdict(self.identity):
-                raise ValueError("incompatible run identity in root record")
-            if record["expected_shards"] != expected_plan:
-                raise ValueError("incompatible run plan in root record")
-            if record["execution_commit_sha"] != execution_commit_sha:
-                raise ValueError("incompatible execution commit in root record")
-            return record
+            return self.load_run(expected_by_shard)
 
         if root_path.exists():
             raise ValueError("run root record already exists")
+        expected_plan = _canonical_expected_plan(expected_by_shard)
         record = {
             "schema_version": ROOT_RUN_SCHEMA_VERSION,
             "run_identity": asdict(self.identity),
@@ -162,6 +156,23 @@ class RunStore:
         }
         self.output.mkdir(parents=True, exist_ok=True)
         _write_json_atomic(root_path, record)
+        return record
+
+    def load_run(
+        self,
+        expected_by_shard: Mapping[str, frozenset[str]],
+    ) -> dict[str, Any]:
+        """Load and validate the immutable scientific identity and exact plan."""
+        root_path = self.output / "run_record.json"
+        if not root_path.is_file():
+            raise ValueError("missing run root record for resume")
+        record = _load_root_record(root_path)
+        if record["schema_version"] != ROOT_RUN_SCHEMA_VERSION:
+            raise ValueError("incompatible run root schema")
+        if record["run_identity"] != asdict(self.identity):
+            raise ValueError("incompatible run identity in root record")
+        if record["expected_shards"] != _canonical_expected_plan(expected_by_shard):
+            raise ValueError("incompatible run plan in root record")
         return record
 
     def complete_invocation(

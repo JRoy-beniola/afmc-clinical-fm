@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, is_dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -470,12 +470,7 @@ def reaggregate_benchmark_outputs(
         for shard in shards
     }
     store = RunStore(output, _run_identity(simulator, experiment))
-    store.initialize_run(
-        expected_by_shard,
-        execution_commit_sha=execution_commit_sha(),
-        original_started_at=datetime.now(UTC),
-        resume=True,
-    )
+    store.load_run(expected_by_shard)
     metrics = aggregate_persisted_metrics(store, expected_by_shard)
     write_derived_artifacts(metrics, output)
     return metrics
