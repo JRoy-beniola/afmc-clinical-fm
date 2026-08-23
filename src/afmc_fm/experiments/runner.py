@@ -451,6 +451,7 @@ def _run_low_n_on_cohort(
     mlp_backend: str = "torch",
     prepared: _PreparedCohort | None = None,
     cell_callback: Callable[[pd.DataFrame], None] | None = None,
+    cell_is_complete: Callable[[int, str, str], bool] | None = None,
 ) -> pd.DataFrame:
     unknown = set(model_names).difference(MODEL_NAMES)
     if unknown:
@@ -491,6 +492,10 @@ def _run_low_n_on_cohort(
         test_sequences = [sequences[patient_id] for patient_id in test_ids]
         test_patients = [patient_by_id[patient_id] for patient_id in test_ids]
         for model_name, ablation in variants:
+            if cell_is_complete is not None and cell_is_complete(
+                n_train, model_name, ablation
+            ):
+                continue
             np.random.seed(model_seed)
             torch.manual_seed(model_seed)
             parameters = 0
@@ -635,6 +640,7 @@ def _run_observation_shift_on_cohort(
     device: torch.device,
     prepared: _PreparedCohort | None = None,
     cell_callback: Callable[[pd.DataFrame], None] | None = None,
+    cell_is_complete: Callable[[int, str, str], bool] | None = None,
 ) -> pd.DataFrame:
     ids_by_site = {
         site_id: [
@@ -694,6 +700,10 @@ def _run_observation_shift_on_cohort(
             for site, patients in evaluation_patients.items()
         }
         for model_name, ablation in variants:
+            if cell_is_complete is not None and cell_is_complete(
+                n_train, model_name, ablation
+            ):
+                continue
             np.random.seed(model_seed)
             torch.manual_seed(model_seed)
             model, observation_aware = _flow_jump_variant(
@@ -775,6 +785,7 @@ def _run_configured_benchmarks_on_cohort(
     model_seed: int,
     device: torch.device,
     cell_callback: Callable[[str, pd.DataFrame], None] | None = None,
+    cell_is_complete: Callable[[str, int, str, str], bool] | None = None,
 ) -> pd.DataFrame:
     prepared = _prepare_cohort(cohort)
 
@@ -790,6 +801,22 @@ def _run_configured_benchmarks_on_cohort(
     def emit_observation_shift_cell(metrics: pd.DataFrame) -> None:
         emit_cell("observation_shift", metrics)
 
+    def low_n_cell_is_complete(n_train: int, model: str, ablation: str) -> bool:
+        return (
+            cell_is_complete("low_n", n_train, model, ablation)
+            if cell_is_complete is not None
+            else False
+        )
+
+    def observation_shift_cell_is_complete(
+        n_train: int, model: str, ablation: str
+    ) -> bool:
+        return (
+            cell_is_complete("observation_shift", n_train, model, ablation)
+            if cell_is_complete is not None
+            else False
+        )
+
     low_n = _run_low_n_on_cohort(
         cohort,
         config,
@@ -800,6 +827,7 @@ def _run_configured_benchmarks_on_cohort(
         device,
         prepared=prepared,
         cell_callback=(emit_low_n_cell if cell_callback is not None else None),
+        cell_is_complete=low_n_cell_is_complete,
     )
     low_n["world"] = cohort.config.world_name
     low_n["benchmark"] = "low_n"
@@ -822,6 +850,7 @@ def _run_configured_benchmarks_on_cohort(
                 if cell_callback is not None
                 else None
             ),
+            cell_is_complete=observation_shift_cell_is_complete,
         )
         observation_shift["world"] = cohort.config.world_name
         observation_shift["benchmark"] = "observation_shift"

@@ -27,6 +27,16 @@ class ShardSpec:
         )
 
 
+def benchmark_cell_id(
+    benchmark: str,
+    shard: ShardSpec,
+    n_train: int,
+    model: str,
+    ablation: str,
+) -> str:
+    return f"{benchmark}__{shard.shard_id}__n{n_train}__{model}__{ablation}"
+
+
 @dataclass(frozen=True, slots=True)
 class CellResult:
     shard: ShardSpec
@@ -39,6 +49,16 @@ class CellResult:
     @property
     def shard_id(self) -> str:
         return self.shard.shard_id
+
+    @property
+    def cell_id(self) -> str:
+        return benchmark_cell_id(
+            self.benchmark,
+            self.shard,
+            self.n_train,
+            self.model,
+            self.ablation,
+        )
 
 
 def plan_shards(
@@ -59,19 +79,35 @@ def run_shard(
     sim_config: SimulatorConfig,
     experiment: ExperimentConfig,
     device: torch.device,
+    completed_cell_ids: frozenset[str] = frozenset(),
+    on_cell_complete: Callable[[CellResult], None] | None = None,
+    *,
     cell_callback: Callable[[CellResult], None] | None = None,
 ) -> pd.DataFrame:
+    if cell_callback is not None and on_cell_complete is not None:
+        raise ValueError("provide only one cell completion callback")
+    completion_callback = (
+        on_cell_complete if on_cell_complete is not None else cell_callback
+    )
     cohort = (
         simulate_cohort(sim_config, spec.cohort_seed)
         if spec.world == "custom"
         else simulate_world(spec.world, sim_config, spec.cohort_seed)
     )
 
+    def cell_is_complete(
+        benchmark: str, n_train: int, model: str, ablation: str
+    ) -> bool:
+        return (
+            benchmark_cell_id(benchmark, spec, n_train, model, ablation)
+            in completed_cell_ids
+        )
+
     def emit_cell(benchmark: str, metrics: pd.DataFrame) -> None:
-        if cell_callback is None:
+        if completion_callback is None:
             return
         first = metrics.iloc[0]
-        cell_callback(
+        completion_callback(
             CellResult(
                 shard=spec,
                 benchmark=benchmark,
@@ -88,5 +124,6 @@ def run_shard(
         spec.subset_seed,
         spec.model_seed,
         device,
-        cell_callback=emit_cell if cell_callback is not None else None,
+        cell_callback=emit_cell if completion_callback is not None else None,
+        cell_is_complete=cell_is_complete,
     )

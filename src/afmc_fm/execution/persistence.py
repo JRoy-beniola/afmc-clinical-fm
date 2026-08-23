@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from afmc_fm.execution.jobs import CellResult
+from afmc_fm.execution.jobs import CellResult, ShardSpec, benchmark_cell_id
 
 CELL_SCHEMA_VERSION = 1
 METRIC_ROW_KEYS = frozenset(
@@ -49,7 +49,7 @@ class RunStore:
 
     def write_cell(self, result: CellResult) -> str:
         shard_dir = self._shard_dir(result.shard.shard_id)
-        cell_id = _cell_id(result)
+        cell_id = result.cell_id
         _require_safe_segment(cell_id, "cell ID")
         cells_dir = shard_dir / "cells"
         final_path = cells_dir / f"{cell_id}.json"
@@ -253,16 +253,6 @@ class RunStore:
                 yield from payload["metric_rows"]
 
 
-def _cell_id(result: CellResult) -> str:
-    return _cell_id_from_components(
-        result.benchmark,
-        result.shard.shard_id,
-        result.n_train,
-        result.model,
-        result.ablation,
-    )
-
-
 def _metric_rows(result: CellResult) -> list[dict[str, Any]]:
     normalized_rows: list[dict[str, Any]] = []
     for raw_row in result.metrics.to_dict(orient="records"):
@@ -334,17 +324,20 @@ def _is_valid_payload(payload: Any, path: Path, expected_identity: dict[str, str
     if any(type(value) is not int for value in integer_fields):
         return False
 
-    expected_shard_id = (
-        f"{shard['world']}__cohort{shard['cohort_seed']}"
-        f"__subset{shard['subset_seed']}__model{shard['model_seed']}"
+    expected_shard = ShardSpec(
+        shard["world"],
+        shard["cohort_seed"],
+        shard["subset_seed"],
+        shard["model_seed"],
     )
+    expected_shard_id = expected_shard.shard_id
     if shard["shard_id"] != expected_shard_id:
         return False
     if path.parent.name != "cells" or path.parent.parent.name != expected_shard_id:
         return False
-    expected_cell_id = _cell_id_from_components(
+    expected_cell_id = benchmark_cell_id(
         cell["benchmark"],
-        expected_shard_id,
+        expected_shard,
         cell["n_train"],
         cell["model"],
         cell["ablation"],
@@ -405,12 +398,6 @@ def _is_valid_metric_row(row: Any, expected_identity: dict[str, str | int]) -> b
         type(row[field]) is type(expected) and row[field] == expected
         for field, expected in expected_identity.items()
     )
-
-
-def _cell_id_from_components(
-    benchmark: str, shard_id: str, n_train: int, model: str, ablation: str
-) -> str:
-    return f"{benchmark}__{shard_id}__n{n_train}__{model}__{ablation}"
 
 
 def _require_safe_segment(value: Any, label: str) -> None:

@@ -6,7 +6,13 @@ import torch
 
 from afmc_fm.cli import _experiment_from_yaml
 from afmc_fm.execution import jobs
-from afmc_fm.execution.jobs import CellResult, ShardSpec, plan_shards, run_shard
+from afmc_fm.execution.jobs import (
+    CellResult,
+    ShardSpec,
+    plan_shards,
+    run_shard,
+)
+from afmc_fm.execution.persistence import RunIdentity, RunStore
 from afmc_fm.experiments import runner
 from afmc_fm.experiments.runner import ExperimentConfig
 from afmc_fm.simulator.config import SimulatorConfig
@@ -90,6 +96,97 @@ def test_shard_spec_is_immutable():
 
     with pytest.raises(FrozenInstanceError):
         shard.model_seed = 999  # type: ignore[misc]
+
+
+def test_benchmark_cell_id_preserves_the_task_6_persistence_schema():
+    shard = ShardSpec("jumps", 101, 201, 301)
+
+    assert jobs.benchmark_cell_id(
+        "low_n", shard, 5, "engineered_linear", "none"
+    ) == "low_n__jumps__cohort101__subset201__model301__n5__engineered_linear__none"
+
+
+def test_run_shard_persists_before_interrupt_and_resumes_without_refitting_cell(
+    tmp_path, monkeypatch
+):
+    experiment = ExperimentConfig(
+        train_sizes=(5, 10),
+        worlds=("smooth",),
+        models=("engineered_linear",),
+        ablations=("none",),
+        max_epochs=1,
+        patience=1,
+    )
+    spec = ShardSpec("smooth", 17, 23, 29)
+    store = RunStore(
+        tmp_path / "run",
+        RunIdentity(
+            protocol_anchor="be5a66b2e45362f60c90844e4e25673fb7bb3e21",
+            simulator_config_hash="simulator-sha256",
+            experiment_config_hash="experiment-sha256",
+        ),
+    )
+    fit_calls: list[int] = []
+    active_n_train: int | None = None
+    real_fit = runner.TorchRidgeRegressor.fit
+    real_select_budget = runner.select_low_n_budget
+
+    def tracked_select_budget(development_pool, n, subset_seed, **kwargs):
+        nonlocal active_n_train
+        active_n_train = n
+        return real_select_budget(development_pool, n, subset_seed, **kwargs)
+
+    def counted_fit(estimator, features, targets):
+        assert active_n_train is not None
+        fit_calls.append(active_n_train)
+        return real_fit(estimator, features, targets)
+
+    monkeypatch.setattr(runner, "select_low_n_budget", tracked_select_budget)
+    monkeypatch.setattr(runner.TorchRidgeRegressor, "fit", counted_fit)
+    persisted_before_interrupt: list[str] = []
+
+    def persist_then_interrupt(cell: CellResult) -> None:
+        persisted_before_interrupt.append(store.write_cell(cell))
+        raise RuntimeError("simulated interruption")
+
+    with pytest.raises(RuntimeError, match="simulated interruption"):
+        run_shard(
+            spec,
+            SimulatorConfig(cohort_size=30, followup_days=45.0),
+            experiment,
+            torch.device("cpu"),
+            completed_cell_ids=frozenset(),
+            on_cell_complete=persist_then_interrupt,
+        )
+
+    assert fit_calls == [5]
+    completed = store.load_completed_cell_ids(spec.shard_id)
+    assert completed == frozenset(persisted_before_interrupt)
+    assert completed == frozenset(
+        {"low_n__smooth__cohort17__subset23__model29__n5__engineered_linear__none"}
+    )
+
+    resumed_callbacks: list[str] = []
+    fit_calls.clear()
+
+    def persist_resumed(cell: CellResult) -> None:
+        resumed_callbacks.append(store.write_cell(cell))
+
+    resumed = run_shard(
+        spec,
+        SimulatorConfig(cohort_size=30, followup_days=45.0),
+        experiment,
+        torch.device("cpu"),
+        completed_cell_ids=completed,
+        on_cell_complete=persist_resumed,
+    )
+
+    assert fit_calls == [10]
+    assert resumed_callbacks == [
+        "low_n__smooth__cohort17__subset23__model29__n10__engineered_linear__none"
+    ]
+    assert set(resumed["n_train"]) == {10}
+    assert completed.isdisjoint(resumed_callbacks)
 
 
 def test_run_shard_runs_every_configured_low_n_cell():
@@ -230,3 +327,48 @@ def test_run_shard_simulates_once_and_encodes_each_patient_once(monkeypatch):
     assert {"site_0", "site_1", "site_1_minus_site_0"} <= set(
         shift["site_or_shift"]
     )
+
+
+def test_run_shard_skips_completed_observation_shift_before_neural_fit(
+    monkeypatch,
+):
+    spec = ShardSpec("site_shift", 31, 37, 41)
+    experiment = ExperimentConfig(
+        train_sizes=(5,),
+        worlds=("site_shift",),
+        models=("flow_jump",),
+        ablations=("none",),
+        max_epochs=1,
+        patience=1,
+    )
+    completed_observation_shift = jobs.benchmark_cell_id(
+        "observation_shift", spec, 5, "flow_jump", "none"
+    )
+    fit_calls = 0
+    real_fit = runner._fit_neural
+
+    def counted_fit(*args, **kwargs):
+        nonlocal fit_calls
+        fit_calls += 1
+        return real_fit(*args, **kwargs)
+
+    monkeypatch.setattr(runner, "_fit_neural", counted_fit)
+    emitted: list[CellResult] = []
+
+    results = run_shard(
+        spec,
+        SimulatorConfig(cohort_size=30, followup_days=45.0),
+        experiment,
+        torch.device("cpu"),
+        completed_cell_ids=frozenset({completed_observation_shift}),
+        on_cell_complete=emitted.append,
+    )
+
+    assert fit_calls == 1
+    assert set(results["benchmark"]) == {"low_n"}
+    assert [(cell.benchmark, cell.cell_id) for cell in emitted] == [
+        (
+            "low_n",
+            "low_n__site_shift__cohort31__subset37__model41__n5__flow_jump__none",
+        )
+    ]
