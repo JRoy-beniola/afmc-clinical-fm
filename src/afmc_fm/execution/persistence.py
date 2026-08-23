@@ -243,13 +243,19 @@ class RunStore:
         self._require_contained(marker)
         marker.unlink(missing_ok=True)
 
-    def iter_metric_rows(self) -> Iterator[dict[str, Any]]:
+    def iter_metric_rows(
+        self,
+        expected_cell_ids: frozenset[str] | None = None,
+    ) -> Iterator[dict[str, Any]]:
         self.validate_resume()
         expected_identity = asdict(self.identity)
         paths = sorted(self.output.glob("shards/*/cells/*.json"))
         for path in paths:
             payload = _load_valid_payload(path, expected_identity)
-            if payload is not None:
+            if payload is not None and (
+                expected_cell_ids is None
+                or payload["cell"]["cell_id"] in expected_cell_ids
+            ):
                 yield from payload["metric_rows"]
 
 

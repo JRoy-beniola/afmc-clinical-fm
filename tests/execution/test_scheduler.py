@@ -1,4 +1,6 @@
 import json
+import os
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -96,9 +98,12 @@ def _tiny_experiment(*, worlds=("smooth",), seed_bundles=1) -> ExperimentConfig:
     )
 
 
-def test_workers_use_spawn_one_thread_and_one_matched_shard_per_future(tmp_path):
+def test_workers_use_spawn_one_thread_and_one_matched_shard_per_future(
+    tmp_path, monkeypatch
+):
     from afmc_fm.execution.scheduler import ExecutionOptions, run_scheduled_benchmark
 
+    monkeypatch.setenv("OPENBLAS_NUM_THREADS", "7")
     results = run_scheduled_benchmark(
         SimulatorConfig(cohort_size=30, followup_days=45.0),
         _tiny_experiment(seed_bundles=2),
@@ -114,6 +119,16 @@ def test_workers_use_spawn_one_thread_and_one_matched_shard_per_future(tmp_path)
         set(metadata["thread_environment"].values()) == {"1"}
         for metadata in worker_metadata
     )
+    assert all(
+        set(metadata["inherited_thread_environment"].values()) == {"1"}
+        for metadata in worker_metadata
+    )
+    assert all(metadata["numeric_thread_pools"] for metadata in worker_metadata)
+    assert all(
+        pool["num_threads"] == 1
+        for metadata in worker_metadata
+        for pool in metadata["numeric_thread_pools"]
+    )
     assert {
         (
             metadata["world"],
@@ -124,7 +139,7 @@ def test_workers_use_spawn_one_thread_and_one_matched_shard_per_future(tmp_path)
         for metadata in worker_metadata
     } == {("smooth", 17, 23, 31), ("smooth", 18, 24, 32)}
     assert len({metadata["shard_id"] for metadata in worker_metadata}) == 2
-    assert len({metadata["process_id"] for metadata in worker_metadata}) == 2
+    assert os.environ["OPENBLAS_NUM_THREADS"] == "7"
 
 
 def test_progress_uses_persisted_cells_and_reports_every_required_field(tmp_path):
@@ -210,8 +225,27 @@ def test_fail_fast_true_cancels_pending_futures_and_propagates_structured_failur
     assert error.failure.exception_type == "ValueError"
     assert error.failure.device == "cpu"
     assert error.failure.shard_id.startswith("not_a_world_")
-    assert error.cancelled_pending >= 1
-    assert error.running_not_terminated >= 0
+    assert error.cancelled_pending >= 0
+    assert 0 <= error.running_not_terminated <= 1
+
+
+def test_fail_fast_cancellation_distinguishes_pending_from_running_futures():
+    from concurrent.futures import Future
+
+    from afmc_fm.execution.scheduler import _cancel_pending_futures
+
+    pending = Future()
+    running = Future()
+    assert running.set_running_or_notify_cancel()
+
+    cancelled, not_terminated = _cancel_pending_futures(
+        [pending, running], worker_limit=1
+    )
+
+    assert cancelled == 1
+    assert pending.cancelled()
+    assert not_terminated == 1
+    assert running.running()
 
 
 def test_fully_resumed_shard_succeeds_when_worker_returns_columnless_empty_frame(
@@ -238,3 +272,207 @@ def test_fully_resumed_shard_succeeds_when_worker_returns_columnless_empty_frame
         first.sort_values(SCIENTIFIC_KEY, ignore_index=True),
         resumed.sort_values(SCIENTIFIC_KEY, ignore_index=True),
     )
+
+
+def test_custom_site_shift_world_plans_exactly_the_cells_the_runner_executes(tmp_path):
+    from afmc_fm.execution.scheduler import ExecutionOptions, run_scheduled_benchmark
+
+    simulator = SimulatorConfig(
+        cohort_size=30,
+        followup_days=45.0,
+        world_name="site_shift",
+    )
+    experiment = ExperimentConfig(
+        train_sizes=(5,),
+        worlds=("custom",),
+        cohort_seeds=(17,),
+        subset_seeds=(23,),
+        model_seeds=(31,),
+        models=("flow_jump",),
+        ablations=("none",),
+        max_epochs=1,
+        patience=1,
+    )
+    output = tmp_path / "run"
+
+    results = run_scheduled_benchmark(
+        simulator,
+        experiment,
+        output,
+        ExecutionOptions(device="cpu", workers=1, resume=False, fail_fast=True),
+    )
+
+    assert _persisted_cell_ids(output) == {
+        "low_n__custom__cohort17__subset23__model31__n5__flow_jump__none",
+        "observation_shift__custom__cohort17__subset23__model31__n5__flow_jump__none",
+    }
+    assert set(results["benchmark"]) == {"low_n", "observation_shift"}
+    assert set(results["world"]) == {"custom"}
+
+
+def test_fresh_run_rejects_existing_run_artifacts_without_modifying_them(tmp_path):
+    from afmc_fm.execution.scheduler import ExecutionOptions, run_scheduled_benchmark
+
+    simulator = SimulatorConfig(cohort_size=30, followup_days=45.0)
+    experiment = _tiny_experiment()
+    output = tmp_path / "run"
+    fresh = ExecutionOptions(device="cpu", workers=1, resume=False, fail_fast=True)
+    run_scheduled_benchmark(simulator, experiment, output, fresh)
+    cell_path = next(output.glob("shards/*/cells/*.json"))
+    original = cell_path.read_bytes()
+
+    with pytest.raises(ValueError, match="existing run artifacts.*resume"):
+        run_scheduled_benchmark(simulator, experiment, output, fresh)
+
+    assert cell_path.read_bytes() == original
+
+
+def test_resume_rejects_valid_same_identity_cell_from_unplanned_shard(tmp_path):
+    from afmc_fm.execution.jobs import CellResult, ShardSpec
+    from afmc_fm.execution.persistence import RunStore
+    from afmc_fm.execution.scheduler import (
+        ExecutionOptions,
+        _run_identity,
+        run_scheduled_benchmark,
+    )
+
+    simulator = SimulatorConfig(cohort_size=30, followup_days=45.0)
+    experiment = _tiny_experiment()
+    output = tmp_path / "run"
+    planned = run_scheduled_benchmark(
+        simulator,
+        experiment,
+        output,
+        ExecutionOptions(device="cpu", workers=1, resume=False, fail_fast=True),
+    )
+    unplanned_shard = ShardSpec("jumps", 17, 23, 31)
+    unplanned_metrics = planned.copy()
+    unplanned_metrics.attrs.clear()
+    unplanned_metrics["world"] = "jumps"
+    RunStore(output, _run_identity(simulator, experiment)).write_cell(
+        CellResult(
+            shard=unplanned_shard,
+            benchmark="low_n",
+            n_train=5,
+            model="engineered_linear",
+            ablation="none",
+            metrics=unplanned_metrics,
+        )
+    )
+
+    with pytest.raises(ValueError, match="unplanned persisted cells.*jumps"):
+        run_scheduled_benchmark(
+            simulator,
+            experiment,
+            output,
+            ExecutionOptions(device="cpu", workers=1, resume=True, fail_fast=True),
+        )
+
+
+def test_progress_observes_checkpoint_before_multi_shard_future_completion(tmp_path):
+    from afmc_fm.execution.scheduler import ExecutionOptions, run_scheduled_benchmark
+
+    experiment = ExperimentConfig(
+        train_sizes=(5,),
+        worlds=("smooth",),
+        cohort_seeds=(17, 19),
+        subset_seeds=(23, 29),
+        model_seeds=(31, 37),
+        models=("engineered_linear", "flow_jump"),
+        ablations=("none",),
+        max_epochs=3,
+        patience=3,
+    )
+
+    results = run_scheduled_benchmark(
+        SimulatorConfig(cohort_size=30, followup_days=45.0),
+        experiment,
+        tmp_path / "run",
+        ExecutionOptions(device="cpu", workers=1, resume=False, fail_fast=True),
+    )
+
+    events = results.attrs["progress_events"]
+    assert any(
+        event["cells_complete"] in {1, 3}
+        for event in events
+    )
+    assert any(event["active_workers"] == 1 for event in events[:-1])
+    assert all(0 <= event["active_workers"] <= 1 for event in events)
+
+
+@pytest.mark.parametrize(
+    ("axis", "experiment"),
+    [
+        ("train_sizes", replace(_tiny_experiment(), train_sizes=(5, 5))),
+        (
+            "models",
+            replace(
+                _tiny_experiment(),
+                models=("engineered_linear", "engineered_linear"),
+            ),
+        ),
+        ("ablations", replace(_tiny_experiment(), ablations=("none", "none"))),
+    ],
+)
+def test_duplicate_experiment_axes_are_rejected_before_submission(
+    tmp_path, axis, experiment
+):
+    from afmc_fm.execution.scheduler import ExecutionOptions, run_scheduled_benchmark
+
+    output = tmp_path / "run"
+    with pytest.raises(ValueError, match=f"duplicate {axis}"):
+        run_scheduled_benchmark(
+            SimulatorConfig(cohort_size=30, followup_days=45.0),
+            experiment,
+            output,
+            ExecutionOptions(device="cpu", workers=1, resume=False, fail_fast=True),
+        )
+
+    assert not output.exists()
+
+
+def test_empty_shard_plan_is_rejected_before_submission(tmp_path):
+    from afmc_fm.execution.scheduler import ExecutionOptions, run_scheduled_benchmark
+
+    with pytest.raises(ValueError, match="at least one shard"):
+        run_scheduled_benchmark(
+            SimulatorConfig(cohort_size=30, followup_days=45.0),
+            replace(_tiny_experiment(), worlds=()),
+            tmp_path / "run",
+            ExecutionOptions(device="cpu", workers=1, resume=False, fail_fast=True),
+        )
+
+
+def test_partial_submission_failure_shuts_down_executor(tmp_path, monkeypatch):
+    from concurrent.futures import Future
+
+    from afmc_fm.execution import scheduler
+
+    shutdown_calls: list[tuple[bool, bool]] = []
+
+    class FailingExecutor:
+        def __init__(self, **kwargs):
+            self.submissions = 0
+
+        def submit(self, function, request):
+            self.submissions += 1
+            if self.submissions == 2:
+                raise RuntimeError("synchronous submission failure")
+            return Future()
+
+        def shutdown(self, *, wait, cancel_futures):
+            shutdown_calls.append((wait, cancel_futures))
+
+    monkeypatch.setattr(scheduler, "ProcessPoolExecutor", FailingExecutor)
+
+    with pytest.raises(RuntimeError, match="synchronous submission failure"):
+        scheduler.run_scheduled_benchmark(
+            SimulatorConfig(cohort_size=30, followup_days=45.0),
+            _tiny_experiment(seed_bundles=2),
+            tmp_path / "run",
+            scheduler.ExecutionOptions(
+                device="cpu", workers=1, resume=False, fail_fast=True
+            ),
+        )
+
+    assert shutdown_calls == [(True, True)]

@@ -643,3 +643,16 @@ def test_iter_metric_rows_derives_rows_only_from_valid_persisted_cells(tmp_path)
     (cells_dir / "truncated.json").write_text('{"metric_rows": [')
 
     assert list(store.iter_metric_rows()) == cell.metrics.to_dict(orient="records")
+
+
+def test_iter_metric_rows_can_scope_aggregation_to_expected_cell_ids(tmp_path):
+    store = RunStore(tmp_path / "run", _identity())
+    first = _cell()
+    first_id = store.write_cell(first)
+    second_metrics = first.metrics.copy()
+    second_metrics["n_train"] = 10
+    store.write_cell(replace(first, n_train=10, metrics=second_metrics))
+
+    rows = list(store.iter_metric_rows(frozenset({first_id})))
+
+    assert rows == first.metrics.to_dict(orient="records")

@@ -12,16 +12,24 @@ import logging
 import multiprocessing
 import os
 import time
-from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import torch
+from threadpoolctl import threadpool_info, threadpool_limits
 
 from afmc_fm.execution.device import resolve_device
-from afmc_fm.execution.jobs import ShardSpec, benchmark_cell_id, plan_shards, run_shard
+from afmc_fm.execution.jobs import (
+    ShardSpec,
+    benchmark_cell_id,
+    effective_world_name,
+    plan_shards,
+    run_shard,
+)
 from afmc_fm.execution.persistence import RunIdentity, RunStore
 from afmc_fm.experiments.runner import ExperimentConfig
 from afmc_fm.simulator.config import SimulatorConfig
@@ -33,6 +41,7 @@ THREAD_ENVIRONMENT_VARIABLES = (
     "OPENBLAS_NUM_THREADS",
     "NUMEXPR_NUM_THREADS",
 )
+PROGRESS_POLL_SECONDS = 0.05
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +137,8 @@ class _WorkerResult:
     start_method: str
     torch_threads: int
     thread_environment: dict[str, str]
+    inherited_thread_environment: dict[str, str]
+    numeric_thread_pools: tuple[dict[str, str | int], ...]
     returned_rows: int
     returned_columns: tuple[str, ...]
 
@@ -173,6 +184,7 @@ def _model_variants(
 
 def _expected_cell_ids(
     shard: ShardSpec,
+    sim_config: SimulatorConfig,
     experiment: ExperimentConfig,
 ) -> frozenset[str]:
     expected = {
@@ -180,7 +192,7 @@ def _expected_cell_ids(
         for n_train in experiment.train_sizes
         for model, ablation in _model_variants(experiment, observation_shift=False)
     }
-    if shard.world == "site_shift":
+    if effective_world_name(shard, sim_config) == "site_shift":
         expected.update(
             benchmark_cell_id(
                 "observation_shift", shard, n_train, model, ablation
@@ -202,6 +214,36 @@ def _limit_worker_threads() -> dict[str, str]:
     return {variable: os.environ[variable] for variable in THREAD_ENVIRONMENT_VARIABLES}
 
 
+@contextmanager
+def _inherited_thread_limits():
+    previous = {
+        variable: os.environ.get(variable)
+        for variable in THREAD_ENVIRONMENT_VARIABLES
+    }
+    try:
+        for variable in THREAD_ENVIRONMENT_VARIABLES:
+            os.environ[variable] = "1"
+        yield
+    finally:
+        for variable, value in previous.items():
+            if value is None:
+                os.environ.pop(variable, None)
+            else:
+                os.environ[variable] = value
+
+
+def _numeric_thread_pools() -> tuple[dict[str, str | int], ...]:
+    return tuple(
+        {
+            "user_api": str(pool["user_api"]),
+            "internal_api": str(pool["internal_api"]),
+            "prefix": str(pool["prefix"]),
+            "num_threads": int(pool["num_threads"]),
+        }
+        for pool in threadpool_info()
+    )
+
+
 def _failure_for(
     shard: ShardSpec,
     device: str,
@@ -221,37 +263,44 @@ def _failure_for(
 
 def _run_shard_worker(request: _WorkerRequest) -> _WorkerResult:
     """Run exactly one complete shard; all arguments and results are pickleable."""
+    inherited_thread_environment = {
+        variable: os.environ.get(variable, "")
+        for variable in THREAD_ENVIRONMENT_VARIABLES
+    }
     thread_environment = _limit_worker_threads()
     try:
-        store = RunStore(request.output, request.identity)
-        frame = run_shard(
-            request.shard,
-            request.simulator,
-            request.experiment,
-            torch.device(request.device),
-            completed_cell_ids=request.completed_cell_ids,
-            on_cell_complete=store.write_cell,
-        )
-        if frame.empty:
-            frame = pd.DataFrame()
-        persisted = store.load_completed_cell_ids(request.shard.shard_id)
-        if persisted != request.expected_cell_ids:
-            missing = sorted(request.expected_cell_ids - persisted)
-            unexpected = sorted(persisted - request.expected_cell_ids)
-            raise ValueError(
-                "persisted shard cells do not match expectation "
-                f"(missing={missing}, unexpected={unexpected})"
+        with threadpool_limits(limits=1):
+            store = RunStore(request.output, request.identity)
+            frame = run_shard(
+                request.shard,
+                request.simulator,
+                request.experiment,
+                torch.device(request.device),
+                completed_cell_ids=request.completed_cell_ids,
+                on_cell_complete=store.write_cell,
             )
-        store.mark_shard_complete(request.shard.shard_id, request.expected_cell_ids)
-        return _WorkerResult(
-            shard=request.shard,
-            process_id=os.getpid(),
-            start_method=multiprocessing.get_start_method(),
-            torch_threads=torch.get_num_threads(),
-            thread_environment=thread_environment,
-            returned_rows=len(frame),
-            returned_columns=tuple(str(column) for column in frame.columns),
-        )
+            if frame.empty:
+                frame = pd.DataFrame()
+            persisted = store.load_completed_cell_ids(request.shard.shard_id)
+            if persisted != request.expected_cell_ids:
+                missing = sorted(request.expected_cell_ids - persisted)
+                unexpected = sorted(persisted - request.expected_cell_ids)
+                raise ValueError(
+                    "persisted shard cells do not match expectation "
+                    f"(missing={missing}, unexpected={unexpected})"
+                )
+            store.mark_shard_complete(request.shard.shard_id, request.expected_cell_ids)
+            return _WorkerResult(
+                shard=request.shard,
+                process_id=os.getpid(),
+                start_method=multiprocessing.get_start_method(),
+                torch_threads=torch.get_num_threads(),
+                thread_environment=thread_environment,
+                inherited_thread_environment=inherited_thread_environment,
+                numeric_thread_pools=_numeric_thread_pools(),
+                returned_rows=len(frame),
+                returned_columns=tuple(str(column) for column in frame.columns),
+            )
     except Exception as error:
         if isinstance(error, ShardExecutionError):
             raise
@@ -275,6 +324,31 @@ def _persisted_progress(
         for shard_id, expected in expected_by_shard.items()
     )
     return shards_complete, cells_complete
+
+
+def _validate_experiment_axes(experiment: ExperimentConfig) -> None:
+    for name in ("train_sizes", "models", "ablations"):
+        values = getattr(experiment, name)
+        if len(values) != len(set(values)):
+            raise ValueError(f"duplicate {name} are not allowed")
+
+
+def _validate_persisted_scope(
+    store: RunStore,
+    expected_cell_ids: frozenset[str],
+) -> frozenset[str]:
+    completed = store.load_completed_cell_ids()
+    unexpected = completed - expected_cell_ids
+    if unexpected:
+        raise ValueError(
+            "unplanned persisted cells are not allowed: "
+            + ", ".join(sorted(unexpected))
+        )
+    return completed
+
+
+def _has_run_artifacts(output: Path) -> bool:
+    return os.path.lexists(output / "shards")
 
 
 def _progress_event(
@@ -311,8 +385,24 @@ def _emit_progress(event: ProgressEvent) -> dict[str, Any]:
 
 def _active_workers(
     futures: dict[Future[_WorkerResult], ShardSpec],
+    worker_limit: int,
 ) -> int:
-    return sum(future.running() and not future.done() for future in futures)
+    running_or_queued = sum(
+        future.running() and not future.done() for future in futures
+    )
+    return min(worker_limit, running_or_queued)
+
+
+def _cancel_pending_futures(
+    futures: list[Future[_WorkerResult]],
+    worker_limit: int,
+) -> tuple[int, int]:
+    cancelled = sum(future.cancel() for future in futures)
+    running_not_terminated = min(
+        worker_limit,
+        sum(future.running() and not future.cancelled() for future in futures),
+    )
+    return cancelled, running_not_terminated
 
 
 def _worker_metadata(result: _WorkerResult) -> dict[str, Any]:
@@ -323,6 +413,8 @@ def _worker_metadata(result: _WorkerResult) -> dict[str, Any]:
         "start_method": result.start_method,
         "torch_threads": result.torch_threads,
         "thread_environment": result.thread_environment,
+        "inherited_thread_environment": result.inherited_thread_environment,
+        "numeric_thread_pools": [dict(pool) for pool in result.numeric_thread_pools],
         "returned_rows": result.returned_rows,
         "returned_columns": list(result.returned_columns),
     }
@@ -336,17 +428,27 @@ def run_scheduled_benchmark(
 ) -> pd.DataFrame:
     """Run deterministic whole-shard futures and rebuild rows from persistence."""
     output = Path(output).resolve()
-    device = str(resolve_device(options.device))
+    _validate_experiment_axes(experiment)
     shards = plan_shards(experiment, supplied_seed=0)
+    if not shards:
+        raise ValueError("benchmark plan must contain at least one shard")
     if len({shard.shard_id for shard in shards}) != len(shards):
         raise ValueError("planned benchmark shards must have unique identities")
     expected_by_shard = {
-        shard.shard_id: _expected_cell_ids(shard, experiment) for shard in shards
+        shard.shard_id: _expected_cell_ids(shard, sim_config, experiment)
+        for shard in shards
     }
+    expected_cell_ids = frozenset().union(*expected_by_shard.values())
     cells_expected = sum(len(expected) for expected in expected_by_shard.values())
+    if not options.resume and _has_run_artifacts(output):
+        raise ValueError(
+            "output contains existing run artifacts; choose a fresh output or enable resume"
+        )
+    device = str(resolve_device(options.device))
     identity = _run_identity(sim_config, experiment)
     store = RunStore(output, identity)
     store.validate_resume()
+    _validate_persisted_scope(store, expected_cell_ids)
     started = time.monotonic()
     failures: list[ShardFailure] = []
     progress_events: list[dict[str, Any]] = []
@@ -371,79 +473,96 @@ def run_scheduled_benchmark(
     ]
 
     ctx = multiprocessing.get_context("spawn")
-    executor = ProcessPoolExecutor(
-        max_workers=options.workers,
-        mp_context=ctx,
-    )
-    futures = {
-        executor.submit(_run_shard_worker, request): request.shard
-        for request in requests
-    }
+    executor: ProcessPoolExecutor | None = None
+    futures: dict[Future[_WorkerResult], ShardSpec] = {}
     shutdown_started = False
-    try:
-        for future in as_completed(futures):
-            shard = futures[future]
-            try:
-                worker_results.append(future.result())
-            except Exception as error:
-                failure = (
-                    error.failure
-                    if isinstance(error, ShardExecutionError)
-                    else _failure_for(shard, device, error)
-                )
-                failures.append(failure)
-                logger.error("benchmark shard failure: %s", asdict(failure))
-                if options.fail_fast:
-                    pending = [
-                        candidate
-                        for candidate in futures
-                        if candidate is not future and not candidate.done()
-                    ]
-                    cancelled = sum(candidate.cancel() for candidate in pending)
-                    running = sum(
-                        candidate.running() and not candidate.cancelled()
-                        for candidate in pending
-                    )
-                    progress_events.append(
-                        _emit_progress(
-                            _progress_event(
-                                store=store,
-                                expected_by_shard=expected_by_shard,
-                                shards_total=len(shards),
-                                cells_expected=cells_expected,
-                                failures=len(failures),
-                                started=started,
-                                active_workers=running,
-                                device=device,
-                            )
-                        )
-                    )
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    shutdown_started = True
-                    raise ScheduledBenchmarkError(
-                        failure,
-                        cancelled_pending=cancelled,
-                        running_not_terminated=running,
-                    ) from error
-            progress_events.append(
-                _emit_progress(
-                    _progress_event(
-                        store=store,
-                        expected_by_shard=expected_by_shard,
-                        shards_total=len(shards),
-                        cells_expected=cells_expected,
-                        failures=len(failures),
-                        started=started,
-                        active_workers=_active_workers(futures),
-                        device=device,
-                    )
-                )
-            )
-    finally:
-        if not shutdown_started:
-            executor.shutdown(wait=True)
+    last_progress: tuple[int, ...] | None = None
 
-    frame = pd.DataFrame(store.iter_metric_rows())
+    def record_progress(*, force: bool = False, active_workers: int | None = None) -> None:
+        nonlocal last_progress
+        event = _progress_event(
+            store=store,
+            expected_by_shard=expected_by_shard,
+            shards_total=len(shards),
+            cells_expected=cells_expected,
+            failures=len(failures),
+            started=started,
+            active_workers=(
+                _active_workers(futures, options.workers)
+                if active_workers is None
+                else min(options.workers, max(0, active_workers))
+            ),
+            device=device,
+        )
+        signature = (
+            event.shards_complete,
+            event.cells_complete,
+            event.failures,
+            event.active_workers,
+        )
+        if force or signature != last_progress:
+            progress_events.append(_emit_progress(event))
+            last_progress = signature
+
+    with _inherited_thread_limits():
+        try:
+            executor = ProcessPoolExecutor(
+                max_workers=options.workers,
+                mp_context=ctx,
+            )
+            for request in requests:
+                future = executor.submit(_run_shard_worker, request)
+                futures[future] = request.shard
+
+            pending = set(futures)
+            record_progress(force=True)
+            while pending:
+                done, _ = wait(
+                    pending,
+                    timeout=PROGRESS_POLL_SECONDS,
+                    return_when=FIRST_COMPLETED,
+                )
+                if not done:
+                    record_progress()
+                    continue
+                for future in done:
+                    pending.remove(future)
+                    shard = futures[future]
+                    try:
+                        worker_results.append(future.result())
+                    except Exception as error:
+                        failure = (
+                            error.failure
+                            if isinstance(error, ShardExecutionError)
+                            else _failure_for(shard, device, error)
+                        )
+                        failures.append(failure)
+                        logger.error("benchmark shard failure: %s", asdict(failure))
+                        if options.fail_fast:
+                            candidates = [
+                                candidate
+                                for candidate in futures
+                                if candidate is not future and not candidate.done()
+                            ]
+                            cancelled, running = _cancel_pending_futures(
+                                candidates,
+                                options.workers,
+                            )
+                            record_progress(force=True, active_workers=running)
+                            executor.shutdown(wait=False, cancel_futures=True)
+                            shutdown_started = True
+                            raise ScheduledBenchmarkError(
+                                failure,
+                                cancelled_pending=cancelled,
+                                running_not_terminated=running,
+                            ) from error
+                    record_progress(force=True)
+        finally:
+            if executor is not None and not shutdown_started:
+                executor.shutdown(wait=True, cancel_futures=True)
+
+    _validate_persisted_scope(store, expected_cell_ids)
+    frame = pd.DataFrame(store.iter_metric_rows(expected_cell_ids))
     frame.attrs["failures"] = [asdict(failure) for failure in failures]
     frame.attrs["progress_events"] = progress_events
     frame.attrs["worker_metadata"] = [

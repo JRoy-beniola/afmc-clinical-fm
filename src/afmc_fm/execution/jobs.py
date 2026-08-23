@@ -74,6 +74,11 @@ def plan_shards(
     )
 
 
+def effective_world_name(spec: ShardSpec, sim_config: SimulatorConfig) -> str:
+    """Return the simulated world that controls benchmark applicability."""
+    return sim_config.world_name if spec.world == "custom" else spec.world
+
+
 def run_shard(
     spec: ShardSpec,
     sim_config: SimulatorConfig,
@@ -89,11 +94,14 @@ def run_shard(
     completion_callback = (
         on_cell_complete if on_cell_complete is not None else cell_callback
     )
+    effective_world = effective_world_name(spec, sim_config)
     cohort = (
         simulate_cohort(sim_config, spec.cohort_seed)
         if spec.world == "custom"
         else simulate_world(spec.world, sim_config, spec.cohort_seed)
     )
+    if cohort.config.world_name != effective_world:
+        raise ValueError("simulated cohort world does not match shard applicability")
 
     def cell_is_complete(
         benchmark: str, n_train: int, model: str, ablation: str
@@ -104,6 +112,7 @@ def run_shard(
         )
 
     def emit_cell(benchmark: str, metrics: pd.DataFrame) -> None:
+        metrics["world"] = spec.world
         if completion_callback is None:
             return
         first = metrics.iloc[0]
@@ -118,7 +127,7 @@ def run_shard(
             )
         )
 
-    return _run_configured_benchmarks_on_cohort(
+    results = _run_configured_benchmarks_on_cohort(
         cohort,
         experiment,
         spec.subset_seed,
@@ -127,3 +136,5 @@ def run_shard(
         cell_callback=emit_cell if completion_callback is not None else None,
         cell_is_complete=cell_is_complete,
     )
+    results["world"] = spec.world
+    return results
