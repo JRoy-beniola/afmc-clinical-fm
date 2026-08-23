@@ -79,10 +79,10 @@ def run_shard(
     sim_config: SimulatorConfig,
     experiment: ExperimentConfig,
     device: torch.device,
+    cell_callback: Callable[[CellResult], None] | None = None,
+    *,
     completed_cell_ids: frozenset[str] = frozenset(),
     on_cell_complete: Callable[[CellResult], None] | None = None,
-    *,
-    cell_callback: Callable[[CellResult], None] | None = None,
 ) -> pd.DataFrame:
     if cell_callback is not None and on_cell_complete is not None:
         raise ValueError("provide only one cell completion callback")

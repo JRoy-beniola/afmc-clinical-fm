@@ -272,6 +272,29 @@ def test_run_shard_emits_one_typed_callback_per_completed_cell():
     )
 
 
+def test_run_shard_preserves_legacy_fifth_positional_callback():
+    experiment = ExperimentConfig(
+        train_sizes=(5,),
+        worlds=("smooth",),
+        models=("engineered_linear",),
+        ablations=("none",),
+        max_epochs=1,
+        patience=1,
+    )
+    emitted: list[CellResult] = []
+
+    aggregate = run_shard(
+        ShardSpec("smooth", 17, 23, 29),
+        SimulatorConfig(cohort_size=30, followup_days=45.0),
+        experiment,
+        torch.device("cpu"),
+        emitted.append,
+    )
+
+    assert len(emitted) == 1
+    pd.testing.assert_frame_equal(emitted[0].metrics, aggregate)
+
+
 def test_run_shard_simulates_once_and_encodes_each_patient_once(monkeypatch):
     simulation_calls: list[tuple[str, int]] = []
     encoded_patient_ids: list[str] = []
