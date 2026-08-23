@@ -1,8 +1,8 @@
 import pytest
 import torch
+from afmc_fm.phase05.model import Phase05FlowJumpAdapter
 
 from afmc_fm.models.flow_jump import FlowJumpAdapter
-from afmc_fm.phase05.model import Phase05FlowJumpAdapter
 
 
 def _model(
