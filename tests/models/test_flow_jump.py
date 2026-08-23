@@ -24,14 +24,11 @@ def test_elapsed_time_changes_pre_event_state():
 def test_event_jump_changes_state():
     model = _model()
     z = torch.zeros(2, 24)
-    rep = torch.randn(2, 16)
-    values = torch.zeros(2, 3)
-    masks = torch.zeros(2, 3)
     event_a = torch.zeros(2, 3)
     event_b = event_a.clone()
     event_b[:, 1] = 1.0
-    a = model.jump(z, rep, values, masks, event_a)
-    b = model.jump(z, rep, values, masks, event_b)
+    a = model.jump(z, event_a)
+    b = model.jump(z, event_b)
     assert not torch.allclose(a, b)
 
 
@@ -97,19 +94,88 @@ def test_observation_forward_outputs_one_logit_per_mask_value():
     assert output.observation_logits.shape == (2, 4, 3)
 
 
+def test_opportunity_only_step_does_not_update_state_but_clinical_step_can():
+    model = FlowJumpAdapter(
+        16,
+        3,
+        3,
+        state_dim=24,
+        model_observation_process=True,
+    )
+    values = torch.zeros(1, 2, 3)
+    values[:, 1] = torch.randn(1, 3)
+    masks = torch.zeros(1, 2, 3)
+    masks[:, 1] = 1.0
+    event_features = torch.zeros(1, 2, 3)
+    event_features[:, 0, 2] = 1.0
+    event_features[:, 1, 0] = 1.0
+    output = model(
+        representations=torch.randn(1, 2, 16),
+        values=values,
+        masks=masks,
+        event_features=event_features,
+        times=torch.tensor([[0.0, 1.0]]),
+        update_mask=torch.tensor([[0.0, 1.0]]),
+    )
+
+    torch.testing.assert_close(
+        output.post_event_states[:, 0],
+        output.pre_event_states[:, 0],
+    )
+    assert not torch.allclose(
+        output.post_event_states[:, 1],
+        output.pre_event_states[:, 1],
+    )
+    assert output.observation_logits is not None
+    assert output.observation_logits.shape[1] == 2
+
+
+def test_no_jump_retains_assimilation_but_ignores_event_semantics():
+    model = FlowJumpAdapter(16, 3, 3, no_jump=True)
+    values = torch.randn(1, 2, 3)
+    masks = torch.ones(1, 2, 3)
+    times = torch.tensor([[0.0, 1.0]])
+    update_mask = torch.ones(1, 2)
+    event_a = torch.zeros(1, 2, 3)
+    event_b = torch.ones(1, 2, 3)
+
+    baseline = model(
+        torch.zeros(1, 2, 16),
+        values,
+        masks,
+        event_a,
+        times,
+        update_mask=update_mask,
+    )
+    changed_events = model(
+        torch.zeros(1, 2, 16),
+        values,
+        masks,
+        event_b,
+        times,
+        update_mask=update_mask,
+    )
+    changed_representation = model(
+        torch.ones(1, 2, 16),
+        values,
+        masks,
+        event_a,
+        times,
+        update_mask=update_mask,
+    )
+
+    torch.testing.assert_close(baseline.value_mean, changed_events.value_mean)
+    torch.testing.assert_close(baseline.event_logits, changed_events.event_logits)
+    assert not torch.allclose(baseline.value_mean, changed_representation.value_mean)
+
+
 def test_ablation_flags_disable_flow_jump_and_probabilistic_scale():
     no_flow = FlowJumpAdapter(16, 3, 3, no_flow=True)
     state = torch.randn(2, 24)
     assert torch.equal(no_flow.flow(state, torch.ones(2)), state)
 
     no_jump = FlowJumpAdapter(16, 3, 3, no_jump=True)
-    jumped = no_jump.jump(
-        state,
-        torch.randn(2, 16),
-        torch.randn(2, 3),
-        torch.ones(2, 3),
-        torch.zeros(2, 3),
-    )
+    jumped = no_jump.jump(state, torch.zeros(2, 3))
     assert torch.equal(jumped, state)
 
     deterministic = FlowJumpAdapter(16, 3, 3, no_probabilistic_scale=True)

@@ -22,6 +22,7 @@ class PatientSequence:
     values: np.ndarray
     masks: np.ndarray
     event_features: np.ndarray
+    update_mask: np.ndarray
     target_next_values: np.ndarray
     target_next_masks: np.ndarray
     target_event_within_horizon: np.ndarray
@@ -49,12 +50,19 @@ def build_patient_sequence(
     values = np.zeros((steps, value_dim), dtype=np.float32)
     masks = np.zeros_like(values)
     event_features = np.zeros((steps, len(EventType)), dtype=np.float32)
+    update_mask = np.zeros(steps, dtype=np.float32)
     representations = np.zeros((steps, encoder.representation_dim), dtype=np.float32)
 
     for index, (timestamp, events) in enumerate(groups):
         representations[index] = encoder.encode(patient.timeline, timestamp)
         for event in events:
             event_features[index, list(EventType).index(event.event_type)] = 1.0
+            is_opportunity_anchor = (
+                event.event_type == EventType.ENCOUNTER
+                and bool(event.metadata.get("measurement_opportunity", False))
+            )
+            if not is_opportunity_anchor:
+                update_mask[index] = 1.0
             if event.event_type == EventType.OBSERVATION and event.code in task.value_codes:
                 lab_index = task.value_codes.index(event.code)
                 values[index, lab_index] = float(event.value)
@@ -104,6 +112,7 @@ def build_patient_sequence(
         values=values,
         masks=masks,
         event_features=event_features,
+        update_mask=update_mask,
         target_next_values=target_values,
         target_next_masks=target_masks,
         target_event_within_horizon=target_events,

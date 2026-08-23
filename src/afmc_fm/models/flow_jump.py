@@ -40,8 +40,11 @@ class FlowJumpAdapter(nn.Module):
         flow_dim = state_dim + 1
         self.flow_gate = nn.Linear(flow_dim, state_dim)
         self.flow_candidate = nn.Linear(flow_dim, state_dim)
-        jump_dim = (0 if no_representation else representation_dim) + 2 * value_dim + event_dim
-        self.jump_cell = nn.GRUCell(jump_dim, state_dim)
+        assimilation_dim = (
+            (0 if no_representation else representation_dim) + 2 * value_dim
+        )
+        self.assimilation_cell = nn.GRUCell(assimilation_dim, state_dim)
+        self.jump_cell = None if no_jump else nn.GRUCell(event_dim, state_dim)
         self.value_head = nn.Linear(state_dim, 2 * value_dim)
         self.event_head = nn.Linear(state_dim, 1)
         self.observation_head: nn.Module | None = None
@@ -60,21 +63,27 @@ class FlowJumpAdapter(nn.Module):
         candidate = torch.tanh(self.flow_candidate(flow_input))
         return state + gate * candidate
 
-    def jump(
+    def assimilate(
         self,
         state: torch.Tensor,
         representation: torch.Tensor,
         values: torch.Tensor,
         masks: torch.Tensor,
+    ) -> torch.Tensor:
+        assimilation_parts = [values * masks, masks]
+        if not self.no_representation:
+            assimilation_parts.insert(0, representation)
+        assimilation_input = torch.cat(assimilation_parts, dim=-1)
+        return self.assimilation_cell(assimilation_input, state)
+
+    def jump(
+        self,
+        state: torch.Tensor,
         event_features: torch.Tensor,
     ) -> torch.Tensor:
-        if self.no_jump:
+        if self.jump_cell is None:
             return state
-        jump_parts = [values * masks, masks, event_features]
-        if not self.no_representation:
-            jump_parts.insert(0, representation)
-        jump_input = torch.cat(jump_parts, dim=-1)
-        return self.jump_cell(jump_input, state)
+        return self.jump_cell(event_features, state)
 
     def predict_observation(
         self,
@@ -91,8 +100,14 @@ class FlowJumpAdapter(nn.Module):
         masks: torch.Tensor,
         event_features: torch.Tensor,
         times: torch.Tensor,
+        update_mask: torch.Tensor | None = None,
     ) -> FlowJumpOutput:
         batch, steps, _ = representations.shape
+        if update_mask is None:
+            update_mask = (
+                (masks.abs().sum(dim=-1) > 0)
+                | (event_features.abs().sum(dim=-1) > 0)
+            ).to(representations.dtype)
         state = representations.new_zeros((batch, self.state_dim))
         pre_states = []
         post_states = []
@@ -105,12 +120,20 @@ class FlowJumpAdapter(nn.Module):
             pre_state = self.flow(state, delta_t)
             if self.model_observation_process:
                 observation_logits.append(self.predict_observation(pre_state))
-            state = self.jump(
+            assimilated_state = self.assimilate(
                 pre_state,
                 representations[:, index],
                 values[:, index],
                 masks[:, index],
+            )
+            updated_state = self.jump(
+                assimilated_state,
                 event_features[:, index],
+            )
+            state = torch.where(
+                update_mask[:, index].bool().unsqueeze(-1),
+                updated_state,
+                pre_state,
             )
             value_output = self.value_head(state)
             mean, log_scale = value_output.chunk(2, dim=-1)

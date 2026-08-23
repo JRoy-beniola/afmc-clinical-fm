@@ -67,6 +67,12 @@ class MLPRegressorBaseline:
     def predict(self, features: np.ndarray) -> np.ndarray:
         return self.model.predict(features)
 
+    def trainable_parameter_count(self) -> int:
+        return sum(
+            parameter.size
+            for parameter in (*self.model.coefs_, *self.model.intercepts_)
+        )
+
 
 @dataclass(frozen=True)
 class GRUBaselineOutput:

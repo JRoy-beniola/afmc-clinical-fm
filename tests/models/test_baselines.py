@@ -60,6 +60,11 @@ def test_mlp_representation_head_fits_nonlinear_signal():
     model = MLPRegressorBaseline(seed=3).fit(x, y)
     prediction = model.predict(x)
     assert np.mean((prediction - y) ** 2) < 0.03
+    expected_parameters = sum(
+        parameter.size
+        for parameter in (*model.model.coefs_, *model.model.intercepts_)
+    )
+    assert model.trainable_parameter_count() == expected_parameters
 
 
 def test_gru_from_scratch_is_invariant_to_representation_values():

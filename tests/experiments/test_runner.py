@@ -144,6 +144,26 @@ def test_tiny_benchmark_runs_explicit_baseline_decomposition():
     }
 
 
+def test_representation_mlp_reports_fitted_trainable_parameters():
+    cohort = simulate_cohort(
+        SimulatorConfig(cohort_size=30, followup_days=45.0), seed=25
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        subset_seeds=(1,),
+        model_seeds=(1,),
+        max_epochs=1,
+        patience=1,
+    )
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("representation_mlp",),
+    )
+    assert results["trainable_parameters"].nunique() == 1
+    assert results["trainable_parameters"].iloc[0] > 0
+
+
 def test_required_ablation_variants_are_runnable_and_tidy():
     cohort = simulate_cohort(
         SimulatorConfig(cohort_size=30, followup_days=45.0), seed=15

@@ -72,6 +72,7 @@ def test_data_pipeline_accepts_generic_timeline_and_task_channels():
     encoder = SummaryHistoryEncoder(task, representation_dim=4, seed=1)
     sequence = build_patient_sequence(patient, encoder, task)
     assert sequence.values.shape == (2, 1)
+    assert sequence.update_mask.tolist() == [1.0, 1.0]
     assert sequence.target_event_within_horizon.tolist() == [1.0, 0.0]
 
 
@@ -103,6 +104,7 @@ def test_all_zero_measurement_opportunities_survive_sequence_construction(monkey
     sequence = build_patient_sequence(patient, encoder, SYNTHETIC_TASK)
     assert len(sequence.times) == len(patient.complete_outcomes.times)
     assert np.all(sequence.masks.sum(axis=1) == 0)
+    assert np.all(sequence.update_mask == 0)
     encounter_index = list(EventType).index(EventType.ENCOUNTER)
     assert np.all(sequence.event_features[:, encounter_index] == 1)
 

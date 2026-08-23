@@ -174,6 +174,7 @@ def _padded_batch(sequences: Sequence[PatientSequence]) -> dict[str, torch.Tenso
         "values": np.zeros((batch, steps, value_dim), dtype=np.float32),
         "masks": np.zeros((batch, steps, value_dim), dtype=np.float32),
         "event_features": np.zeros((batch, steps, event_dim), dtype=np.float32),
+        "update_mask": np.zeros((batch, steps), dtype=np.float32),
         "times": np.zeros((batch, steps), dtype=np.float32),
         "target_values": np.zeros((batch, steps, value_dim), dtype=np.float32),
         "target_masks": np.zeros((batch, steps, value_dim), dtype=np.float32),
@@ -190,6 +191,7 @@ def _padded_batch(sequences: Sequence[PatientSequence]) -> dict[str, torch.Tenso
             ("values", sequence.values),
             ("masks", sequence.masks),
             ("event_features", sequence.event_features),
+            ("update_mask", sequence.update_mask),
             ("times", sequence.times),
             ("target_values", sequence.target_next_values),
             ("target_masks", sequence.target_next_masks),
@@ -272,6 +274,11 @@ def _neural_loss(
         masks=batch["masks"],
         event_features=batch["event_features"],
         times=batch["times"],
+        **(
+            {"update_mask": batch["update_mask"]}
+            if isinstance(model, FlowJumpAdapter)
+            else {}
+        ),
     )
     loss = masked_gaussian_nll(
         output.value_mean,
@@ -339,6 +346,11 @@ def _evaluate_neural(model: nn.Module, batch: dict[str, torch.Tensor]) -> dict[s
             masks=batch["masks"],
             event_features=batch["event_features"],
             times=batch["times"],
+            **(
+                {"update_mask": batch["update_mask"]}
+                if isinstance(model, FlowJumpAdapter)
+                else {}
+            ),
         )
     selected = batch["target_masks"].bool()
     truth = batch["target_values"][selected].numpy()
@@ -469,6 +481,8 @@ def _run_low_n_on_cohort(
                     estimator = GradientBoostingRegressorBaseline()
                 prediction = estimator.fit(train_x, train_y).predict(test_x)
                 metrics = regression_metrics(test_y, prediction)
+                if isinstance(estimator, MLPRegressorBaseline):
+                    parameters = estimator.trainable_parameter_count()
             else:
                 train_batch = _padded_batch(train_sequences)
                 validation_batch = _padded_batch(validation_sequences)
