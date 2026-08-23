@@ -1,9 +1,7 @@
 from pathlib import Path
 
 import pytest
-
 from afmc_fm.phase05.config import Phase05Config, SeedBundle, load_phase05_config
-
 
 CONFIG_PATH = Path("configs/experiments/phase05.yaml")
 
@@ -50,7 +48,10 @@ def test_phase05_config_rejects_overlap_with_phase0_seed_bundles():
 
 def test_phase05_config_rejects_development_confirmation_overlap():
     overlap = SeedBundle(401, 501, 601)
-    with pytest.raises(ValueError, match="development and confirmatory seed bundles must be disjoint"):
+    with pytest.raises(
+        ValueError,
+        match="development and confirmatory seed bundles must be disjoint",
+    ):
         Phase05Config(
             development_bundles=(
                 overlap,
@@ -77,7 +78,13 @@ def test_phase05_config_requires_frozen_primary_train_sizes():
 def test_phase05_config_rejects_invalid_thresholds_and_time_scale():
     with pytest.raises(ValueError, match="time_scale_days must be positive"):
         Phase05Config(time_scale_days=0.0)
-    with pytest.raises(ValueError, match="provisional_relative_effect must be between 0 and 1"):
+    with pytest.raises(
+        ValueError,
+        match="provisional_relative_effect must be between 0 and 1",
+    ):
         Phase05Config(provisional_relative_effect=1.5)
-    with pytest.raises(ValueError, match="misspecification_tolerance must be between 0 and 1"):
+    with pytest.raises(
+        ValueError,
+        match="misspecification_tolerance must be between 0 and 1",
+    ):
         Phase05Config(misspecification_tolerance=-0.1)
