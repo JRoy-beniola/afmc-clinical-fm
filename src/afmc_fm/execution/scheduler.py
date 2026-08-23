@@ -618,7 +618,7 @@ def run_scheduled_benchmark(
     invocation_wall_time = time.monotonic() - started
     root_record = store.complete_invocation(
         expected_by_shard,
-        execution_commit_sha=authoritative_execution_commit,
+        execution_commit_sha=captured_execution_commit,
         invocation_started_at=invocation_started_at,
         invocation_ended_at=ended_at,
         invocation_wall_time_seconds=invocation_wall_time,
@@ -643,6 +643,8 @@ def run_scheduled_benchmark(
         failures=failures,
         cancelled_shard_ids=frozenset(cancelled_shard_ids),
         execution_commit_sha=authoritative_execution_commit,
+        invocation_execution_commit_sha=captured_execution_commit,
+        execution_commit_history=root_record["execution_commit_history"],
         template_seed=template_seed,
         original_started_at=original_started_at,
         invocation_started_at=invocation_started_at,

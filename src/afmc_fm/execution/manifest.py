@@ -156,6 +156,8 @@ def build_run_manifest(
     failures: Sequence[object] = (),
     cancelled_shard_ids: frozenset[str] = frozenset(),
     execution_commit_sha: str | None = None,
+    invocation_execution_commit_sha: str | None = None,
+    execution_commit_history: Sequence[Mapping[str, object]] | None = None,
     runtime_metadata: Mapping[str, object] | None = None,
     template_seed: int = 0,
     original_started_at: datetime | None = None,
@@ -249,12 +251,45 @@ def build_run_manifest(
     commit = execution_commit_sha or globals()["execution_commit_sha"]()
     if _COMMIT_PATTERN.fullmatch(commit) is None:
         raise ValueError("execution_commit_sha must be a full lowercase Git SHA")
+    invocation_commit = invocation_execution_commit_sha or commit
+    if _COMMIT_PATTERN.fullmatch(invocation_commit) is None:
+        raise ValueError(
+            "invocation_execution_commit_sha must be a full lowercase Git SHA"
+        )
+    commit_history = (
+        [
+            {
+                "invocation_number": invocation_number,
+                "execution_commit_sha": invocation_commit,
+            }
+        ]
+        if execution_commit_history is None
+        else [dict(entry) for entry in execution_commit_history]
+    )
+    for expected_number, entry in enumerate(commit_history, start=1):
+        if set(entry) != {"execution_commit_sha", "invocation_number"}:
+            raise ValueError("invalid execution commit history")
+        if entry["invocation_number"] != expected_number:
+            raise ValueError("invalid execution commit history")
+        history_commit = entry["execution_commit_sha"]
+        if not isinstance(history_commit, str) or _COMMIT_PATTERN.fullmatch(
+            history_commit
+        ) is None:
+            raise ValueError("invalid execution commit history")
+    if (
+        len(commit_history) != invocation_number
+        or commit_history[0]["execution_commit_sha"] != commit
+        or commit_history[-1]["execution_commit_sha"] != invocation_commit
+    ):
+        raise ValueError("invalid execution commit history")
 
     return {
         "synthetic": True,
         "template_seed": template_seed,
         "protocol_anchor": PROTOCOL_ANCHOR,
         "execution_commit_sha": commit,
+        "invocation_execution_commit_sha": invocation_commit,
+        "execution_commit_history": commit_history,
         "simulator_config_hash": canonical_config_hash(simulator),
         "experiment_config_hash": canonical_config_hash(experiment),
         "simulator_config": asdict(simulator),

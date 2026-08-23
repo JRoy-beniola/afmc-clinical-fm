@@ -14,7 +14,7 @@ import pandas as pd
 from afmc_fm.execution.jobs import CellResult, ShardSpec, benchmark_cell_id
 
 CELL_SCHEMA_VERSION = 1
-ROOT_RUN_SCHEMA_VERSION = 1
+ROOT_RUN_SCHEMA_VERSION = 2
 PROTOCOL_ANCHOR = "be5a66b2e45362f60c90844e4e25673fb7bb3e21"
 METRIC_ROW_KEYS = frozenset(
     {
@@ -153,6 +153,7 @@ class RunStore:
             "completed_invocation_count": 0,
             "cumulative_wall_time_seconds": 0.0,
             "last_invocation": None,
+            "execution_commit_history": [],
         }
         self.output.mkdir(parents=True, exist_ok=True)
         _write_json_atomic(root_path, record)
@@ -198,15 +199,24 @@ class RunStore:
             original_started_at=invocation_started_at,
             resume=True,
         )
+        invocation_number = record["completed_invocation_count"] + 1
         updated = {
             **record,
-            "completed_invocation_count": record["completed_invocation_count"] + 1,
+            "completed_invocation_count": invocation_number,
             "cumulative_wall_time_seconds": (
                 float(record["cumulative_wall_time_seconds"])
                 + invocation_wall_time_seconds
             ),
+            "execution_commit_history": [
+                *record["execution_commit_history"],
+                {
+                    "invocation_number": invocation_number,
+                    "execution_commit_sha": execution_commit_sha,
+                },
+            ],
             "last_invocation": {
                 "ended_at": invocation_ended_at.isoformat(),
+                "execution_commit_sha": execution_commit_sha,
                 "started_at": invocation_started_at.isoformat(),
                 "terminal_state": terminal_state,
                 "wall_time_seconds": invocation_wall_time_seconds,
@@ -627,6 +637,7 @@ def _load_root_record(path: Path) -> dict[str, Any]:
         "completed_invocation_count",
         "cumulative_wall_time_seconds",
         "execution_commit_sha",
+        "execution_commit_history",
         "expected_shards",
         "last_invocation",
         "original_started_at",
@@ -643,6 +654,8 @@ def _load_root_record(path: Path) -> dict[str, Any]:
         raise TypeError("invalid run root record")
     if type(record["completed_invocation_count"]) is not int:
         raise ValueError("invalid run root record")
+    if not isinstance(record["execution_commit_history"], list):
+        raise TypeError("invalid run root record")
     if type(record["cumulative_wall_time_seconds"]) not in {int, float}:
         raise ValueError("invalid run root record")
     if (
@@ -657,7 +670,13 @@ def _load_root_record(path: Path) -> dict[str, Any]:
         raise ValueError("invalid run root record")
     if isinstance(record["last_invocation"], dict) and set(
         record["last_invocation"]
-    ) != {"ended_at", "started_at", "terminal_state", "wall_time_seconds"}:
+    ) != {
+        "ended_at",
+        "execution_commit_sha",
+        "started_at",
+        "terminal_state",
+        "wall_time_seconds",
+    }:
         raise ValueError("invalid run root record")
     if not isinstance(record["original_started_at"], str):
         raise TypeError("invalid run root record")
@@ -668,6 +687,31 @@ def _load_root_record(path: Path) -> dict[str, Any]:
     if original_start.tzinfo is None:
         raise ValueError("invalid run root record")
     _require_commit_sha(record["execution_commit_sha"])
+    history = record["execution_commit_history"]
+    if len(history) != record["completed_invocation_count"]:
+        raise ValueError("invalid run root record")
+    for invocation_number, entry in enumerate(history, start=1):
+        if not isinstance(entry, dict) or set(entry) != {
+            "execution_commit_sha",
+            "invocation_number",
+        }:
+            raise ValueError("invalid run root record")
+        if entry["invocation_number"] != invocation_number:
+            raise ValueError("invalid run root record")
+        _require_commit_sha(entry["execution_commit_sha"])
+    if history and history[0]["execution_commit_sha"] != record[
+        "execution_commit_sha"
+    ]:
+        raise ValueError("invalid run root record")
+    if record["last_invocation"] is None:
+        if history:
+            raise ValueError("invalid run root record")
+    else:
+        _require_commit_sha(record["last_invocation"]["execution_commit_sha"])
+        if not history or record["last_invocation"]["execution_commit_sha"] != history[
+            -1
+        ]["execution_commit_sha"]:
+            raise ValueError("invalid run root record")
     return record
 
 

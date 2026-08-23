@@ -192,6 +192,10 @@ def test_build_run_manifest_records_complete_reproducibility_and_failure_counts(
         "be5a66b2e45362f60c90844e4e25673fb7bb3e21"
     )
     assert manifest["execution_commit_sha"] == "a" * 40
+    assert manifest["invocation_execution_commit_sha"] == "a" * 40
+    assert manifest["execution_commit_history"] == [
+        {"invocation_number": 1, "execution_commit_sha": "a" * 40}
+    ]
     assert manifest["simulator_config_hash"] == (
         "3572312e08e3e5778284dcd077981a7a418229cc5b6a204a1fbd0e14868b8f8e"
     )

@@ -633,6 +633,7 @@ def test_resume_preserves_original_execution_sha_and_accumulates_timing(
     output = tmp_path / "run"
     options = ExecutionOptions(device="cpu", workers=1, resume=True, fail_fast=True)
 
+    monkeypatch.setattr(scheduler, "execution_commit_sha", lambda: "a" * 40)
     run_scheduled_benchmark(simulator, experiment, output, options)
     first = json.loads((output / "run_manifest.json").read_text(encoding="utf-8"))
     monkeypatch.setattr(scheduler, "execution_commit_sha", lambda: "b" * 40)
@@ -642,7 +643,14 @@ def test_resume_preserves_original_execution_sha_and_accumulates_timing(
 
     assert second["original_started_at"] == first["original_started_at"]
     assert second["started_at"] == first["started_at"]
-    assert second["execution_commit_sha"] == first["execution_commit_sha"]
+    first_entry = {"invocation_number": 1, "execution_commit_sha": "a" * 40}
+    second_entry = {"invocation_number": 2, "execution_commit_sha": "b" * 40}
+    assert first["execution_commit_sha"] == "a" * 40
+    assert first["invocation_execution_commit_sha"] == "a" * 40
+    assert first["execution_commit_history"] == [first_entry]
+    assert second["execution_commit_sha"] == "a" * 40
+    assert second["invocation_execution_commit_sha"] == "b" * 40
+    assert second["execution_commit_history"] == [first_entry, second_entry]
     assert first["invocation_number"] == 1
     assert second["invocation_number"] == 2
     assert second["cumulative_wall_time_seconds"] >= (
@@ -651,10 +659,13 @@ def test_resume_preserves_original_execution_sha_and_accumulates_timing(
     )
     assert second["wall_time_seconds"] == second["cumulative_wall_time_seconds"]
     assert root["completed_invocation_count"] == 2
+    assert root["execution_commit_sha"] == "a" * 40
+    assert root["execution_commit_history"] == [first_entry, second_entry]
     assert root["original_started_at"] == second["original_started_at"]
     assert root["cumulative_wall_time_seconds"] == second["cumulative_wall_time_seconds"]
     assert root["last_invocation"]["started_at"] == second["invocation_started_at"]
     assert root["last_invocation"]["ended_at"] == second["invocation_ended_at"]
+    assert root["last_invocation"]["execution_commit_sha"] == "b" * 40
 
 
 def test_invalid_backend_identifiers_fail_before_output_or_workers(tmp_path):

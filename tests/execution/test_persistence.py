@@ -543,6 +543,7 @@ def test_root_run_record_atomically_persists_and_validates_exact_identity_and_pl
         "completed_invocation_count": 0,
         "cumulative_wall_time_seconds": 0.0,
         "execution_commit_sha": "a" * 40,
+        "execution_commit_history": [],
         "expected_shards": [
             {
                 "cell_ids": ["cell-c"],
@@ -586,6 +587,49 @@ def test_root_run_record_atomically_persists_and_validates_exact_identity_and_pl
         resume=True,
     )
     assert resumed["execution_commit_sha"] == "a" * 40
+
+
+def test_complete_invocation_appends_one_ordered_sha_record_without_mutating_snapshots(
+    tmp_path,
+):
+    output = tmp_path / "run"
+    expected = {"shard": frozenset(("cell",))}
+    store = RunStore(output, _identity())
+    initial = store.initialize_run(
+        expected,
+        execution_commit_sha="a" * 40,
+        original_started_at=datetime(2026, 8, 23, 12, tzinfo=UTC),
+        resume=False,
+    )
+
+    first = store.complete_invocation(
+        expected,
+        execution_commit_sha="a" * 40,
+        invocation_started_at=datetime(2026, 8, 23, 12, tzinfo=UTC),
+        invocation_ended_at=datetime(2026, 8, 23, 12, 0, 1, tzinfo=UTC),
+        invocation_wall_time_seconds=1.0,
+        terminal_state="completed",
+    )
+    loaded = store.load_run(expected)
+    second = store.complete_invocation(
+        expected,
+        execution_commit_sha="b" * 40,
+        invocation_started_at=datetime(2026, 8, 23, 12, 1, tzinfo=UTC),
+        invocation_ended_at=datetime(2026, 8, 23, 12, 1, 2, tzinfo=UTC),
+        invocation_wall_time_seconds=2.0,
+        terminal_state="completed",
+    )
+
+    first_entry = {"invocation_number": 1, "execution_commit_sha": "a" * 40}
+    second_entry = {"invocation_number": 2, "execution_commit_sha": "b" * 40}
+    assert initial["execution_commit_history"] == []
+    assert first["execution_commit_history"] == [first_entry]
+    assert loaded["execution_commit_history"] == [first_entry]
+    assert second["execution_commit_history"] == [first_entry, second_entry]
+    assert second["last_invocation"]["execution_commit_sha"] == "b" * 40
+    assert len(second["execution_commit_history"]) == second[
+        "completed_invocation_count"
+    ]
 
 
 def test_resume_requires_compatible_root_record_even_when_no_cells_exist(tmp_path):
