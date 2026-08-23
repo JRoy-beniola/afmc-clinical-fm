@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+
 from afmc_fm.phase05.config import Phase05Config, SeedBundle, load_phase05_config
 
 CONFIG_PATH = Path("configs/experiments/phase05.yaml")
