@@ -451,6 +451,7 @@ def run_scheduled_benchmark(
     device = str(resolve_device(options.device))
     identity = _run_identity(sim_config, experiment)
     store = RunStore(output, identity)
+    store.validate_resume()
     initial_snapshot = store.load_completed_cell_ids_by_shard()
     _validate_persisted_scope(initial_snapshot, expected_cell_ids)
     started = time.monotonic()
@@ -565,6 +566,7 @@ def run_scheduled_benchmark(
         if executor is not None and not shutdown_started:
             executor.shutdown(wait=True, cancel_futures=True)
 
+    store.validate_resume()
     final_snapshot = store.load_completed_cell_ids_by_shard()
     _validate_persisted_scope(final_snapshot, expected_cell_ids)
     frame = pd.DataFrame(store.iter_metric_rows(expected_cell_ids))

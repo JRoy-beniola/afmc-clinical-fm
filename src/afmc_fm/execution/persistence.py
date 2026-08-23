@@ -57,7 +57,7 @@ class RunStore:
         expected_identity = asdict(self.identity)
         try:
             temporary_path.unlink(missing_ok=True)
-            self.validate_resume()
+            self._validated_completed_cell_ids_by_shard()
             payload = {
                 "schema_version": CELL_SCHEMA_VERSION,
                 "run_identity": expected_identity,
@@ -99,10 +99,13 @@ class RunStore:
         return cell_id
 
     def validate_resume(self) -> None:
-        self._validated_completed_cell_ids_by_shard()
+        """Validate cells and reconcile markers at a quiescent run boundary."""
+        self._validated_completed_cell_ids_by_shard(reconcile_markers=True)
 
     def _validated_completed_cell_ids_by_shard(
         self,
+        *,
+        reconcile_markers: bool = False,
     ) -> dict[str, frozenset[str]]:
         self._shards_root()
         expected_identity = asdict(self.identity)
@@ -121,7 +124,8 @@ class RunStore:
                 type(payload.get("schema_version")) is not int
                 or payload["schema_version"] != CELL_SCHEMA_VERSION
             ):
-                self._invalidate_marker_for_cell_path(path)
+                if reconcile_markers:
+                    self._invalidate_marker_for_cell_path(path)
                 raise ValueError(f"incompatible execution schema in persisted cell: {path}")
             actual_identity = payload.get("run_identity")
             if actual_identity != expected_identity:
@@ -130,11 +134,13 @@ class RunStore:
                         not isinstance(actual_identity, dict)
                         or actual_identity.get(field) != expected_value
                     ):
-                        self._invalidate_marker_for_cell_path(path)
+                        if reconcile_markers:
+                            self._invalidate_marker_for_cell_path(path)
                         raise ValueError(
                             f"incompatible run identity in persisted cell: {field}"
                         )
-                self._invalidate_marker_for_cell_path(path)
+                if reconcile_markers:
+                    self._invalidate_marker_for_cell_path(path)
                 raise ValueError(
                     "incompatible run identity in persisted cell: unknown fields"
                 )
@@ -145,7 +151,8 @@ class RunStore:
             shard_id: frozenset(cell_ids)
             for shard_id, cell_ids in completed.items()
         }
-        self._remove_stale_complete_markers(snapshot)
+        if reconcile_markers:
+            self._remove_stale_complete_markers(snapshot)
         return snapshot
 
     def load_completed_cell_ids(self, shard_id: str | None = None) -> frozenset[str]:
@@ -259,7 +266,7 @@ class RunStore:
         self,
         expected_cell_ids: frozenset[str] | None = None,
     ) -> Iterator[dict[str, Any]]:
-        self.validate_resume()
+        self._validated_completed_cell_ids_by_shard()
         expected_identity = asdict(self.identity)
         paths = sorted(self.output.glob("shards/*/cells/*.json"))
         for path in paths:

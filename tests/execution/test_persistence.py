@@ -1,5 +1,7 @@
 import json
+import shutil
 from dataclasses import replace
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -678,3 +680,50 @@ def test_load_completed_cell_ids_by_shard_returns_one_validated_snapshot(tmp_pat
         first.shard.shard_id: frozenset({first_id}),
         second_shard.shard_id: frozenset({second_id}),
     }
+
+
+def test_live_snapshot_does_not_unlink_marker_created_after_snapshot_boundary(
+    tmp_path, monkeypatch
+):
+    output = tmp_path / "run"
+    store = RunStore(output, _identity())
+    first = _cell()
+    first_id = store.write_cell(first)
+    second_metrics = first.metrics.copy()
+    second_metrics["n_train"] = 10
+    second = replace(first, n_train=10, metrics=second_metrics)
+
+    staging = RunStore(tmp_path / "staging", _identity())
+    staging.write_cell(first)
+    second_id = staging.write_cell(second)
+    staging.mark_shard_complete(first.shard.shard_id, {first_id, second_id})
+    staging_shard = staging.output / "shards" / first.shard.shard_id
+    staged_second = staging_shard / "cells" / f"{second_id}.json"
+    staged_marker = staging_shard / "COMPLETE"
+    target_shard = output / "shards" / first.shard.shard_id
+    target_second = target_shard / "cells" / f"{second_id}.json"
+    target_marker = target_shard / "COMPLETE"
+    real_glob = Path.glob
+    race_injected = False
+
+    def racing_glob(path, pattern):
+        nonlocal race_injected
+        paths = list(real_glob(path, pattern))
+        yield from paths
+        if (
+            not race_injected
+            and path == output
+            and pattern == "shards/*/cells/*.json"
+        ):
+            shutil.copy2(staged_second, target_second)
+            shutil.copy2(staged_marker, target_marker)
+            race_injected = True
+
+    monkeypatch.setattr(Path, "glob", racing_glob)
+
+    live_snapshot = store.load_completed_cell_ids_by_shard()
+
+    assert live_snapshot == {first.shard.shard_id: frozenset({first_id})}
+    assert target_marker.exists()
+    store.validate_resume()
+    assert target_marker.exists()
