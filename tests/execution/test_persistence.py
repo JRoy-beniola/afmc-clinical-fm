@@ -656,3 +656,25 @@ def test_iter_metric_rows_can_scope_aggregation_to_expected_cell_ids(tmp_path):
     rows = list(store.iter_metric_rows(frozenset({first_id})))
 
     assert rows == first.metrics.to_dict(orient="records")
+
+
+def test_load_completed_cell_ids_by_shard_returns_one_validated_snapshot(tmp_path):
+    store = RunStore(tmp_path / "run", _identity())
+    first = _cell()
+    first_id = store.write_cell(first)
+    second_shard = ShardSpec("smooth", 401, 501, 601)
+    second_metrics = first.metrics.copy()
+    second_metrics["world"] = "smooth"
+    second_metrics["cohort_seed"] = 401
+    second_metrics["subset_seed"] = 501
+    second_metrics["model_seed"] = 601
+    second_metrics["seed"] = 501
+    second = replace(first, shard=second_shard, metrics=second_metrics)
+    second_id = store.write_cell(second)
+
+    snapshot = store.load_completed_cell_ids_by_shard()
+
+    assert snapshot == {
+        first.shard.shard_id: frozenset({first_id}),
+        second_shard.shard_id: frozenset({second_id}),
+    }

@@ -99,8 +99,14 @@ class RunStore:
         return cell_id
 
     def validate_resume(self) -> None:
+        self._validated_completed_cell_ids_by_shard()
+
+    def _validated_completed_cell_ids_by_shard(
+        self,
+    ) -> dict[str, frozenset[str]]:
         self._shards_root()
         expected_identity = asdict(self.identity)
+        completed: dict[str, set[str]] = {}
         for path in self.output.glob("shards/*/cells/*.json"):
             self._require_contained(path)
             _require_safe_segment(path.parent.parent.name, "persisted shard ID")
@@ -118,50 +124,53 @@ class RunStore:
                 self._invalidate_marker_for_cell_path(path)
                 raise ValueError(f"incompatible execution schema in persisted cell: {path}")
             actual_identity = payload.get("run_identity")
-            if actual_identity == expected_identity:
-                continue
-            for field, expected_value in expected_identity.items():
-                if (
-                    not isinstance(actual_identity, dict)
-                    or actual_identity.get(field) != expected_value
-                ):
-                    self._invalidate_marker_for_cell_path(path)
-                    raise ValueError(f"incompatible run identity in persisted cell: {field}")
-            self._invalidate_marker_for_cell_path(path)
-            raise ValueError("incompatible run identity in persisted cell: unknown fields")
-        self._remove_stale_complete_markers()
+            if actual_identity != expected_identity:
+                for field, expected_value in expected_identity.items():
+                    if (
+                        not isinstance(actual_identity, dict)
+                        or actual_identity.get(field) != expected_value
+                    ):
+                        self._invalidate_marker_for_cell_path(path)
+                        raise ValueError(
+                            f"incompatible run identity in persisted cell: {field}"
+                        )
+                self._invalidate_marker_for_cell_path(path)
+                raise ValueError(
+                    "incompatible run identity in persisted cell: unknown fields"
+                )
+            if _is_valid_payload(payload, path, expected_identity):
+                shard_id = payload["shard"]["shard_id"]
+                completed.setdefault(shard_id, set()).add(payload["cell"]["cell_id"])
+        snapshot = {
+            shard_id: frozenset(cell_ids)
+            for shard_id, cell_ids in completed.items()
+        }
+        self._remove_stale_complete_markers(snapshot)
+        return snapshot
 
     def load_completed_cell_ids(self, shard_id: str | None = None) -> frozenset[str]:
         if shard_id is not None:
             self._shard_dir(shard_id)
-        self.validate_resume()
-        return self._completed_cell_ids(shard_id)
+        snapshot = self._validated_completed_cell_ids_by_shard()
+        if shard_id is not None:
+            return snapshot.get(shard_id, frozenset())
+        return frozenset().union(*snapshot.values()) if snapshot else frozenset()
 
-    def _completed_cell_ids(self, shard_id: str | None = None) -> frozenset[str]:
-        if shard_id is None:
-            paths = self.output.glob("shards/*/cells/*.json")
-        else:
-            paths = (self._shard_dir(shard_id) / "cells").glob("*.json")
-        completed: set[str] = set()
-        expected_identity = asdict(self.identity)
-        for path in paths:
-            payload = _load_valid_payload(path, expected_identity)
-            if payload is not None:
-                completed.add(payload["cell"]["cell_id"])
-        return frozenset(completed)
+    def load_completed_cell_ids_by_shard(self) -> dict[str, frozenset[str]]:
+        return self._validated_completed_cell_ids_by_shard()
 
     def mark_shard_complete(
         self, shard_id: str, expected_cell_ids: set[str] | frozenset[str]
     ) -> None:
         shard_dir = self._shard_dir(shard_id)
-        self.validate_resume()
+        completed_by_shard = self._validated_completed_cell_ids_by_shard()
         marker = shard_dir / "COMPLETE"
         if not isinstance(expected_cell_ids, (set, frozenset)) or not expected_cell_ids:
             marker.unlink(missing_ok=True)
             raise ValueError("expected cell IDs must be a non-empty set")
         for cell_id in expected_cell_ids:
             _require_safe_segment(cell_id, "expected cell ID")
-        completed = self._completed_cell_ids(shard_id)
+        completed = completed_by_shard.get(shard_id, frozenset())
         expected = frozenset(expected_cell_ids)
         if expected != completed:
             marker.unlink(missing_ok=True)
@@ -188,7 +197,10 @@ class RunStore:
             temporary_marker.unlink(missing_ok=True)
             raise
 
-    def _remove_stale_complete_markers(self) -> None:
+    def _remove_stale_complete_markers(
+        self,
+        completed_by_shard: dict[str, frozenset[str]],
+    ) -> None:
         expected_identity = asdict(self.identity)
         for marker in self.output.glob("shards/*/COMPLETE"):
             self._require_contained(marker)
@@ -212,7 +224,7 @@ class RunStore:
                 and len(payload["cell_ids"]) == len(set(payload["cell_ids"]))
             )
             marker_cells = frozenset(payload["cell_ids"]) if valid_shape else frozenset()
-            completed = self._completed_cell_ids(shard_id)
+            completed = completed_by_shard.get(shard_id, frozenset())
             if not valid_shape or marker_cells != completed:
                 marker.unlink(missing_ok=True)
 

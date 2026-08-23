@@ -41,7 +41,7 @@ THREAD_ENVIRONMENT_VARIABLES = (
     "OPENBLAS_NUM_THREADS",
     "NUMEXPR_NUM_THREADS",
 )
-PROGRESS_POLL_SECONDS = 0.05
+PROGRESS_POLL_SECONDS = 0.25
 
 logger = logging.getLogger(__name__)
 
@@ -313,14 +313,13 @@ def _persisted_progress(
     store: RunStore,
     expected_by_shard: dict[str, frozenset[str]],
 ) -> tuple[int, int]:
-    completed_ids = store.load_completed_cell_ids()
+    completed_by_shard = store.load_completed_cell_ids_by_shard()
     cells_complete = sum(
-        len(expected.intersection(completed_ids))
-        for expected in expected_by_shard.values()
+        len(expected.intersection(completed_by_shard.get(shard_id, frozenset())))
+        for shard_id, expected in expected_by_shard.items()
     )
     shards_complete = sum(
-        expected.issubset(completed_ids)
-        and store.load_completed_cell_ids(shard_id) == expected
+        completed_by_shard.get(shard_id, frozenset()) == expected
         for shard_id, expected in expected_by_shard.items()
     )
     return shards_complete, cells_complete
@@ -334,10 +333,14 @@ def _validate_experiment_axes(experiment: ExperimentConfig) -> None:
 
 
 def _validate_persisted_scope(
-    store: RunStore,
+    completed_by_shard: dict[str, frozenset[str]],
     expected_cell_ids: frozenset[str],
 ) -> frozenset[str]:
-    completed = store.load_completed_cell_ids()
+    completed = (
+        frozenset().union(*completed_by_shard.values())
+        if completed_by_shard
+        else frozenset()
+    )
     unexpected = completed - expected_cell_ids
     if unexpected:
         raise ValueError(
@@ -397,10 +400,11 @@ def _cancel_pending_futures(
     futures: list[Future[_WorkerResult]],
     worker_limit: int,
 ) -> tuple[int, int]:
+    if worker_limit < 1:
+        raise ValueError("worker_limit must be at least 1")
     cancelled = sum(future.cancel() for future in futures)
-    running_not_terminated = min(
-        worker_limit,
-        sum(future.running() and not future.cancelled() for future in futures),
+    running_not_terminated = sum(
+        future.running() and not future.cancelled() for future in futures
     )
     return cancelled, running_not_terminated
 
@@ -447,8 +451,8 @@ def run_scheduled_benchmark(
     device = str(resolve_device(options.device))
     identity = _run_identity(sim_config, experiment)
     store = RunStore(output, identity)
-    store.validate_resume()
-    _validate_persisted_scope(store, expected_cell_ids)
+    initial_snapshot = store.load_completed_cell_ids_by_shard()
+    _validate_persisted_scope(initial_snapshot, expected_cell_ids)
     started = time.monotonic()
     failures: list[ShardFailure] = []
     progress_events: list[dict[str, Any]] = []
@@ -463,7 +467,7 @@ def run_scheduled_benchmark(
             identity=identity,
             device=device,
             completed_cell_ids=(
-                store.load_completed_cell_ids(shard.shard_id)
+                initial_snapshot.get(shard.shard_id, frozenset())
                 if options.resume
                 else frozenset()
             ),
@@ -504,8 +508,8 @@ def run_scheduled_benchmark(
             progress_events.append(_emit_progress(event))
             last_progress = signature
 
-    with _inherited_thread_limits():
-        try:
+    try:
+        with _inherited_thread_limits():
             executor = ProcessPoolExecutor(
                 max_workers=options.workers,
                 mp_context=ctx,
@@ -514,54 +518,55 @@ def run_scheduled_benchmark(
                 future = executor.submit(_run_shard_worker, request)
                 futures[future] = request.shard
 
-            pending = set(futures)
-            record_progress(force=True)
-            while pending:
-                done, _ = wait(
-                    pending,
-                    timeout=PROGRESS_POLL_SECONDS,
-                    return_when=FIRST_COMPLETED,
-                )
-                if not done:
-                    record_progress()
-                    continue
-                for future in done:
-                    pending.remove(future)
-                    shard = futures[future]
-                    try:
-                        worker_results.append(future.result())
-                    except Exception as error:
-                        failure = (
-                            error.failure
-                            if isinstance(error, ShardExecutionError)
-                            else _failure_for(shard, device, error)
+        pending = set(futures)
+        record_progress(force=True)
+        while pending:
+            done, _ = wait(
+                pending,
+                timeout=PROGRESS_POLL_SECONDS,
+                return_when=FIRST_COMPLETED,
+            )
+            if not done:
+                record_progress()
+                continue
+            for future in done:
+                pending.remove(future)
+                shard = futures[future]
+                try:
+                    worker_results.append(future.result())
+                except Exception as error:
+                    failure = (
+                        error.failure
+                        if isinstance(error, ShardExecutionError)
+                        else _failure_for(shard, device, error)
+                    )
+                    failures.append(failure)
+                    logger.error("benchmark shard failure: %s", asdict(failure))
+                    if options.fail_fast:
+                        candidates = [
+                            candidate
+                            for candidate in futures
+                            if candidate is not future and not candidate.done()
+                        ]
+                        cancelled, running = _cancel_pending_futures(
+                            candidates,
+                            options.workers,
                         )
-                        failures.append(failure)
-                        logger.error("benchmark shard failure: %s", asdict(failure))
-                        if options.fail_fast:
-                            candidates = [
-                                candidate
-                                for candidate in futures
-                                if candidate is not future and not candidate.done()
-                            ]
-                            cancelled, running = _cancel_pending_futures(
-                                candidates,
-                                options.workers,
-                            )
-                            record_progress(force=True, active_workers=running)
-                            executor.shutdown(wait=False, cancel_futures=True)
-                            shutdown_started = True
-                            raise ScheduledBenchmarkError(
-                                failure,
-                                cancelled_pending=cancelled,
-                                running_not_terminated=running,
-                            ) from error
-                    record_progress(force=True)
-        finally:
-            if executor is not None and not shutdown_started:
-                executor.shutdown(wait=True, cancel_futures=True)
+                        record_progress(force=True, active_workers=running)
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        shutdown_started = True
+                        raise ScheduledBenchmarkError(
+                            failure,
+                            cancelled_pending=cancelled,
+                            running_not_terminated=running,
+                        ) from error
+                record_progress(force=True)
+    finally:
+        if executor is not None and not shutdown_started:
+            executor.shutdown(wait=True, cancel_futures=True)
 
-    _validate_persisted_scope(store, expected_cell_ids)
+    final_snapshot = store.load_completed_cell_ids_by_shard()
+    _validate_persisted_scope(final_snapshot, expected_cell_ids)
     frame = pd.DataFrame(store.iter_metric_rows(expected_cell_ids))
     frame.attrs["failures"] = [asdict(failure) for failure in failures]
     frame.attrs["progress_events"] = progress_events

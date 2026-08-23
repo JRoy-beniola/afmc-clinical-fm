@@ -101,14 +101,25 @@ def _tiny_experiment(*, worlds=("smooth",), seed_bundles=1) -> ExperimentConfig:
 def test_workers_use_spawn_one_thread_and_one_matched_shard_per_future(
     tmp_path, monkeypatch
 ):
-    from afmc_fm.execution.scheduler import ExecutionOptions, run_scheduled_benchmark
+    from concurrent.futures import wait as real_wait
+
+    from afmc_fm.execution import scheduler
 
     monkeypatch.setenv("OPENBLAS_NUM_THREADS", "7")
-    results = run_scheduled_benchmark(
+    parent_values_during_poll: list[str | None] = []
+
+    def observed_wait(*args, **kwargs):
+        parent_values_during_poll.append(os.environ.get("OPENBLAS_NUM_THREADS"))
+        return real_wait(*args, **kwargs)
+
+    monkeypatch.setattr(scheduler, "wait", observed_wait)
+    results = scheduler.run_scheduled_benchmark(
         SimulatorConfig(cohort_size=30, followup_days=45.0),
         _tiny_experiment(seed_bundles=2),
         tmp_path / "run",
-        ExecutionOptions(device="cpu", workers=2, resume=False, fail_fast=True),
+        scheduler.ExecutionOptions(
+            device="cpu", workers=2, resume=False, fail_fast=True
+        ),
     )
 
     worker_metadata = results.attrs["worker_metadata"]
@@ -139,6 +150,7 @@ def test_workers_use_spawn_one_thread_and_one_matched_shard_per_future(
         for metadata in worker_metadata
     } == {("smooth", 17, 23, 31), ("smooth", 18, 24, 32)}
     assert len({metadata["shard_id"] for metadata in worker_metadata}) == 2
+    assert set(parent_values_during_poll) == {"7"}
     assert os.environ["OPENBLAS_NUM_THREADS"] == "7"
 
 
@@ -226,7 +238,7 @@ def test_fail_fast_true_cancels_pending_futures_and_propagates_structured_failur
     assert error.failure.device == "cpu"
     assert error.failure.shard_id.startswith("not_a_world_")
     assert error.cancelled_pending >= 0
-    assert 0 <= error.running_not_terminated <= 1
+    assert error.running_not_terminated >= 0
 
 
 def test_fail_fast_cancellation_distinguishes_pending_from_running_futures():
@@ -235,17 +247,48 @@ def test_fail_fast_cancellation_distinguishes_pending_from_running_futures():
     from afmc_fm.execution.scheduler import _cancel_pending_futures
 
     pending = Future()
-    running = Future()
-    assert running.set_running_or_notify_cancel()
+    first_running = Future()
+    second_running = Future()
+    assert first_running.set_running_or_notify_cancel()
+    assert second_running.set_running_or_notify_cancel()
 
     cancelled, not_terminated = _cancel_pending_futures(
-        [pending, running], worker_limit=1
+        [pending, first_running, second_running], worker_limit=1
     )
 
     assert cancelled == 1
     assert pending.cancelled()
-    assert not_terminated == 1
-    assert running.running()
+    assert not_terminated == 2
+    assert first_running.running()
+    assert second_running.running()
+
+
+def test_progress_cycle_uses_one_validated_snapshot_for_all_shards():
+    from afmc_fm.execution.scheduler import _persisted_progress
+
+    class InstrumentedStore:
+        def __init__(self):
+            self.snapshot_calls = 0
+
+        def load_completed_cell_ids_by_shard(self):
+            self.snapshot_calls += 1
+            return {
+                "shard-1": frozenset({"cell-1"}),
+                "shard-2": frozenset({"cell-2", "unexpected-cell"}),
+            }
+
+    store = InstrumentedStore()
+    expected = {
+        "shard-1": frozenset({"cell-1"}),
+        "shard-2": frozenset({"cell-2"}),
+        "shard-3": frozenset({"cell-3"}),
+    }
+
+    shards_complete, cells_complete = _persisted_progress(store, expected)
+
+    assert shards_complete == 1
+    assert cells_complete == 2
+    assert store.snapshot_calls == 1
 
 
 def test_fully_resumed_shard_succeeds_when_worker_returns_columnless_empty_frame(
@@ -380,8 +423,8 @@ def test_progress_observes_checkpoint_before_multi_shard_future_completion(tmp_p
         model_seeds=(31, 37),
         models=("engineered_linear", "flow_jump"),
         ablations=("none",),
-        max_epochs=3,
-        patience=3,
+        max_epochs=100,
+        patience=100,
     )
 
     results = run_scheduled_benchmark(
