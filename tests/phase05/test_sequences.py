@@ -2,14 +2,14 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import numpy as np
-from afmc_fm.phase05.sequences import (
-    JUMP_ELIGIBLE_EVENT_CODES,
-    build_phase05_sequence,
-)
 
 from afmc_fm.data.encoding import SummaryHistoryEncoder
 from afmc_fm.data.sequences import build_patient_sequence
 from afmc_fm.data.tasks import LongitudinalTask
+from afmc_fm.phase05.sequences import (
+    JUMP_ELIGIBLE_EVENT_CODES,
+    build_phase05_sequence,
+)
 from afmc_fm.schema.events import ClinicalEvent, EventType, PatientTimeline
 
 
