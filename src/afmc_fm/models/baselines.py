@@ -138,6 +138,77 @@ class MLPRegressorBaseline:
         )
 
 
+class TorchMLPRegressorBaseline:
+    _L2_ALPHA = 1e-3
+
+    def __init__(
+        self,
+        input_dim: int,
+        seed: int,
+        device: torch.device | str,
+    ) -> None:
+        self.device = torch.device(device)
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(seed)
+            self.model = nn.Sequential(
+                nn.Linear(input_dim, 32),
+                nn.Tanh(),
+                nn.Linear(32, 1),
+            ).to(device=self.device, dtype=torch.float64)
+
+    def fit(
+        self, features: np.ndarray, targets: np.ndarray
+    ) -> "TorchMLPRegressorBaseline":
+        feature_tensor = torch.as_tensor(
+            features,
+            dtype=torch.float64,
+            device=self.device,
+        )
+        target_tensor = torch.as_tensor(
+            targets,
+            dtype=torch.float64,
+            device=self.device,
+        )
+        optimizer = torch.optim.LBFGS(
+            self.model.parameters(),
+            max_iter=500,
+            line_search_fn="strong_wolfe",
+        )
+
+        def closure() -> torch.Tensor:
+            optimizer.zero_grad()
+            prediction = self.model(feature_tensor).squeeze(-1)
+            squared_error = torch.nn.functional.mse_loss(
+                prediction, target_tensor
+            )
+            weight_penalty = (
+                self.model[0].weight.square().sum()
+                + self.model[2].weight.square().sum()
+            )
+            loss = 0.5 * (
+                squared_error
+                + self._L2_ALPHA * weight_penalty / len(feature_tensor)
+            )
+            loss.backward()
+            return loss
+
+        optimizer.step(closure)
+        return self
+
+    def predict(self, features: np.ndarray) -> np.ndarray:
+        feature_tensor = torch.as_tensor(
+            features,
+            dtype=torch.float64,
+            device=self.device,
+        )
+        with torch.no_grad():
+            prediction = self.model(feature_tensor).squeeze(-1)
+        return prediction.detach().cpu().numpy()
+
+    def trainable_parameter_count(self) -> int:
+        return sum(parameter.numel() for parameter in self.model.parameters())
+
+
 @dataclass(frozen=True)
 class GRUBaselineOutput:
     states: torch.Tensor

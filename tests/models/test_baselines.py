@@ -7,11 +7,14 @@ from afmc_fm.models.baselines import (
     MLPRegressorBaseline,
     ProbeClassifier,
     ProbeRegressor,
+    TorchMLPRegressorBaseline,
     TorchRidgeRegressor,
 )
 
 RIDGE_PARITY_ATOL = 1e-10
 RIDGE_PARITY_RTOL = 1e-10
+MLP_CPU_REPEATABILITY_ATOL = 1e-12
+MLP_CUDA_REPEATABILITY_ATOL = 1e-10
 
 
 def _well_conditioned_ridge_problem() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -124,6 +127,71 @@ def test_mlp_representation_head_fits_nonlinear_signal():
         for parameter in (*model.model.coefs_, *model.model.intercepts_)
     )
     assert model.trainable_parameter_count() == expected_parameters
+
+
+def test_torch_mlp_has_declared_representation_architecture():
+    model = TorchMLPRegressorBaseline(input_dim=19, seed=3, device="cpu")
+
+    layers = list(model.model)
+    assert len(layers) == 3
+    assert isinstance(layers[0], torch.nn.Linear)
+    assert layers[0].in_features == 19
+    assert layers[0].out_features == 32
+    assert isinstance(layers[1], torch.nn.Tanh)
+    assert isinstance(layers[2], torch.nn.Linear)
+    assert layers[2].in_features == 32
+    assert layers[2].out_features == 1
+    assert model.trainable_parameter_count() == 673
+
+
+def test_torch_mlp_representation_head_fits_nonlinear_signal():
+    x = np.linspace(-1.0, 1.0, 80).reshape(-1, 1)
+    y = x[:, 0] ** 2
+
+    prediction = (
+        TorchMLPRegressorBaseline(input_dim=1, seed=3, device="cpu")
+        .fit(x, y)
+        .predict(x)
+    )
+
+    assert np.isfinite(prediction).all()
+    assert np.mean((prediction - y) ** 2) < 0.03
+
+
+def test_torch_mlp_cpu_fits_repeat_with_same_seed():
+    x = np.linspace(-1.0, 1.0, 48).reshape(-1, 1)
+    y = x[:, 0] ** 2
+
+    first = TorchMLPRegressorBaseline(input_dim=1, seed=7, device="cpu")
+    second = TorchMLPRegressorBaseline(input_dim=1, seed=7, device="cpu")
+    first_prediction = first.fit(x, y).predict(x)
+    second_prediction = second.fit(x, y).predict(x)
+
+    np.testing.assert_allclose(
+        first_prediction,
+        second_prediction,
+        atol=MLP_CPU_REPEATABILITY_ATOL,
+        rtol=0.0,
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+def test_torch_mlp_cuda_fits_repeat_with_same_seed():
+    x = np.linspace(-1.0, 1.0, 48).reshape(-1, 1)
+    y = x[:, 0] ** 2
+
+    first = TorchMLPRegressorBaseline(input_dim=1, seed=7, device="cuda")
+    second = TorchMLPRegressorBaseline(input_dim=1, seed=7, device="cuda")
+    first_prediction = first.fit(x, y).predict(x)
+    second_prediction = second.fit(x, y).predict(x)
+
+    assert next(first.model.parameters()).device.type == "cuda"
+    np.testing.assert_allclose(
+        first_prediction,
+        second_prediction,
+        atol=MLP_CUDA_REPEATABILITY_ATOL,
+        rtol=0.0,
+    )
 
 
 def test_gru_from_scratch_is_invariant_to_representation_values():

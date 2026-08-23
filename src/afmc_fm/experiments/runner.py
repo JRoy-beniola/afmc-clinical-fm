@@ -22,6 +22,7 @@ from afmc_fm.models.baselines import (
     GradientBoostingRegressorBaseline,
     GRUBaseline,
     MLPRegressorBaseline,
+    TorchMLPRegressorBaseline,
     TorchRidgeRegressor,
 )
 from afmc_fm.models.flow_jump import FlowJumpAdapter
@@ -427,6 +428,7 @@ def _run_low_n_on_cohort(
     model_names: Sequence[str] = MODEL_NAMES,
     ablations: Sequence[str] = ("none",),
     device: torch.device = _CPU_DEVICE,
+    mlp_backend: str = "torch",
 ) -> pd.DataFrame:
     unknown = set(model_names).difference(MODEL_NAMES)
     if unknown:
@@ -434,6 +436,8 @@ def _run_low_n_on_cohort(
     unknown_ablations = set(ablations).difference(ABLATION_IDS)
     if unknown_ablations:
         raise ValueError(f"unknown ablations: {sorted(unknown_ablations)}")
+    if mlp_backend not in {"torch", "sklearn"}:
+        raise ValueError("mlp_backend must be 'torch' or 'sklearn'")
     variants = [
         (model_name, ablation)
         for model_name in model_names
@@ -473,6 +477,7 @@ def _run_low_n_on_cohort(
             np.random.seed(model_seed)
             torch.manual_seed(model_seed)
             parameters = 0
+            backend: str | None = None
             if model_name in {
                 "engineered_linear",
                 "gradient_boosting",
@@ -489,14 +494,27 @@ def _run_low_n_on_cohort(
                 if model_name in {"engineered_linear", "representation_linear"}:
                     estimator = TorchRidgeRegressor(device=device)
                 elif model_name == "representation_mlp":
-                    estimator = MLPRegressorBaseline(seed=model_seed)
+                    if mlp_backend == "torch":
+                        estimator = TorchMLPRegressorBaseline(
+                            input_dim=train_x.shape[1],
+                            seed=model_seed,
+                            device=device,
+                        )
+                        backend = "torch_lbfgs"
+                    else:
+                        estimator = MLPRegressorBaseline(seed=model_seed)
+                        backend = "sklearn_lbfgs"
                 else:
                     estimator = GradientBoostingRegressorBaseline()
                 prediction = estimator.fit(train_x, train_y).predict(test_x)
                 metrics = regression_metrics(test_y, prediction)
                 if isinstance(
                     estimator,
-                    (MLPRegressorBaseline, TorchRidgeRegressor),
+                    (
+                        MLPRegressorBaseline,
+                        TorchMLPRegressorBaseline,
+                        TorchRidgeRegressor,
+                    ),
                 ):
                     parameters = estimator.trainable_parameter_count()
             else:
@@ -545,6 +563,7 @@ def _run_low_n_on_cohort(
                         "metric": metric,
                         "value": value,
                         "trainable_parameters": parameters,
+                        "backend": backend,
                     }
                 )
     return pd.DataFrame(rows)
@@ -564,6 +583,7 @@ def run_low_n_benchmark(
     model_names: Sequence[str] | None = None,
     ablations: Sequence[str] | None = None,
     device: torch.device = _CPU_DEVICE,
+    mlp_backend: str = "torch",
 ) -> pd.DataFrame:
     selected_models = tuple(config.models if model_names is None else model_names)
     selected_ablations = tuple(
@@ -578,6 +598,7 @@ def run_low_n_benchmark(
             selected_models,
             selected_ablations,
             device,
+            mlp_backend,
         )
         for cohort_seed, subset_seed, model_seed in config.seed_bundles(cohort.seed)
     ]

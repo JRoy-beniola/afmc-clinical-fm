@@ -169,7 +169,7 @@ def test_tiny_benchmark_runs_explicit_baseline_decomposition():
     }
 
 
-def test_representation_mlp_reports_fitted_trainable_parameters():
+def test_representation_mlp_uses_torch_optimized_backend_by_default():
     cohort = simulate_cohort(
         SimulatorConfig(cohort_size=30, followup_days=45.0), seed=25
     )
@@ -186,7 +186,31 @@ def test_representation_mlp_reports_fitted_trainable_parameters():
         model_names=("representation_mlp",),
     )
     assert results["trainable_parameters"].nunique() == 1
-    assert results["trainable_parameters"].iloc[0] > 0
+    assert results["trainable_parameters"].iloc[0] == 673
+    assert set(results["backend"]) == {"torch_lbfgs"}
+
+
+def test_representation_mlp_can_select_sklearn_reference_backend():
+    cohort = simulate_cohort(
+        SimulatorConfig(cohort_size=30, followup_days=45.0), seed=25
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        subset_seeds=(1,),
+        model_seeds=(1,),
+        max_epochs=1,
+        patience=1,
+    )
+
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("representation_mlp",),
+        mlp_backend="sklearn",
+    )
+
+    assert set(results["backend"]) == {"sklearn_lbfgs"}
+    assert np.isfinite(results["value"]).all()
 
 
 def test_required_ablation_variants_are_runnable_and_tidy():
