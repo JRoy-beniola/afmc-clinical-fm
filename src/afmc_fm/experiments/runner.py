@@ -94,6 +94,26 @@ class LowNBudget:
     validation_ids: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class _PreparedCohort:
+    patient_by_id: dict[str, SimulatedPatient]
+    task: LongitudinalTask
+    sequences: dict[str, PatientSequence]
+
+
+def _prepare_cohort(cohort: SimulatedCohort) -> _PreparedCohort:
+    patient_by_id = {patient.patient_id: patient for patient in cohort.patients}
+    task = LongitudinalTask(
+        value_codes=cohort.patients[0].complete_outcomes.value_codes
+    )
+    encoder = SummaryHistoryEncoder(task, representation_dim=16, seed=0)
+    sequences = {
+        patient_id: build_patient_sequence(patient, encoder, task)
+        for patient_id, patient in patient_by_id.items()
+    }
+    return _PreparedCohort(patient_by_id, task, sequences)
+
+
 def sample_low_n_train_ids(train_pool: Sequence[str], n: int, seed: int) -> list[str]:
     if n <= 0 or n > len(train_pool):
         raise ValueError("n must be positive and no larger than the training pool")
@@ -429,6 +449,7 @@ def _run_low_n_on_cohort(
     ablations: Sequence[str] = ("none",),
     device: torch.device = _CPU_DEVICE,
     mlp_backend: str = "torch",
+    prepared: _PreparedCohort | None = None,
 ) -> pd.DataFrame:
     unknown = set(model_names).difference(MODEL_NAMES)
     if unknown:
@@ -450,19 +471,14 @@ def _run_low_n_on_cohort(
         )
     ]
     torch.set_num_threads(1)
-    patient_by_id = {patient.patient_id: patient for patient in cohort.patients}
+    prepared = _prepare_cohort(cohort) if prepared is None else prepared
+    patient_by_id = prepared.patient_by_id
     all_ids = list(patient_by_id)
     development_pool, _, test_ids = split_patient_ids(
         all_ids, seed=0, train_fraction=0.8, val_fraction=0.0
     )
-    task = LongitudinalTask(
-        value_codes=cohort.patients[0].complete_outcomes.value_codes
-    )
-    encoder = SummaryHistoryEncoder(task, representation_dim=16, seed=0)
-    sequences = {
-        patient_id: build_patient_sequence(patient, encoder, task)
-        for patient_id, patient in patient_by_id.items()
-    }
+    task = prepared.task
+    sequences = prepared.sequences
     rows: list[dict[str, object]] = []
     for n_train in config.train_sizes:
         budget = select_low_n_budget(development_pool, n_train, subset_seed)
@@ -613,6 +629,7 @@ def _run_observation_shift_on_cohort(
     model_names: Sequence[str],
     ablations: Sequence[str],
     device: torch.device,
+    prepared: _PreparedCohort | None = None,
 ) -> pd.DataFrame:
     ids_by_site = {
         site_id: [
@@ -631,15 +648,10 @@ def _run_observation_shift_on_cohort(
         train_fraction=0.8,
         val_fraction=0.0,
     )
-    patient_by_id = {patient.patient_id: patient for patient in cohort.patients}
-    task = LongitudinalTask(
-        value_codes=cohort.patients[0].complete_outcomes.value_codes
-    )
-    encoder = SummaryHistoryEncoder(task, representation_dim=16, seed=0)
-    sequences = {
-        patient_id: build_patient_sequence(patient, encoder, task)
-        for patient_id, patient in patient_by_id.items()
-    }
+    prepared = _prepare_cohort(cohort) if prepared is None else prepared
+    patient_by_id = prepared.patient_by_id
+    task = prepared.task
+    sequences = prepared.sequences
     variants = [
         (model_name, ablation)
         for model_name in model_names
@@ -745,6 +757,47 @@ def _run_observation_shift_on_cohort(
                         }
                     )
     return pd.DataFrame(rows)
+
+
+def _run_configured_benchmarks_on_cohort(
+    cohort: SimulatedCohort,
+    config: ExperimentConfig,
+    subset_seed: int,
+    model_seed: int,
+    device: torch.device,
+) -> pd.DataFrame:
+    prepared = _prepare_cohort(cohort)
+    low_n = _run_low_n_on_cohort(
+        cohort,
+        config,
+        subset_seed,
+        model_seed,
+        config.models,
+        config.ablations,
+        device,
+        prepared=prepared,
+    )
+    low_n["world"] = cohort.config.world_name
+    low_n["benchmark"] = "low_n"
+    frames = [low_n]
+    observation_models = tuple(
+        model for model in config.models if model.startswith("flow_jump")
+    )
+    if cohort.config.world_name == "site_shift" and observation_models:
+        observation_shift = _run_observation_shift_on_cohort(
+            cohort,
+            config,
+            subset_seed,
+            model_seed,
+            observation_models,
+            config.ablations,
+            device,
+            prepared=prepared,
+        )
+        observation_shift["world"] = cohort.config.world_name
+        observation_shift["benchmark"] = "observation_shift"
+        frames.append(observation_shift)
+    return pd.concat(frames, ignore_index=True)
 
 
 def run_observation_shift_benchmark(
