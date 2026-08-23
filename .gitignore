@@ -34,3 +34,6 @@ venv/
 
 # Notebook state
 .ipynb_checkpoints/
+
+# Python package metadata
+*.egg-info/
