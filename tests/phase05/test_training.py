@@ -2,15 +2,15 @@ from copy import deepcopy
 
 import pytest
 import torch
-
-from afmc_fm.phase05.config import Phase05Config
 from afmc_fm.phase05.losses import masked_half_mse, masked_residual_gaussian_nll
-from afmc_fm.phase05.model import Phase05FlowJumpAdapter
 from afmc_fm.phase05.training import (
     evaluate_phase05_model,
     fit_decoupled_scale_head,
     fit_phase05_model,
 )
+
+from afmc_fm.phase05.config import Phase05Config
+from afmc_fm.phase05.model import Phase05FlowJumpAdapter
 
 
 def _model(uncertainty_mode: str = "decoupled") -> Phase05FlowJumpAdapter:
