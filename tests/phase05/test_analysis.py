@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+
 from afmc_fm.phase05.analysis import normalized_log_n_aulc, paired_development_gate
 
 
