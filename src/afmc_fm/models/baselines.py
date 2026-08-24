@@ -146,14 +146,17 @@ class TorchMLPRegressorBaseline:
         input_dim: int,
         seed: int,
         device: torch.device | str,
+        hidden_size: int = 32,
     ) -> None:
+        if hidden_size <= 0:
+            raise ValueError("hidden_size must be positive")
         self.device = torch.device(device)
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(seed)
             self.model = nn.Sequential(
-                nn.Linear(input_dim, 32),
+                nn.Linear(input_dim, hidden_size),
                 nn.Tanh(),
-                nn.Linear(32, 1),
+                nn.Linear(hidden_size, 1),
             ).to(device=self.device, dtype=torch.float64)
 
     def fit(
