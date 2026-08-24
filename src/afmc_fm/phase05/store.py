@@ -1,8 +1,10 @@
+import csv
 import hashlib
 import json
 import math
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -110,7 +112,11 @@ class Phase05Store:
         path = self.output / "development" / name
         if path.exists() and path.read_bytes() == payload:
             return
-        _atomic_write_bytes(path, payload)
+        _atomic_write_bytes(
+            path,
+            payload,
+            validator=_development_artifact_validator(name),
+        )
 
     def write_frozen_candidate(self, candidate: dict[str, object]) -> str:
         self._require_preconfirmation_mutation()
@@ -551,7 +557,41 @@ def _load_json_object(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _atomic_write_bytes(path: Path, data: bytes) -> None:
+def _development_artifact_validator(name: str) -> Callable[[bytes], None] | None:
+    suffix = Path(name).suffix.lower()
+    if suffix == ".csv":
+        return _validate_development_csv
+    if suffix == ".json":
+        return _validate_development_json
+    return None
+
+
+def _validate_development_csv(data: bytes) -> None:
+    try:
+        text = data.decode("utf-8")
+        rows = list(csv.reader(text.splitlines(), strict=True))
+    except (UnicodeDecodeError, csv.Error) as exc:
+        raise ValueError("invalid development CSV") from exc
+    if not rows or not rows[0]:
+        raise ValueError("invalid development CSV")
+    width = len(rows[0])
+    if width == 0 or any(len(row) != width for row in rows):
+        raise ValueError("invalid development CSV")
+
+
+def _validate_development_json(data: bytes) -> None:
+    try:
+        json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid development JSON") from exc
+
+
+def _atomic_write_bytes(
+    path: Path,
+    data: bytes,
+    *,
+    validator: Callable[[bytes], None] | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
     try:
@@ -560,8 +600,11 @@ def _atomic_write_bytes(path: Path, data: bytes) -> None:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        if temporary.read_bytes() != data:
+        persisted = temporary.read_bytes()
+        if persisted != data:
             raise OSError(f"temporary artifact validation failed: {path}")
+        if validator is not None:
+            validator(persisted)
         temporary.replace(path)
     except Exception:
         temporary.unlink(missing_ok=True)
