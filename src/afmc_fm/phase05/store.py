@@ -330,7 +330,7 @@ class Phase05Store:
         cell = payload.get("cell")
         seed_bundle = payload.get("seed_bundle")
         if not isinstance(cell, dict) or not isinstance(seed_bundle, dict):
-            raise ValueError(f"invalid persisted cell structure: {path}")
+            raise TypeError(f"invalid persisted cell structure: {path}")
         required_cell = {
             "cell_id",
             "n_train",
@@ -399,7 +399,7 @@ def _cell_id_from_payload(payload: dict[str, Any]) -> str:
     stage = payload.get("stage")
     world = payload.get("world")
     if not isinstance(bundle, dict) or not isinstance(cell, dict):
-        raise ValueError("invalid persisted cell structure")
+        raise TypeError("invalid persisted cell structure")
     try:
         cohort_seed = bundle["cohort_seed"]
         subset_seed = bundle["subset_seed"]
@@ -533,7 +533,7 @@ def _load_json_object(path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"invalid JSON artifact: {path}") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"JSON artifact must contain an object: {path}")
+        raise TypeError(f"JSON artifact must contain an object: {path}")
     return payload
 
 
