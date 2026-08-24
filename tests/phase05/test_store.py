@@ -1,11 +1,14 @@
 import hashlib
 import json
 from dataclasses import replace
+from importlib import import_module
 
 import pandas as pd
 import pytest
-from afmc_fm.phase05.store import Phase05CellResult, Phase05Store
 
+_store_module = import_module("afmc_fm.phase05.store")
+Phase05CellResult = _store_module.Phase05CellResult
+Phase05Store = _store_module.Phase05Store
 
 SPEC_HASH = "1" * 64
 CONFIG_HASH = "2" * 64
@@ -152,7 +155,9 @@ def test_confirmation_start_creates_hard_mutation_boundary(tmp_path):
         "jump_mode": "residual",
         "uncertainty_mode": "deterministic",
     }
-    store.replace_development_artifact("flow_gate.csv", b"candidate,passed\ntime_scaled,true\n")
+    store.replace_development_artifact(
+        "flow_gate.csv", b"candidate,passed\ntime_scaled,true\n"
+    )
     store.write_frozen_candidate(candidate)
 
     store.mark_confirmation_started()
