@@ -1,5 +1,7 @@
 import hashlib
 import json
+import multiprocessing
+import os
 import time
 from pathlib import Path
 
@@ -62,6 +64,20 @@ def _metric_frame(job: Phase05Job, value: float) -> pd.DataFrame:
             }
         ]
     )
+
+
+def _spawn_prepare(spec: Phase05ShardSpec) -> dict[str, object]:
+    return {"shard": spec.shard_id, "prepared_pid": os.getpid()}
+
+
+def _spawn_runner(job: Phase05Job, prepared: dict[str, object], device) -> pd.DataFrame:
+    time.sleep(0.5)
+    frame = _metric_frame(job, float(job.n_train))
+    frame["worker_pid"] = os.getpid()
+    frame["prepared_pid"] = prepared["prepared_pid"]
+    frame["worker_start_method"] = multiprocessing.get_start_method()
+    frame["device_type"] = device.type
+    return frame
 
 
 def test_resume_preserves_completed_cell_bytes_and_runs_only_missing_jobs(tmp_path):
@@ -219,4 +235,116 @@ def test_confirmatory_jobs_require_started_marker_and_exact_frozen_candidate(tmp
             options=Phase05ExecutionOptions(device="cpu", workers=1),
             prepare_shard=lambda spec: object(),
             run_job=lambda job, prepared, device: _metric_frame(job, 1.0),
+        )
+
+
+def test_multiworker_execution_uses_spawn_and_keeps_persistence_in_parent(tmp_path):
+    store = _store(tmp_path)
+    jobs = (
+        Phase05Job(
+            shard=Phase05ShardSpec(
+                "flow", "smooth", SeedBundle(401, 501, 601)
+            ),
+            n_train=5,
+            model="phase05_flow_jump",
+            variant="time_scaled__none__deterministic",
+        ),
+        Phase05Job(
+            shard=Phase05ShardSpec(
+                "flow", "jumps", SeedBundle(402, 502, 602)
+            ),
+            n_train=5,
+            model="phase05_flow_jump",
+            variant="time_scaled__none__deterministic",
+        ),
+    )
+
+    result = run_phase05_jobs(
+        jobs,
+        store=store,
+        config=Phase05Config(max_epochs=1, patience=1),
+        options=Phase05ExecutionOptions(device="cpu", workers=2, fail_fast=True),
+        prepare_shard=_spawn_prepare,
+        run_job=_spawn_runner,
+    )
+
+    assert set(result["worker_start_method"]) == {"spawn"}
+    assert set(result["device_type"]) == {"cpu"}
+    assert (result["worker_pid"] == result["prepared_pid"]).all()
+    assert len(set(result["worker_pid"])) == 2
+    cells = store.output / "stages" / "flow" / "cells"
+    assert not list(cells.glob("*.tmp"))
+
+
+def test_development_substages_are_locked_until_predecessor_is_complete(tmp_path):
+    store = _store(tmp_path)
+    job = Phase05Job(
+        shard=Phase05ShardSpec("jump", "jumps", SeedBundle(401, 501, 601)),
+        n_train=5,
+        model="phase05_flow_jump",
+        variant="time_scaled__residual__deterministic",
+    )
+
+    with pytest.raises(RuntimeError, match="flow stage must be complete before jump"):
+        run_phase05_jobs(
+            (job,),
+            store=store,
+            config=Phase05Config(max_epochs=1, patience=1),
+            options=Phase05ExecutionOptions(device="cpu", workers=1),
+            prepare_shard=lambda spec: object(),
+            run_job=lambda job, prepared, device: _metric_frame(job, 1.0),
+        )
+
+
+def test_robustness_waits_for_completed_confirmation_stage(tmp_path):
+    store = _store(tmp_path)
+    candidate_hash = store.write_frozen_candidate(
+        {
+            "flow_mode": "time_scaled",
+            "jump_mode": "residual",
+            "uncertainty_mode": "deterministic",
+        }
+    )
+    store.mark_confirmation_started()
+    job = Phase05Job(
+        shard=Phase05ShardSpec(
+            "robustness", "site_shift", SeedBundle(701, 801, 901)
+        ),
+        n_train=5,
+        model="phase05_candidate",
+        variant="time_scaled__residual__deterministic",
+        frozen_candidate_hash=candidate_hash,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="confirmation stage must be complete before robustness",
+    ):
+        run_phase05_jobs(
+            (job,),
+            store=store,
+            config=Phase05Config(max_epochs=1, patience=1),
+            options=Phase05ExecutionOptions(device="cpu", workers=1),
+            prepare_shard=lambda spec: object(),
+            run_job=lambda job, prepared, device: _metric_frame(job, 1.0),
+        )
+
+
+def test_duplicate_cell_ids_are_rejected_before_execution(tmp_path):
+    store = _store(tmp_path)
+    job = Phase05Job(
+        shard=Phase05ShardSpec("flow", "smooth", SeedBundle(401, 501, 601)),
+        n_train=5,
+        model="phase05_flow_jump",
+        variant="time_scaled__none__deterministic",
+    )
+
+    with pytest.raises(ValueError, match="cell IDs must be unique"):
+        run_phase05_jobs(
+            (job, job),
+            store=store,
+            config=Phase05Config(max_epochs=1, patience=1),
+            options=Phase05ExecutionOptions(device="cpu", workers=2),
+            prepare_shard=_spawn_prepare,
+            run_job=_spawn_runner,
         )
