@@ -1,12 +1,12 @@
 import pandas as pd
 import pytest
-
-from afmc_fm.models.baselines import GRUBaseline, TorchMLPRegressorBaseline
 from afmc_fm.phase05.baselines import (
     build_capacity_audit,
     closest_gru_hidden_size,
     closest_mlp_hidden_size,
 )
+
+from afmc_fm.models.baselines import GRUBaseline, TorchMLPRegressorBaseline
 
 
 def _count_gru(value_dim: int, event_dim: int, hidden_size: int) -> int:
