@@ -10,12 +10,22 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from afmc_fm.execution.persistence import canonical_config_hash
+from afmc_fm.phase05.config import load_phase05_config
+
 PHASE05_STORE_SCHEMA_VERSION = 1
 _CELL_SCHEMA_VERSION = 1
 _SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 _SAFE_ARTIFACT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 _CONFIRMATORY_STAGES = frozenset({"confirmation", "robustness"})
+_SPEC_RELATIVE_PATH = (
+    Path("docs")
+    / "superpowers"
+    / "specs"
+    / "2026-08-24-phase0-5-mechanistic-redesign-design.md"
+)
+_CONFIG_RELATIVE_PATH = Path("configs") / "experiments" / "phase05.yaml"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,13 +60,17 @@ class Phase05Store:
         output: Path,
         protocol_hash: str,
         *,
-        spec_hash: str,
-        config_hash: str,
+        spec_hash: str | None = None,
+        config_hash: str | None = None,
     ) -> None:
+        resolved_spec_hash = _default_spec_hash() if spec_hash is None else spec_hash
+        resolved_config_hash = (
+            _default_config_hash() if config_hash is None else config_hash
+        )
         self.output = Path(output)
         self.protocol_hash = _require_sha256(protocol_hash, "protocol_hash")
-        self.spec_hash = _require_sha256(spec_hash, "spec_hash")
-        self.config_hash = _require_sha256(config_hash, "config_hash")
+        self.spec_hash = _require_sha256(resolved_spec_hash, "spec_hash")
+        self.config_hash = _require_sha256(resolved_config_hash, "config_hash")
 
     @property
     def identity(self) -> dict[str, object]:
@@ -552,6 +566,28 @@ def _atomic_write_bytes(path: Path, data: bytes) -> None:
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _default_spec_hash() -> str:
+    path = _repo_root() / _SPEC_RELATIVE_PATH
+    try:
+        payload = path.read_bytes()
+    except OSError as exc:
+        raise RuntimeError(f"approved Phase-0.5 spec is unavailable: {path}") from exc
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _default_config_hash() -> str:
+    path = _repo_root() / _CONFIG_RELATIVE_PATH
+    try:
+        config = load_phase05_config(path)
+        return canonical_config_hash(config)
+    except (OSError, TypeError, ValueError) as exc:
+        raise RuntimeError(f"approved Phase-0.5 config is unavailable: {path}") from exc
 
 
 __all__ = ["PHASE05_STORE_SCHEMA_VERSION", "Phase05CellResult", "Phase05Store"]
