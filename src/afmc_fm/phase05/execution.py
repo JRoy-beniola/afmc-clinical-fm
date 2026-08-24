@@ -308,7 +308,7 @@ def _execute_shard_worker(
                 if frame.empty:
                     raise ValueError("Phase-0.5 job runner returned no metric rows")
                 results.append((job, frame))
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - worker boundary captures callbacks
                 failures.append(f"{type(error).__name__}: {error}")
                 if fail_fast:
                     break
@@ -363,42 +363,41 @@ def _run_parallel_shards(
         return []
 
     failures: list[BaseException] = []
-    with _inherited_thread_environment():
-        with ProcessPoolExecutor(
-            max_workers=options.workers,
-            mp_context=spawn_context(),
-        ) as executor:
-            futures = {
-                executor.submit(
-                    _execute_shard_worker,
-                    shard,
-                    shard_jobs,
-                    options.device,
-                    prepare_shard,
-                    run_job,
-                    options.fail_fast,
-                ): shard.shard_id
-                for shard, shard_jobs in work
-            }
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                except Exception as error:
-                    failures.append(error)
-                    if options.fail_fast:
-                        for pending_future in futures:
-                            pending_future.cancel()
-                        raise
-                    continue
-
-                for job, frame in result.results:
-                    _persist_result(store, job, frame)
-                for failure in result.failures:
-                    failures.append(RuntimeError(failure))
-                if result.failures and options.fail_fast:
+    with _inherited_thread_environment(), ProcessPoolExecutor(
+        max_workers=options.workers,
+        mp_context=spawn_context(),
+    ) as executor:
+        futures = {
+            executor.submit(
+                _execute_shard_worker,
+                shard,
+                shard_jobs,
+                options.device,
+                prepare_shard,
+                run_job,
+                options.fail_fast,
+            ): shard.shard_id
+            for shard, shard_jobs in work
+        }
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+            except Exception as error:
+                failures.append(error)
+                if options.fail_fast:
                     for pending_future in futures:
                         pending_future.cancel()
-                    raise RuntimeError(result.failures[0])
+                    raise
+                continue
+
+            for job, frame in result.results:
+                _persist_result(store, job, frame)
+            for failure in result.failures:
+                failures.append(RuntimeError(failure))
+            if result.failures and options.fail_fast:
+                for pending_future in futures:
+                    pending_future.cancel()
+                raise RuntimeError(result.failures[0])
     return failures
 
 
