@@ -26,12 +26,12 @@ def _model(uncertainty_mode: str = "decoupled") -> Phase05FlowJumpAdapter:
     )
 
 
-def _batch() -> dict[str, torch.Tensor]:
+def _batch(*, include_latent_truth: bool = False) -> dict[str, torch.Tensor]:
     torch.manual_seed(17)
     batch = 3
     steps = 4
     value_dim = 3
-    return {
+    result = {
         "representations": torch.randn(batch, steps, 16),
         "values": torch.randn(batch, steps, value_dim),
         "masks": torch.randint(0, 2, (batch, steps, value_dim)).float(),
@@ -69,6 +69,10 @@ def _batch() -> dict[str, torch.Tensor]:
         ),
         "event_valid": torch.ones(batch, steps),
     }
+    if include_latent_truth:
+        result["latent_targets"] = torch.randn(batch, steps, 4)
+        result["latent_valid"] = torch.ones(batch, steps)
+    return result
 
 
 def _tiny_config() -> Phase05Config:
@@ -180,6 +184,16 @@ def test_full_decoupled_fit_updates_parameters_and_reports_probabilistic_metrics
     assert "rmse" in metrics
     assert "nll" in metrics
     assert "coverage_90" in metrics
+
+
+def test_evaluation_reports_aligned_latent_r2_when_truth_is_present():
+    model = _model("deterministic")
+    batch = _batch(include_latent_truth=True)
+
+    metrics = evaluate_phase05_model(model, batch, torch.device("cpu"))
+
+    assert "latent_aligned_r2" in metrics
+    assert torch.isfinite(torch.tensor(metrics["latent_aligned_r2"]))
 
 
 @pytest.mark.parametrize("mode", ["joint", "deterministic"])
