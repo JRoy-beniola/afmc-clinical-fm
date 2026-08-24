@@ -9,6 +9,25 @@ from afmc_fm.phase05.development import (
     select_uncertainty,
 )
 
+_PARAMETER_COUNTS = {
+    "none": 5000,
+    "gated": 6500,
+    "time_scaled": 6200,
+    "gru": 6800,
+    "residual": 6300,
+    "joint": 7000,
+    "decoupled": 6900,
+}
+
+
+def _parameter_count_for_variant(variant: str) -> int:
+    flow, jump, uncertainty = variant.split("__")
+    if uncertainty != "deterministic":
+        return _PARAMETER_COUNTS[uncertainty]
+    if jump != "none":
+        return _PARAMETER_COUNTS[jump]
+    return _PARAMETER_COUNTS[flow]
+
 
 def _candidate_frame(
     *,
@@ -31,16 +50,7 @@ def _candidate_frame(
                         "model_seed": 600 + seed_index,
                         "n_train": n_train,
                         "value": target_aulc,
-                        "trainable_parameters": {
-                            "none": 5000,
-                            "gated": 6500,
-                            "time_scaled": 6200,
-                            "gru": 6800,
-                            "residual": 6300,
-                            "joint": 7000,
-                            "decoupled": 6900,
-                            "deterministic": 6200,
-                        }.get(variant, 6000),
+                        "trainable_parameters": _parameter_count_for_variant(variant),
                     }
                 )
     return pd.DataFrame(rows)
