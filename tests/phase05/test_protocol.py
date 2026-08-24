@@ -3,13 +3,13 @@ import math
 import numpy as np
 import pandas as pd
 import pytest
-
-from afmc_fm.execution.persistence import canonical_config_hash
-from afmc_fm.phase05.config import Phase05Config
 from afmc_fm.phase05.protocol import (
     build_protocol_lock,
     estimate_phase0_relative_noise_floor,
 )
+
+from afmc_fm.execution.persistence import canonical_config_hash
+from afmc_fm.phase05.config import Phase05Config
 
 _TARGET_WORLDS = ("smooth", "jumps", "informative_observation")
 _PRIMARY_TRAIN_SIZES = (5, 10, 20, 40)
