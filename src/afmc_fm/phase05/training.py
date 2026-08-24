@@ -10,6 +10,7 @@ from afmc_fm.metrics.forecasting import (
     gaussian_forecasting_metrics,
     regression_metrics,
 )
+from afmc_fm.metrics.latent import aligned_latent_r2
 from afmc_fm.models.losses import masked_gaussian_nll
 from afmc_fm.phase05.config import Phase05Config
 from afmc_fm.phase05.losses import masked_half_mse, masked_residual_gaussian_nll
@@ -126,7 +127,9 @@ def fit_decoupled_scale_head(
     model.to(device)
     train = move_batch(train, device)
     validation = move_batch(validation, device)
-    requires_grad = {name: parameter.requires_grad for name, parameter in model.named_parameters()}
+    requires_grad = {
+        name: parameter.requires_grad for name, parameter in model.named_parameters()
+    }
     for name, parameter in model.named_parameters():
         parameter.requires_grad_(name.startswith("scale_head."))
 
@@ -222,6 +225,13 @@ def evaluate_phase05_model(
     )
     event_metrics = binary_metrics(event_truth, event_probability)
     metrics.update({f"event_{name}": value for name, value in event_metrics.items()})
+
+    if "latent_targets" in batch and "latent_valid" in batch:
+        latent_selected = batch["latent_valid"].bool()
+        metrics["latent_aligned_r2"] = aligned_latent_r2(
+            batch["latent_targets"][latent_selected].detach().cpu().numpy(),
+            output.post_event_states[latent_selected].detach().cpu().numpy(),
+        )
 
     return {name: float(np.asarray(value)) for name, value in metrics.items()}
 
