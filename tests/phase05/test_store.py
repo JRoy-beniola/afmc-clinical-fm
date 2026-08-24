@@ -2,9 +2,13 @@ import hashlib
 import json
 from dataclasses import replace
 from importlib import import_module
+from pathlib import Path
 
 import pandas as pd
 import pytest
+
+from afmc_fm.execution.persistence import canonical_config_hash
+from afmc_fm.phase05.config import load_phase05_config
 
 _store_module = import_module("afmc_fm.phase05.store")
 Phase05CellResult = _store_module.Phase05CellResult
@@ -81,6 +85,29 @@ def _cell(
         ),
         frozen_candidate_hash=frozen_candidate_hash,
     )
+
+
+def test_two_argument_store_derives_approved_phase05_identity(tmp_path):
+    repo_root = Path(__file__).resolve().parents[2]
+    spec_path = (
+        repo_root
+        / "docs"
+        / "superpowers"
+        / "specs"
+        / "2026-08-24-phase0-5-mechanistic-redesign-design.md"
+    )
+    config_path = repo_root / "configs" / "experiments" / "phase05.yaml"
+    expected_spec_hash = hashlib.sha256(spec_path.read_bytes()).hexdigest()
+    expected_config_hash = canonical_config_hash(load_phase05_config(config_path))
+
+    store = Phase05Store(tmp_path / "phase05", "a" * 64)
+
+    assert store.identity == {
+        "schema_version": 1,
+        "spec_sha256": expected_spec_hash,
+        "config_sha256": expected_config_hash,
+        "protocol_lock_sha256": "a" * 64,
+    }
 
 
 def test_write_cell_is_atomic_idempotent_and_rejects_conflicting_content(tmp_path):
