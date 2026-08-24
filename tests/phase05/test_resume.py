@@ -80,6 +80,24 @@ def _spawn_runner(job: Phase05Job, prepared: dict[str, object], device) -> pd.Da
     return frame
 
 
+def _flow_job() -> Phase05Job:
+    return Phase05Job(
+        shard=Phase05ShardSpec("flow", "smooth", SeedBundle(401, 501, 601)),
+        n_train=5,
+        model="phase05_flow_jump",
+        variant="time_scaled__none__deterministic",
+    )
+
+
+def _jump_job() -> Phase05Job:
+    return Phase05Job(
+        shard=Phase05ShardSpec("jump", "jumps", SeedBundle(401, 501, 601)),
+        n_train=5,
+        model="phase05_flow_jump",
+        variant="time_scaled__residual__deterministic",
+    )
+
+
 def test_resume_preserves_completed_cell_bytes_and_runs_only_missing_jobs(tmp_path):
     store = _store(tmp_path)
     shard = Phase05ShardSpec("flow", "smooth", SeedBundle(401, 501, 601))
@@ -292,18 +310,76 @@ def test_multiworker_execution_uses_spawn_and_keeps_persistence_in_parent(tmp_pa
     assert not list(cells.glob("*.tmp"))
 
 
-def test_development_substages_are_locked_until_predecessor_is_complete(tmp_path):
+def test_partial_development_execution_does_not_finalize_stage(tmp_path):
     store = _store(tmp_path)
-    job = Phase05Job(
-        shard=Phase05ShardSpec("jump", "jumps", SeedBundle(401, 501, 601)),
-        n_train=5,
-        model="phase05_flow_jump",
-        variant="time_scaled__residual__deterministic",
+    job = _flow_job()
+
+    run_phase05_jobs(
+        (job,),
+        store=store,
+        config=Phase05Config(max_epochs=1, patience=1),
+        options=Phase05ExecutionOptions(device="cpu", workers=1),
+        prepare_shard=lambda spec: object(),
+        run_job=lambda job, prepared, device: _metric_frame(job, 1.0),
     )
 
-    with pytest.raises(RuntimeError, match="flow stage must be complete before jump"):
+    assert not (store.output / "stages" / "flow" / "COMPLETE").exists()
+
+
+def test_jump_requires_passing_flow_gate_not_execution_complete(tmp_path):
+    failed_store = _store(tmp_path / "failed")
+    flow_job = _flow_job()
+    jump_job = _jump_job()
+    run_phase05_jobs(
+        (flow_job,),
+        store=failed_store,
+        config=Phase05Config(max_epochs=1, patience=1),
+        options=Phase05ExecutionOptions(device="cpu", workers=1),
+        prepare_shard=lambda spec: object(),
+        run_job=lambda job, prepared, device: _metric_frame(job, 1.0),
+    )
+    failed_store.replace_development_artifact(
+        "flow_gate.csv",
+        b"candidate,passed\ntime_scaled,false\n",
+    )
+
+    with pytest.raises(RuntimeError, match="flow gate must pass before jump"):
         run_phase05_jobs(
-            (job,),
+            (jump_job,),
+            store=failed_store,
+            config=Phase05Config(max_epochs=1, patience=1),
+            options=Phase05ExecutionOptions(device="cpu", workers=1),
+            prepare_shard=lambda spec: object(),
+            run_job=lambda job, prepared, device: _metric_frame(job, 1.0),
+        )
+
+    passing_store = _store(tmp_path / "passing")
+    passing_store.replace_development_artifact(
+        "flow_gate.csv",
+        b"candidate,passed\ntime_scaled,true\n",
+    )
+    result = run_phase05_jobs(
+        (jump_job,),
+        store=passing_store,
+        config=Phase05Config(max_epochs=1, patience=1),
+        options=Phase05ExecutionOptions(device="cpu", workers=1),
+        prepare_shard=lambda spec: object(),
+        run_job=lambda job, prepared, device: _metric_frame(job, 1.0),
+    )
+
+    assert result["stage"].tolist() == ["jump"]
+
+
+def test_finalized_development_stage_cannot_be_reentered(tmp_path):
+    store = _store(tmp_path)
+    store.replace_development_artifact(
+        "flow_gate.csv",
+        b"candidate,passed\ntime_scaled,true\n",
+    )
+
+    with pytest.raises(RuntimeError, match="flow stage is already finalized"):
+        run_phase05_jobs(
+            (_flow_job(),),
             store=store,
             config=Phase05Config(max_epochs=1, patience=1),
             options=Phase05ExecutionOptions(device="cpu", workers=1),
@@ -348,12 +424,7 @@ def test_robustness_waits_for_completed_confirmation_stage(tmp_path):
 
 def test_duplicate_cell_ids_are_rejected_before_execution(tmp_path):
     store = _store(tmp_path)
-    job = Phase05Job(
-        shard=Phase05ShardSpec("flow", "smooth", SeedBundle(401, 501, 601)),
-        n_train=5,
-        model="phase05_flow_jump",
-        variant="time_scaled__none__deterministic",
-    )
+    job = _flow_job()
 
     with pytest.raises(ValueError, match="cell IDs must be unique"):
         run_phase05_jobs(
