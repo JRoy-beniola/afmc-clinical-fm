@@ -85,12 +85,33 @@ def test_stage_planning_uses_locked_seed_roles_and_world_roles():
     config = Phase05Config()
 
     flow = _execution.plan_phase05_shards(config, "flow")
+    jump = _execution.plan_phase05_shards(config, "jump")
+    uncertainty = _execution.plan_phase05_shards(config, "uncertainty")
+    timing = _execution.plan_phase05_shards(config, "timing_audit")
     confirmation = _execution.plan_phase05_shards(config, "confirmation")
     robustness = _execution.plan_phase05_shards(config, "robustness")
 
-    assert {shard.world for shard in flow} == set(config.target_worlds)
+    assert {shard.world for shard in flow} == {"smooth"}
     assert {shard.seed_bundle for shard in flow} == set(config.development_bundles)
-    assert len(flow) == len(config.target_worlds) * len(config.development_bundles)
+    assert len(flow) == len(config.development_bundles)
+
+    assert {shard.world for shard in jump} == {"jumps"}
+    assert {shard.seed_bundle for shard in jump} == set(config.development_bundles)
+    assert len(jump) == len(config.development_bundles)
+
+    assert {shard.world for shard in uncertainty} == set(config.target_worlds)
+    assert {shard.seed_bundle for shard in uncertainty} == set(
+        config.development_bundles
+    )
+    assert len(uncertainty) == len(config.target_worlds) * len(
+        config.development_bundles
+    )
+
+    assert {shard.world for shard in timing} == set(config.target_worlds)
+    assert {shard.seed_bundle for shard in timing} == set(config.development_bundles)
+    assert len(timing) == len(config.target_worlds) * len(
+        config.development_bundles
+    )
 
     assert {shard.world for shard in confirmation} == set(config.target_worlds)
     assert {shard.seed_bundle for shard in confirmation} == set(
