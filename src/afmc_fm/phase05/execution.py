@@ -157,7 +157,13 @@ def plan_phase05_shards(
     config: Phase05Config,
     stage: str,
 ) -> tuple[Phase05ShardSpec, ...]:
-    if stage in _DEVELOPMENT_STAGES:
+    if stage == "flow":
+        worlds = ("smooth",)
+        bundles = config.development_bundles
+    elif stage == "jump":
+        worlds = ("jumps",)
+        bundles = config.development_bundles
+    elif stage in {"uncertainty", "timing_audit"}:
         worlds = config.target_worlds
         bundles = config.development_bundles
     elif stage == "confirmation":
