@@ -1,9 +1,11 @@
 from importlib import import_module
 
+import pandas as pd
 import pytest
 import torch
+from threadpoolctl import threadpool_info
 
-from afmc_fm.phase05.config import SeedBundle
+from afmc_fm.phase05.config import Phase05Config, SeedBundle
 
 _execution = import_module("afmc_fm.phase05.execution")
 Phase05ExecutionOptions = _execution.Phase05ExecutionOptions
@@ -66,8 +68,68 @@ def test_worker_thread_limits_set_torch_and_cpu_environment(monkeypatch):
         torch.set_num_threads(previous)
 
 
+def test_worker_threadpool_context_caps_loaded_numeric_libraries():
+    with _execution.worker_thread_limits():
+        pools = threadpool_info()
+        assert all(int(pool["num_threads"]) <= 1 for pool in pools)
+
+
 def test_explicit_unavailable_cuda_hard_fails(monkeypatch):
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
 
     with pytest.raises(RuntimeError, match="CUDA was requested but is not available"):
         resolve_phase05_device("cuda")
+
+
+def test_stage_planning_uses_locked_seed_roles_and_world_roles():
+    config = Phase05Config()
+
+    flow = _execution.plan_phase05_shards(config, "flow")
+    confirmation = _execution.plan_phase05_shards(config, "confirmation")
+    robustness = _execution.plan_phase05_shards(config, "robustness")
+
+    assert {shard.world for shard in flow} == set(config.target_worlds)
+    assert {shard.seed_bundle for shard in flow} == set(config.development_bundles)
+    assert len(flow) == len(config.target_worlds) * len(config.development_bundles)
+
+    assert {shard.world for shard in confirmation} == set(config.target_worlds)
+    assert {shard.seed_bundle for shard in confirmation} == set(
+        config.confirmatory_bundles
+    )
+    assert len(confirmation) == len(config.target_worlds) * len(
+        config.confirmatory_bundles
+    )
+
+    assert {shard.world for shard in robustness} == set(config.robustness_worlds)
+    assert {shard.seed_bundle for shard in robustness} == set(
+        config.confirmatory_bundles
+    )
+    assert len(robustness) == len(config.robustness_worlds) * len(
+        config.confirmatory_bundles
+    )
+
+
+def test_final_aggregation_order_is_completion_order_independent():
+    first = pd.DataFrame(
+        [
+            {
+                "stage": "flow",
+                "world": "smooth",
+                "cohort_seed": 401,
+                "subset_seed": 501,
+                "model_seed": 601,
+                "n_train": 5,
+                "model": "phase05_flow_jump",
+                "variant": "time_scaled__none__deterministic",
+                "metric": "mae",
+                "value": 2.0,
+            }
+        ]
+    )
+    second = first.assign(n_train=10, value=1.5)
+
+    forward = _execution.aggregate_phase05_frames([first, second])
+    reverse = _execution.aggregate_phase05_frames([second, first])
+
+    pd.testing.assert_frame_equal(forward, reverse)
+    assert forward["n_train"].tolist() == [5, 10]
