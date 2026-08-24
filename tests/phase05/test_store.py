@@ -175,6 +175,31 @@ def test_protocol_lock_hash_must_match_store_identity(tmp_path):
     assert not (tmp_path / "phase05" / "protocol_lock.json").exists()
 
 
+def test_development_csv_is_validated_before_atomic_replace(tmp_path):
+    store = _store(tmp_path)
+    artifact = tmp_path / "phase05" / "development" / "flow_gate.csv"
+
+    with pytest.raises(ValueError, match="invalid development CSV"):
+        store.replace_development_artifact(
+            "flow_gate.csv",
+            b'candidate,passed\n"time_scaled,true\n',
+        )
+
+    assert not artifact.exists()
+    assert not list(artifact.parent.glob("*.tmp"))
+
+
+def test_development_json_is_validated_before_atomic_replace(tmp_path):
+    store = _store(tmp_path)
+    artifact = tmp_path / "phase05" / "development" / "failure.json"
+
+    with pytest.raises(ValueError, match="invalid development JSON"):
+        store.replace_development_artifact("failure.json", b'{"gate":"flow"')
+
+    assert not artifact.exists()
+    assert not list(artifact.parent.glob("*.tmp"))
+
+
 def test_confirmation_start_creates_hard_mutation_boundary(tmp_path):
     store = _store(tmp_path)
     candidate = {
