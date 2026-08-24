@@ -4,7 +4,6 @@ from dataclasses import replace
 
 import pandas as pd
 import pytest
-
 from afmc_fm.phase05.store import Phase05CellResult, Phase05Store
 
 
