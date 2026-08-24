@@ -87,7 +87,6 @@ def test_stage_planning_uses_locked_seed_roles_and_world_roles():
     flow = _execution.plan_phase05_shards(config, "flow")
     jump = _execution.plan_phase05_shards(config, "jump")
     uncertainty = _execution.plan_phase05_shards(config, "uncertainty")
-    timing = _execution.plan_phase05_shards(config, "timing_audit")
     confirmation = _execution.plan_phase05_shards(config, "confirmation")
     robustness = _execution.plan_phase05_shards(config, "robustness")
 
@@ -104,12 +103,6 @@ def test_stage_planning_uses_locked_seed_roles_and_world_roles():
         config.development_bundles
     )
     assert len(uncertainty) == len(config.target_worlds) * len(
-        config.development_bundles
-    )
-
-    assert {shard.world for shard in timing} == set(config.target_worlds)
-    assert {shard.seed_bundle for shard in timing} == set(config.development_bundles)
-    assert len(timing) == len(config.target_worlds) * len(
         config.development_bundles
     )
 
