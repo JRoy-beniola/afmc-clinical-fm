@@ -116,6 +116,12 @@ def test_gru_baseline_has_finite_shapes_and_gradients():
     assert all(gradient is not None for gradient in gradients)
 
 
+def test_gru_historical_default_capacity_is_unchanged():
+    model = GRUBaseline(value_dim=3, event_dim=3)
+
+    assert sum(parameter.numel() for parameter in model.parameters()) == 4455
+
+
 def test_mlp_representation_head_fits_nonlinear_signal():
     x = np.linspace(-1.0, 1.0, 80).reshape(-1, 1)
     y = x[:, 0] ** 2
@@ -142,6 +148,20 @@ def test_torch_mlp_has_declared_representation_architecture():
     assert layers[2].in_features == 32
     assert layers[2].out_features == 1
     assert model.trainable_parameter_count() == 673
+
+
+def test_torch_mlp_accepts_explicit_hidden_size_without_changing_default():
+    model = TorchMLPRegressorBaseline(
+        input_dim=19,
+        seed=3,
+        device="cpu",
+        hidden_size=7,
+    )
+
+    layers = list(model.model)
+    assert layers[0].out_features == 7
+    assert layers[2].in_features == 7
+    assert model.trainable_parameter_count() == 148
 
 
 def test_torch_mlp_representation_head_fits_nonlinear_signal():
