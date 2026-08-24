@@ -251,7 +251,7 @@ def test_multiworker_execution_uses_spawn_and_keeps_persistence_in_parent(tmp_pa
         ),
         Phase05Job(
             shard=Phase05ShardSpec(
-                "flow", "jumps", SeedBundle(402, 502, 602)
+                "flow", "smooth", SeedBundle(402, 502, 602)
             ),
             n_train=5,
             model="phase05_flow_jump",
