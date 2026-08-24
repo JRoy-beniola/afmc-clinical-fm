@@ -46,16 +46,14 @@ def test_closest_mlp_hidden_size_matches_brute_force_module_counts():
 
 
 def test_capacity_search_breaks_exact_mismatch_ties_toward_smaller_width():
-    counts = [_count_mlp(19, width) for width in range(1, 257)]
-    for width in range(1, 256):
-        left = counts[width - 1]
-        right = counts[width]
-        if (left + right) % 2 == 0:
-            target = (left + right) // 2
-            assert abs(left - target) == abs(right - target)
-            assert closest_mlp_hidden_size(target, input_dim=19) == width
-            return
-    pytest.fail("expected to find an exact adjacent-width midpoint tie")
+    width = 20
+    left = _count_gru(3, 3, width)
+    right = _count_gru(3, 3, width + 1)
+    assert (left + right) % 2 == 0
+    target = (left + right) // 2
+    assert abs(left - target) == abs(right - target)
+
+    assert closest_gru_hidden_size(target, value_dim=3, event_dim=3) == width
 
 
 def test_capacity_search_rejects_nonpositive_target_or_dimensions():
