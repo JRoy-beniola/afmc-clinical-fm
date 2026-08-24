@@ -5,6 +5,7 @@ import json
 import multiprocessing
 import os
 from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -25,6 +26,12 @@ THREAD_ENVIRONMENT_VARIABLES = (
 )
 _CONFIRMATORY_STAGES = frozenset({"confirmation", "robustness"})
 _DEVELOPMENT_STAGES = frozenset({"flow", "jump", "uncertainty", "timing_audit"})
+_STAGE_PREDECESSOR = {
+    "jump": "flow",
+    "uncertainty": "jump",
+    "timing_audit": "uncertainty",
+    "robustness": "confirmation",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +86,12 @@ class Phase05ExecutionOptions:
             raise ValueError("device must be auto, cpu, or cuda")
 
 
+@dataclass(frozen=True, slots=True)
+class _ShardExecutionResult:
+    results: tuple[tuple[Phase05Job, pd.DataFrame], ...]
+    failures: tuple[str, ...]
+
+
 def phase05_cell_id(
     shard: Phase05ShardSpec,
     *,
@@ -113,6 +126,23 @@ def worker_thread_limits() -> Iterator[dict[str, str]]:
     finally:
         torch.set_num_threads(previous_torch_threads)
         for variable, value in previous_environment.items():
+            if value is None:
+                os.environ.pop(variable, None)
+            else:
+                os.environ[variable] = value
+
+
+@contextmanager
+def _inherited_thread_environment() -> Iterator[None]:
+    previous = {
+        variable: os.environ.get(variable) for variable in THREAD_ENVIRONMENT_VARIABLES
+    }
+    try:
+        for variable in THREAD_ENVIRONMENT_VARIABLES:
+            os.environ[variable] = "1"
+        yield
+    finally:
+        for variable, value in previous.items():
             if value is None:
                 os.environ.pop(variable, None)
             else:
@@ -186,6 +216,18 @@ def _validate_job_scope(jobs: tuple[Phase05Job, ...], config: Phase05Config) -> 
     return stage
 
 
+def _require_stage_unlocked(store: Phase05Store, stage: str) -> None:
+    predecessor = _STAGE_PREDECESSOR.get(stage)
+    if predecessor is None:
+        return
+    marker = store.output / "stages" / predecessor / "COMPLETE"
+    if marker.is_file():
+        return
+    if stage == "robustness":
+        raise RuntimeError("confirmation stage must be complete before robustness")
+    raise RuntimeError(f"{predecessor} stage must be complete before {stage}")
+
+
 def _persist_result(store: Phase05Store, job: Phase05Job, frame: pd.DataFrame) -> None:
     if not isinstance(frame, pd.DataFrame):
         raise TypeError("Phase-0.5 job runner must return a pandas DataFrame")
@@ -243,6 +285,123 @@ def _require_confirmation_binding(
     return candidate_hash
 
 
+def _execute_shard_worker(
+    shard: Phase05ShardSpec,
+    jobs: tuple[Phase05Job, ...],
+    requested_device: str,
+    prepare_shard: Callable[[Phase05ShardSpec], Any],
+    run_job: Callable[[Phase05Job, Any, torch.device], pd.DataFrame],
+    fail_fast: bool,
+) -> _ShardExecutionResult:
+    results: list[tuple[Phase05Job, pd.DataFrame]] = []
+    failures: list[str] = []
+    with worker_thread_limits():
+        device = resolve_phase05_device(requested_device)
+        prepared = prepare_shard(shard)
+        for job in jobs:
+            try:
+                frame = run_job(job, prepared, device)
+                if not isinstance(frame, pd.DataFrame):
+                    raise TypeError(
+                        "Phase-0.5 job runner must return a pandas DataFrame"
+                    )
+                if frame.empty:
+                    raise ValueError("Phase-0.5 job runner returned no metric rows")
+                results.append((job, frame))
+            except Exception as error:
+                failures.append(f"{type(error).__name__}: {error}")
+                if fail_fast:
+                    break
+    return _ShardExecutionResult(tuple(results), tuple(failures))
+
+
+def _run_single_worker_shards(
+    by_shard: dict[str, list[Phase05Job]],
+    shard_specs: dict[str, Phase05ShardSpec],
+    *,
+    store: Phase05Store,
+    completed: frozenset[str],
+    device: torch.device,
+    prepare_shard: Callable[[Phase05ShardSpec], Any],
+    run_job: Callable[[Phase05Job, Any, torch.device], pd.DataFrame],
+    fail_fast: bool,
+) -> list[BaseException]:
+    failures: list[BaseException] = []
+    for shard_id, shard_jobs in by_shard.items():
+        pending = [job for job in shard_jobs if job.cell_id not in completed]
+        if not pending:
+            continue
+        with worker_thread_limits():
+            prepared = prepare_shard(shard_specs[shard_id])
+            for job in pending:
+                try:
+                    frame = run_job(job, prepared, device)
+                    _persist_result(store, job, frame)
+                except Exception as error:
+                    failures.append(error)
+                    if fail_fast:
+                        raise
+    return failures
+
+
+def _run_parallel_shards(
+    by_shard: dict[str, list[Phase05Job]],
+    shard_specs: dict[str, Phase05ShardSpec],
+    *,
+    store: Phase05Store,
+    completed: frozenset[str],
+    options: Phase05ExecutionOptions,
+    prepare_shard: Callable[[Phase05ShardSpec], Any],
+    run_job: Callable[[Phase05Job, Any, torch.device], pd.DataFrame],
+) -> list[BaseException]:
+    work = [
+        (shard_specs[shard_id], tuple(job for job in shard_jobs if job.cell_id not in completed))
+        for shard_id, shard_jobs in by_shard.items()
+    ]
+    work = [(shard, jobs) for shard, jobs in work if jobs]
+    if not work:
+        return []
+
+    failures: list[BaseException] = []
+    with _inherited_thread_environment():
+        with ProcessPoolExecutor(
+            max_workers=options.workers,
+            mp_context=spawn_context(),
+        ) as executor:
+            futures = {
+                executor.submit(
+                    _execute_shard_worker,
+                    shard,
+                    shard_jobs,
+                    options.device,
+                    prepare_shard,
+                    run_job,
+                    options.fail_fast,
+                ): shard.shard_id
+                for shard, shard_jobs in work
+            }
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                except Exception as error:
+                    failures.append(error)
+                    if options.fail_fast:
+                        for pending_future in futures:
+                            pending_future.cancel()
+                        raise
+                    continue
+
+                for job, frame in result.results:
+                    _persist_result(store, job, frame)
+                for failure in result.failures:
+                    failures.append(RuntimeError(failure))
+                if result.failures and options.fail_fast:
+                    for pending_future in futures:
+                        pending_future.cancel()
+                    raise RuntimeError(result.failures[0])
+    return failures
+
+
 def run_phase05_jobs(
     jobs: Sequence[Phase05Job],
     *,
@@ -254,8 +413,7 @@ def run_phase05_jobs(
 ) -> pd.DataFrame:
     planned = tuple(jobs)
     stage = _validate_job_scope(planned, config)
-    if options.workers != 1:
-        raise NotImplementedError("parallel Phase-0.5 workers are not implemented yet")
+    _require_stage_unlocked(store, stage)
 
     device = resolve_phase05_device(options.device)
     expected_cell_ids = frozenset(job.cell_id for job in planned)
@@ -280,21 +438,27 @@ def run_phase05_jobs(
         by_shard.setdefault(job.shard.shard_id, []).append(job)
         shard_specs[job.shard.shard_id] = job.shard
 
-    failures: list[BaseException] = []
-    for shard_id, shard_jobs in by_shard.items():
-        pending = [job for job in shard_jobs if job.cell_id not in completed]
-        if not pending:
-            continue
-        with worker_thread_limits():
-            prepared = prepare_shard(shard_specs[shard_id])
-            for job in pending:
-                try:
-                    frame = run_job(job, prepared, device)
-                    _persist_result(store, job, frame)
-                except Exception as error:
-                    failures.append(error)
-                    if options.fail_fast:
-                        raise
+    if options.workers == 1:
+        failures = _run_single_worker_shards(
+            by_shard,
+            shard_specs,
+            store=store,
+            completed=completed,
+            device=device,
+            prepare_shard=prepare_shard,
+            run_job=run_job,
+            fail_fast=options.fail_fast,
+        )
+    else:
+        failures = _run_parallel_shards(
+            by_shard,
+            shard_specs,
+            store=store,
+            completed=completed,
+            options=options,
+            prepare_shard=prepare_shard,
+            run_job=run_job,
+        )
 
     persisted = store.validate_resume(
         stage,
