@@ -144,11 +144,27 @@ def test_resume_preserves_completed_cell_bytes_and_runs_only_missing_jobs(tmp_pa
         run_job=resumed_runner,
     )
 
+    reference_store = _store(tmp_path / "uninterrupted")
+
+    def uninterrupted_runner(job, prepared, device):
+        value = 2.0 if job.n_train == 5 else 1.5
+        return _metric_frame(job, value)
+
+    uninterrupted = run_phase05_jobs(
+        jobs,
+        store=reference_store,
+        config=Phase05Config(max_epochs=1, patience=1),
+        options=Phase05ExecutionOptions(device="cpu", workers=1, fail_fast=True),
+        prepare_shard=lambda spec: {"shard": spec.shard_id},
+        run_job=uninterrupted_runner,
+    )
+
     assert calls == [5, 10]
     assert resumed_calls == [10]
     assert first_path.read_bytes() == before_bytes
     assert first_path.stat().st_mtime_ns == before_mtime
     assert resumed["n_train"].tolist() == [5, 10]
+    pd.testing.assert_frame_equal(resumed, uninterrupted)
 
 
 def test_one_shard_preparation_is_reused_across_pending_jobs(tmp_path):
