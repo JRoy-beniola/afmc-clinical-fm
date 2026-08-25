@@ -397,7 +397,7 @@ class Phase05Store:
             raise ValueError("confirmation marker protocol identity mismatch")
         started_at = payload.get("started_at")
         if not isinstance(started_at, str):
-            raise ValueError("confirmation marker start timestamp is invalid")
+            raise TypeError("confirmation marker start timestamp is invalid")
         try:
             parsed = datetime.fromisoformat(started_at)
         except ValueError as error:
