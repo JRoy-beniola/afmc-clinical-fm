@@ -62,13 +62,26 @@ def _run_robustness_job(
     )
 
 
+def _root_cli_dependencies():
+    from afmc_fm import cli
+
+    return cli.run_phase05_jobs, cli._simulator_from_yaml
+
+
 def run_phase05_robustness_cli(
     args,
     *,
-    run_jobs: Callable[..., pd.DataFrame],
     locked_store: Callable[[Path, Phase05Config], tuple[dict[str, object], Phase05Store]],
-    simulator_from_yaml: Callable[[str | Path], tuple[SimulatorConfig, int]],
+    run_jobs: Callable[..., pd.DataFrame] | None = None,
+    simulator_from_yaml: Callable[[str | Path], tuple[SimulatorConfig, int]] | None = None,
 ) -> int:
+    if run_jobs is None or simulator_from_yaml is None:
+        default_run_jobs, default_simulator_from_yaml = _root_cli_dependencies()
+        if run_jobs is None:
+            run_jobs = default_run_jobs
+        if simulator_from_yaml is None:
+            simulator_from_yaml = default_simulator_from_yaml
+
     config = load_phase05_config(args.exp_config)
     simulator_config, _ = simulator_from_yaml(args.sim_config)
     output = Path(args.output)
