@@ -3,7 +3,8 @@ from pathlib import Path
 import pandas as pd
 
 from afmc_fm import cli
-from tests.phase05.test_cli_develop import (
+
+from .test_cli_develop import (
     _calibrated_output,
     _develop_argv,
     _persist_synthetic_jobs,
