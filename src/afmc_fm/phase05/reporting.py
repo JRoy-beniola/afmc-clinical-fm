@@ -328,7 +328,7 @@ def _execution_provenance(
         raise RuntimeError("execution provenance schema is incompatible")
     identity = provenance.get("identity")
     if not isinstance(identity, dict):
-        raise RuntimeError("execution provenance is missing protocol identity")
+        raise TypeError("execution provenance identity must be an object")
     spec_sha256 = _require_hex(identity.get("spec_sha256"), 64, "spec_sha256")
     config_sha256 = _require_hex(
         identity.get("config_sha256"), 64, "execution provenance config hash"
@@ -353,7 +353,7 @@ def _execution_provenance(
         raise RuntimeError("execution provenance contains no execution invocations")
     for invocation in invocations:
         if not isinstance(invocation, dict):
-            raise RuntimeError("execution provenance contains an invalid invocation")
+            raise TypeError("execution provenance invocation must be an object")
     identity["spec_sha256"] = spec_sha256
     identity["config_sha256"] = config_sha256
     identity["protocol_lock_sha256"] = protocol_sha256
@@ -380,7 +380,7 @@ def _stage_timings(invocations: list[object]) -> dict[str, dict[str, int | float
     summaries: dict[str, dict[str, int | float]] = {}
     for invocation in invocations:
         if not isinstance(invocation, dict):
-            raise RuntimeError("execution provenance contains an invalid invocation")
+            raise TypeError("execution provenance invocation must be an object")
         stage = invocation.get("stage")
         wall_time = invocation.get("wall_time_seconds")
         if not isinstance(stage, str) or not stage:
@@ -402,7 +402,7 @@ def _execution_failures(invocations: list[object]) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for invocation in invocations:
         if not isinstance(invocation, dict):
-            raise RuntimeError("execution provenance contains an invalid invocation")
+            raise TypeError("execution provenance invocation must be an object")
         invocation_number = invocation.get("invocation_number")
         stage = invocation.get("stage")
         failures = invocation.get("failures")
@@ -411,14 +411,14 @@ def _execution_failures(invocations: list[object]) -> list[dict[str, object]]:
         if not isinstance(stage, str) or not stage:
             raise RuntimeError("execution invocation stage is invalid")
         if not isinstance(failures, list):
-            raise RuntimeError("execution invocation failures are invalid")
+            raise TypeError("execution invocation failures must be a list")
         for failure in failures:
             if not isinstance(failure, dict):
-                raise RuntimeError("execution failure record is invalid")
+                raise TypeError("execution failure record must be an object")
             failure_type = failure.get("type")
             message = failure.get("message")
             if not isinstance(failure_type, str) or not isinstance(message, str):
-                raise RuntimeError("execution failure record is invalid")
+                raise TypeError("execution failure type and message must be strings")
             rows.append(
                 {
                     "invocation_number": invocation_number,
@@ -440,10 +440,10 @@ def _run_manifest(
     marker = _confirmation_start(output, provenance)
     identity = provenance["identity"]
     if not isinstance(identity, dict):
-        raise RuntimeError("execution provenance is missing protocol identity")
+        raise TypeError("execution provenance identity must be an object")
     invocations = provenance["invocations"]
     if not isinstance(invocations, list):
-        raise RuntimeError("execution provenance invocations are invalid")
+        raise TypeError("execution provenance invocations must be a list")
     return {
         "schema_version": 1,
         "synthetic": True,
