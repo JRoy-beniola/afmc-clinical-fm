@@ -1,8 +1,10 @@
 import json
+from functools import partial
 from pathlib import Path
 
 import pandas as pd
 
+from afmc_fm.execution.persistence import canonical_config_hash
 from afmc_fm.phase05.config import Phase05Config, SeedBundle
 from afmc_fm.phase05.execution import (
     Phase05ExecutionOptions,
@@ -10,6 +12,7 @@ from afmc_fm.phase05.execution import (
     Phase05ShardSpec,
     run_phase05_jobs,
 )
+from afmc_fm.simulator.config import SimulatorConfig
 
 from .test_store import _store
 
@@ -47,6 +50,11 @@ def _frame(job: Phase05Job) -> pd.DataFrame:
             }
         ]
     )
+
+
+def _prepare_with_simulator(_shard, *, simulator_config: SimulatorConfig):
+    assert isinstance(simulator_config, SimulatorConfig)
+    return object()
 
 
 def test_run_phase05_jobs_persists_identity_bound_execution_provenance(tmp_path: Path):
@@ -95,6 +103,32 @@ def test_run_phase05_jobs_persists_identity_bound_execution_provenance(tmp_path:
     assert invocation["runtime_metadata"]["python_version"]
     assert "torch" in invocation["runtime_metadata"]["library_versions"]
     assert "cuda_available" in invocation["runtime_metadata"]
+
+
+def test_run_phase05_jobs_derives_hash_from_bound_simulator_config(tmp_path: Path):
+    store = _store(tmp_path)
+    job = _job()
+    simulator_config = SimulatorConfig(cohort_size=12)
+
+    result = run_phase05_jobs(
+        (job,),
+        store=store,
+        config=Phase05Config(),
+        options=Phase05ExecutionOptions(device="cpu", workers=1),
+        prepare_shard=partial(
+            _prepare_with_simulator,
+            simulator_config=simulator_config,
+        ),
+        run_job=lambda planned, _prepared, _device: _frame(planned),
+    )
+
+    assert len(result) == 1
+    payload = json.loads(
+        (store.output / "execution_provenance.json").read_text(encoding="utf-8")
+    )
+    assert payload["simulator_config_sha256"] == canonical_config_hash(
+        simulator_config
+    )
 
 
 def test_run_phase05_jobs_records_failed_invocation_for_resume(tmp_path: Path):
