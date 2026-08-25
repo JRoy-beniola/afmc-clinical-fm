@@ -17,7 +17,6 @@ from scipy.stats import binomtest
 from afmc_fm.phase05.config import Phase05Config
 from afmc_fm.phase05.protocol import FrozenCandidate
 
-
 WORLDS = ("smooth", "jumps", "informative_observation")
 PRIMARY_SIZES = (5, 10, 20, 40)
 ALL_SIZES = (5, 10, 20, 40, 80, 100)
