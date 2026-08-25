@@ -4,12 +4,32 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
 from scipy.stats import binomtest
 
+from afmc_fm.data.splits import split_patient_ids
+from afmc_fm.experiments.runner import (
+    _evaluate_neural,
+    _fit_neural,
+    _representation_examples,
+    select_low_n_budget,
+)
+from afmc_fm.metrics.forecasting import regression_metrics
+from afmc_fm.models.baselines import (
+    GRUBaseline,
+    TorchMLPRegressorBaseline,
+    TorchRidgeRegressor,
+)
 from afmc_fm.phase05.analysis import paired_confirmatory_naulc_effects
 from afmc_fm.phase05.config import Phase05Config
 from afmc_fm.phase05.execution import Phase05Job, plan_phase05_shards
 from afmc_fm.phase05.protocol import FrozenCandidate
+from afmc_fm.phase05.runner import (
+    PreparedPhase05Cohort,
+    padded_phase05_batch,
+    run_phase05_variant,
+)
+from afmc_fm.schema.events import EventType
 
 CONFIRMATORY_MODELS = (
     "phase05_candidate",
@@ -126,6 +146,191 @@ def build_confirmation_jobs(
         for shard in plan_phase05_shards(config, "confirmation")
         for n_train in config.train_sizes
         for model in CONFIRMATORY_MODELS
+    )
+
+
+def _confirmation_budget(prepared: PreparedPhase05Cohort, job: Phase05Job):
+    all_ids = list(prepared.patient_by_id)
+    development_pool, _, test_ids = split_patient_ids(
+        all_ids,
+        seed=0,
+        train_fraction=0.8,
+        val_fraction=0.0,
+    )
+    budget = select_low_n_budget(
+        development_pool,
+        job.n_train,
+        job.shard.seed_bundle.subset_seed,
+    )
+    return budget, test_ids
+
+
+def _confirmation_rows(
+    job: Phase05Job,
+    *,
+    metrics: dict[str, float],
+    n_fit: int,
+    n_validation: int,
+    trainable_parameters: int,
+    backend: str,
+) -> pd.DataFrame:
+    bundle = job.shard.seed_bundle
+    return pd.DataFrame(
+        [
+            {
+                "stage": "confirmation",
+                "world": job.shard.world,
+                "cohort_seed": bundle.cohort_seed,
+                "subset_seed": bundle.subset_seed,
+                "model_seed": bundle.model_seed,
+                "n_train": job.n_train,
+                "n_fit": n_fit,
+                "n_validation": n_validation,
+                "model": job.model,
+                "variant": job.variant,
+                "split": "test",
+                "site_or_shift": "all",
+                "metric": metric,
+                "value": value,
+                "trainable_parameters": trainable_parameters,
+                "backend": backend,
+            }
+            for metric, value in metrics.items()
+        ]
+    )
+
+
+def _bind_confirmation_job(frame: pd.DataFrame, job: Phase05Job) -> pd.DataFrame:
+    result = frame.copy()
+    bundle = job.shard.seed_bundle
+    result["stage"] = "confirmation"
+    result["world"] = job.shard.world
+    result["cohort_seed"] = bundle.cohort_seed
+    result["subset_seed"] = bundle.subset_seed
+    result["model_seed"] = bundle.model_seed
+    result["n_train"] = job.n_train
+    result["model"] = job.model
+    result["variant"] = job.variant
+    return result
+
+
+def run_confirmation_job(
+    job: Phase05Job,
+    prepared: PreparedPhase05Cohort,
+    *,
+    config: Phase05Config,
+    frozen: FrozenCandidate,
+    device: torch.device,
+) -> pd.DataFrame:
+    if job.shard.stage != "confirmation":
+        raise ValueError("run_confirmation_job requires a confirmation-stage job")
+    expected_variants = _model_variants(frozen)
+    if job.model not in expected_variants:
+        raise ValueError(f"unknown confirmatory model: {job.model}")
+    if job.variant != expected_variants[job.model]:
+        raise ValueError("confirmatory job variant does not match the frozen model definition")
+
+    bundle = job.shard.seed_bundle
+    np.random.seed(bundle.model_seed)
+    torch.manual_seed(bundle.model_seed)
+
+    if job.model in {"phase05_candidate", "phase0_flow_jump_reference"}:
+        frame = run_phase05_variant(
+            prepared,
+            config,
+            world=job.shard.world,
+            seed_bundle=bundle,
+            n_train=job.n_train,
+            flow_mode=frozen.flow_mode,
+            jump_mode=frozen.jump_mode,
+            uncertainty_mode=frozen.uncertainty_mode,
+            device=device,
+            stage="confirmation",
+            historical_reference=job.model == "phase0_flow_jump_reference",
+        )
+        return _bind_confirmation_job(frame, job)
+
+    budget, test_ids = _confirmation_budget(prepared, job)
+    train_sequences = [prepared.sequences[patient_id] for patient_id in budget.fit_ids]
+    validation_sequences = [
+        prepared.sequences[patient_id] for patient_id in budget.validation_ids
+    ]
+    test_sequences = [prepared.sequences[patient_id] for patient_id in test_ids]
+
+    if job.model in {
+        "representation_linear",
+        "representation_mlp_original",
+        "matched_representation_mlp",
+    }:
+        train_x, train_y = _representation_examples(train_sequences)
+        test_x, test_y = _representation_examples(test_sequences)
+        if job.model == "representation_linear":
+            estimator = TorchRidgeRegressor(device=device)
+            backend = "torch_ridge"
+        else:
+            hidden_size = (
+                frozen.matched_mlp_hidden_size
+                if job.model == "matched_representation_mlp"
+                else 32
+            )
+            estimator = TorchMLPRegressorBaseline(
+                input_dim=train_x.shape[1],
+                seed=bundle.model_seed,
+                device=device,
+                hidden_size=hidden_size,
+            )
+            backend = "torch_lbfgs"
+        prediction = estimator.fit(train_x, train_y).predict(test_x)
+        metrics = regression_metrics(test_y, prediction)
+        parameters = estimator.trainable_parameter_count()
+        if (
+            job.model == "matched_representation_mlp"
+            and parameters != frozen.matched_mlp_parameters
+        ):
+            raise RuntimeError(
+                "matched representation MLP parameter count differs from frozen capacity audit"
+            )
+        return _confirmation_rows(
+            job,
+            metrics=metrics,
+            n_fit=len(budget.fit_ids),
+            n_validation=len(budget.validation_ids),
+            trainable_parameters=parameters,
+            backend=backend,
+        )
+
+    hidden_size = frozen.matched_gru_hidden_size if job.model == "matched_gru" else 32
+    model = GRUBaseline(
+        value_dim=len(prepared.task.value_codes),
+        event_dim=len(EventType),
+        hidden_size=hidden_size,
+    )
+    model = _fit_neural(
+        model,
+        padded_phase05_batch(train_sequences),
+        padded_phase05_batch(validation_sequences),
+        config,
+        False,
+        device,
+    )
+    test_patients = [prepared.patient_by_id[patient_id] for patient_id in test_ids]
+    metrics = _evaluate_neural(
+        model,
+        padded_phase05_batch(test_sequences, patients=test_patients),
+        device,
+    )
+    parameters = sum(
+        parameter.numel() for parameter in model.parameters() if parameter.requires_grad
+    )
+    if job.model == "matched_gru" and parameters != frozen.matched_gru_parameters:
+        raise RuntimeError("matched GRU parameter count differs from frozen capacity audit")
+    return _confirmation_rows(
+        job,
+        metrics=metrics,
+        n_fit=len(budget.fit_ids),
+        n_validation=len(budget.validation_ids),
+        trainable_parameters=parameters,
+        backend="torch",
     )
 
 
@@ -372,4 +577,5 @@ __all__ = [
     "paired_bootstrap_mean_ci",
     "paired_naulc_effects",
     "persist_confirmation_analysis",
+    "run_confirmation_job",
 ]
