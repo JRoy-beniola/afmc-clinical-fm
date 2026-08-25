@@ -88,6 +88,12 @@ def _choose_passing_candidate(
     return str(best["candidate"])
 
 
+def _mark_selected(gate_table: pd.DataFrame, selected: str | None) -> pd.DataFrame:
+    result = gate_table.copy()
+    result["selected"] = result["candidate"].eq(selected) if selected is not None else False
+    return result
+
+
 def select_flow(
     frame: pd.DataFrame,
     *,
@@ -119,6 +125,7 @@ def select_flow(
         )
     gate_table = pd.DataFrame(rows)
     selected = _choose_passing_candidate(gate_table)
+    gate_table = _mark_selected(gate_table, selected)
     return {
         "passed": selected is not None,
         "selected": selected,
@@ -161,6 +168,7 @@ def select_jump(
         )
     gate_table = pd.DataFrame(rows)
     selected = _choose_passing_candidate(gate_table)
+    gate_table = _mark_selected(gate_table, selected)
     return {
         "passed": selected is not None,
         "selected": selected,
