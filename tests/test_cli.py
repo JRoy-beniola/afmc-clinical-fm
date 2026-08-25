@@ -187,3 +187,87 @@ patience: 1
         )
 
     assert not output.exists()
+
+
+def test_phase05_parser_exposes_locked_stage_specific_arguments():
+    parser = _parser()
+
+    calibrate = parser.parse_args(
+        [
+            "phase05",
+            "calibrate",
+            "--phase0-metrics",
+            "phase0.csv",
+            "--exp-config",
+            "phase05.yaml",
+            "--output",
+            "run",
+        ]
+    )
+    freeze = parser.parse_args(
+        [
+            "phase05",
+            "freeze",
+            "--exp-config",
+            "phase05.yaml",
+            "--output",
+            "run",
+        ]
+    )
+    report = parser.parse_args(["phase05", "report", "--output", "run"])
+
+    for args, stage in (
+        (calibrate, "calibrate"),
+        (freeze, "freeze"),
+        (report, "report"),
+    ):
+        assert args.phase05_command == stage
+        assert not hasattr(args, "device")
+        assert not hasattr(args, "workers")
+        assert not hasattr(args, "resume")
+        assert not hasattr(args, "fail_fast")
+
+    for stage in ("develop", "confirm", "robustness"):
+        defaults = parser.parse_args(
+            [
+                "phase05",
+                stage,
+                "--sim-config",
+                "sim.yaml",
+                "--exp-config",
+                "phase05.yaml",
+                "--output",
+                "run",
+            ]
+        )
+        selected = parser.parse_args(
+            [
+                "phase05",
+                stage,
+                "--sim-config",
+                "sim.yaml",
+                "--exp-config",
+                "phase05.yaml",
+                "--output",
+                "run",
+                "--device",
+                "cuda",
+                "--workers",
+                "3",
+                "--resume",
+                "--fail-fast",
+            ]
+        )
+        assert defaults.phase05_command == stage
+        assert (defaults.device, defaults.workers, defaults.resume, defaults.fail_fast) == (
+            "auto",
+            1,
+            False,
+            False,
+        )
+        assert (selected.device, selected.workers, selected.resume, selected.fail_fast) == (
+            "cuda",
+            3,
+            True,
+            True,
+        )
