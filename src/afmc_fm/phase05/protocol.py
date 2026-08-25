@@ -315,8 +315,8 @@ def freeze_candidate(output: str | Path, config: Phase05Config) -> FrozenCandida
         _write_development_failure(output_path, ["jump"])
         raise RuntimeError("jump gate failed; confirmation is not permitted")
 
-    flow = _selected_gate_row(flow_path, "passed", "flow")
-    jump = _selected_gate_row(jump_path, "passed", "jump")
+    flow = _selected_gate_row(flow_path, "selected", "flow")
+    jump = _selected_gate_row(jump_path, "selected", "jump")
     uncertainty = _selected_gate_row(
         uncertainty_path,
         "selected",
