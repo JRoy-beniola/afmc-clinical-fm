@@ -1,12 +1,17 @@
+from __future__ import annotations
+
+import hashlib
 import json
 import math
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from afmc_fm.execution.persistence import canonical_config_hash
+from afmc_fm.phase05.baselines import build_capacity_audit
 from afmc_fm.phase05.config import Phase05Config
 from afmc_fm.phase05.sequences import JUMP_ELIGIBLE_EVENT_CODES
 
@@ -32,6 +37,55 @@ _REQUIRED_COLUMNS = frozenset(
 )
 _SHA_RE = re.compile(r"^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$")
 _NEAR_ZERO_MEDIAN = 1e-12
+_DEVELOPMENT_ARTIFACTS = (
+    "flow_gate.csv",
+    "jump_gate.csv",
+    "uncertainty_gate.csv",
+    "representation_timing_audit.csv",
+)
+_STATE_DIM = 24
+_VALUE_DIM = 3
+_EVENT_DIM = 3
+_REPRESENTATION_INPUT_DIM = 19
+_ASSIMILATION_SEMANTICS = "phase0_grucell_unchanged"
+
+
+@dataclass(frozen=True, slots=True)
+class FrozenCandidate:
+    flow_mode: str
+    jump_mode: str
+    uncertainty_mode: str
+    strict_history: bool
+    state_dim: int
+    time_scale_days: float
+    jump_eligible_event_codes: tuple[str, ...]
+    assimilation_semantics: str
+    trainable_parameters: int
+    matched_gru_hidden_size: int
+    matched_gru_parameters: int
+    matched_mlp_hidden_size: int
+    matched_mlp_parameters: int
+    protocol_lock_sha256: str
+    development_artifact_hashes: dict[str, str]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "flow_mode": self.flow_mode,
+            "jump_mode": self.jump_mode,
+            "uncertainty_mode": self.uncertainty_mode,
+            "strict_history": self.strict_history,
+            "state_dim": self.state_dim,
+            "time_scale_days": self.time_scale_days,
+            "jump_eligible_event_codes": list(self.jump_eligible_event_codes),
+            "assimilation_semantics": self.assimilation_semantics,
+            "trainable_parameters": self.trainable_parameters,
+            "matched_gru_hidden_size": self.matched_gru_hidden_size,
+            "matched_gru_parameters": self.matched_gru_parameters,
+            "matched_mlp_hidden_size": self.matched_mlp_hidden_size,
+            "matched_mlp_parameters": self.matched_mlp_parameters,
+            "protocol_lock_sha256": self.protocol_lock_sha256,
+            "development_artifact_hashes": dict(self.development_artifact_hashes),
+        }
 
 
 def _validate_columns(metrics: pd.DataFrame) -> None:
@@ -137,16 +191,41 @@ def build_protocol_lock(
     }
 
 
+def _normalized_boolean_values(series: pd.Series) -> set[str]:
+    return {str(value).strip().lower() for value in series.dropna()}
+
+
 def _gate_passed(path: Path, gate_name: str) -> bool:
     if not path.is_file():
         raise RuntimeError(f"missing required {gate_name} gate artifact")
     frame = pd.read_csv(path)
     if frame.empty or "passed" not in frame.columns:
         raise RuntimeError(f"invalid {gate_name} gate artifact")
-    normalized = {str(value).strip().lower() for value in frame["passed"].dropna()}
+    normalized = _normalized_boolean_values(frame["passed"])
     if not normalized or not normalized.issubset({"true", "false", "1", "0"}):
         raise RuntimeError(f"invalid {gate_name} gate artifact")
     return bool(normalized & {"true", "1"})
+
+
+def _selected_gate_row(path: Path, selection_column: str, gate_name: str) -> pd.Series:
+    if not path.is_file():
+        raise RuntimeError(f"missing required {gate_name} gate artifact")
+    frame = pd.read_csv(path)
+    required = {"candidate", selection_column, "trainable_parameters"}
+    if frame.empty or not required.issubset(frame.columns):
+        raise RuntimeError(f"invalid {gate_name} gate artifact")
+    selected = frame.loc[
+        frame[selection_column].astype(str).str.strip().str.lower().isin({"true", "1"})
+    ]
+    if len(selected) != 1:
+        raise RuntimeError(f"{gate_name} gate must select exactly one candidate")
+    return selected.iloc[0]
+
+
+def _sha256(path: Path) -> str:
+    if not path.is_file():
+        raise RuntimeError(f"missing required freeze input: {path.name}")
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _write_development_failure(output: Path, failed_gates: list[str]) -> None:
@@ -161,20 +240,77 @@ def _write_development_failure(output: Path, failed_gates: list[str]) -> None:
     (output / "development_failure.json").write_bytes(data)
 
 
-def freeze_candidate(output: str | Path, config: Phase05Config):
-    del config
+def _write_frozen_candidate(output: Path, candidate: FrozenCandidate) -> None:
+    data = (
+        json.dumps(candidate.to_dict(), sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    (output / "frozen_candidate.json").write_bytes(data)
+
+
+def freeze_candidate(output: str | Path, config: Phase05Config) -> FrozenCandidate:
     output_path = Path(output)
     development = output_path / "development"
-    if not _gate_passed(development / "flow_gate.csv", "flow"):
+    flow_path = development / "flow_gate.csv"
+    jump_path = development / "jump_gate.csv"
+    uncertainty_path = development / "uncertainty_gate.csv"
+    timing_path = development / "representation_timing_audit.csv"
+
+    if not _gate_passed(flow_path, "flow"):
         _write_development_failure(output_path, ["flow"])
         raise RuntimeError("flow gate failed; confirmation is not permitted")
-    if not _gate_passed(development / "jump_gate.csv", "jump"):
+    if not _gate_passed(jump_path, "jump"):
         _write_development_failure(output_path, ["jump"])
         raise RuntimeError("jump gate failed; confirmation is not permitted")
-    raise NotImplementedError("successful candidate freezing is not implemented yet")
+
+    flow = _selected_gate_row(flow_path, "passed", "flow")
+    jump = _selected_gate_row(jump_path, "passed", "jump")
+    uncertainty = _selected_gate_row(
+        uncertainty_path,
+        "selected",
+        "uncertainty",
+    )
+    if not timing_path.is_file():
+        raise RuntimeError("missing required representation timing audit artifact")
+
+    trainable_parameters = int(uncertainty["trainable_parameters"])
+    capacity = build_capacity_audit(
+        target_parameters=trainable_parameters,
+        value_dim=_VALUE_DIM,
+        event_dim=_EVENT_DIM,
+        representation_input_dim=_REPRESENTATION_INPUT_DIM,
+    ).set_index("control")
+
+    protocol_lock = output_path / "protocol_lock.json"
+    development_artifact_hashes = {
+        name: _sha256(development / name) for name in _DEVELOPMENT_ARTIFACTS
+    }
+    frozen = FrozenCandidate(
+        flow_mode=str(flow["candidate"]),
+        jump_mode=str(jump["candidate"]),
+        uncertainty_mode=str(uncertainty["candidate"]),
+        strict_history=True,
+        state_dim=_STATE_DIM,
+        time_scale_days=config.time_scale_days,
+        jump_eligible_event_codes=tuple(sorted(JUMP_ELIGIBLE_EVENT_CODES)),
+        assimilation_semantics=_ASSIMILATION_SEMANTICS,
+        trainable_parameters=trainable_parameters,
+        matched_gru_hidden_size=int(capacity.loc["matched_gru", "hidden_size"]),
+        matched_gru_parameters=int(capacity.loc["matched_gru", "actual_parameters"]),
+        matched_mlp_hidden_size=int(
+            capacity.loc["matched_representation_mlp", "hidden_size"]
+        ),
+        matched_mlp_parameters=int(
+            capacity.loc["matched_representation_mlp", "actual_parameters"]
+        ),
+        protocol_lock_sha256=_sha256(protocol_lock),
+        development_artifact_hashes=development_artifact_hashes,
+    )
+    _write_frozen_candidate(output_path, frozen)
+    return frozen
 
 
 __all__ = [
+    "FrozenCandidate",
     "build_protocol_lock",
     "estimate_phase0_relative_noise_floor",
     "freeze_candidate",
