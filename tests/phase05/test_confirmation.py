@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import pytest
-
 from afmc_fm.phase05.confirmation import (
     CONFIRMATORY_MODELS,
     PRIMARY_COMPARATORS,
