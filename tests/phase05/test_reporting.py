@@ -31,6 +31,7 @@ def _report_fixture(tmp_path: Path) -> Path:
         json.dumps(lock, sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8",
     )
+    protocol_hash = hashlib.sha256((output / "protocol_lock.json").read_bytes()).hexdigest()
     frozen = {
         "flow_mode": "time_scaled",
         "jump_mode": "residual",
@@ -43,9 +44,7 @@ def _report_fixture(tmp_path: Path) -> Path:
         "matched_gru_parameters": 6888,
         "matched_mlp_hidden_size": 216,
         "matched_mlp_parameters": 6915,
-        "protocol_lock_sha256": hashlib.sha256(
-            (output / "protocol_lock.json").read_bytes()
-        ).hexdigest(),
+        "protocol_lock_sha256": protocol_hash,
         "development_artifact_hashes": {},
     }
     (output / "frozen_candidate.json").write_text(
@@ -198,8 +197,125 @@ def _report_fixture(tmp_path: Path) -> Path:
     )
     confirmation = output / "confirmation"
     frozen_hash = hashlib.sha256((output / "frozen_candidate.json").read_bytes()).hexdigest()
+    identity = {
+        "schema_version": 1,
+        "spec_sha256": "5" * 64,
+        "config_sha256": "4" * 64,
+        "protocol_lock_sha256": protocol_hash,
+    }
+    confirmation_started_at = "2026-08-25T12:34:56+00:00"
     (confirmation / "STARTED").write_text(
-        json.dumps({"frozen_candidate_sha256": frozen_hash}) + "\n",
+        json.dumps(
+            {
+                "identity": identity,
+                "frozen_candidate_sha256": frozen_hash,
+                "started_at": confirmation_started_at,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    runtime_metadata = {
+        "python_version": "3.11.16",
+        "platform": "Linux-fixture",
+        "library_versions": {
+            "numpy": "2.4.6",
+            "pandas": "3.0.5",
+            "torch": "2.13.0+cu128",
+        },
+        "cuda_available": True,
+        "cuda_device_count": 1,
+        "cuda_devices": [
+            {"index": 0, "name": "Fixture GPU", "capability": "9.0"}
+        ],
+    }
+    execution_provenance = {
+        "schema_version": 1,
+        "identity": identity,
+        "implementation_sha": "6" * 40,
+        "simulator_config_sha256": "7" * 64,
+        "invocations": [
+            {
+                "invocation_number": 1,
+                "stage": "flow",
+                "started_at": "2026-08-25T11:00:00+00:00",
+                "ended_at": "2026-08-25T11:00:02.500000+00:00",
+                "wall_time_seconds": 2.5,
+                "requested_device": "cpu",
+                "resolved_device": "cpu",
+                "workers": 1,
+                "resume": False,
+                "fail_fast": False,
+                "expected_cell_count": 5,
+                "completed_before": 0,
+                "completed_after": 5,
+                "shard_count": 5,
+                "failures": [],
+                "runtime_metadata": runtime_metadata,
+            },
+            {
+                "invocation_number": 2,
+                "stage": "confirmation",
+                "started_at": "2026-08-25T13:00:00+00:00",
+                "ended_at": "2026-08-25T13:00:03+00:00",
+                "wall_time_seconds": 3.0,
+                "requested_device": "cuda",
+                "resolved_device": "cuda",
+                "workers": 2,
+                "resume": False,
+                "fail_fast": False,
+                "expected_cell_count": 1260,
+                "completed_before": 0,
+                "completed_after": 600,
+                "shard_count": 30,
+                "failures": [
+                    {"type": "RuntimeError", "message": "transient fit failure"}
+                ],
+                "runtime_metadata": runtime_metadata,
+            },
+            {
+                "invocation_number": 3,
+                "stage": "confirmation",
+                "started_at": "2026-08-25T13:10:00+00:00",
+                "ended_at": "2026-08-25T13:10:07+00:00",
+                "wall_time_seconds": 7.0,
+                "requested_device": "cuda",
+                "resolved_device": "cuda",
+                "workers": 2,
+                "resume": True,
+                "fail_fast": False,
+                "expected_cell_count": 1260,
+                "completed_before": 600,
+                "completed_after": 1260,
+                "shard_count": 30,
+                "failures": [],
+                "runtime_metadata": runtime_metadata,
+            },
+            {
+                "invocation_number": 4,
+                "stage": "robustness",
+                "started_at": "2026-08-25T14:00:00+00:00",
+                "ended_at": "2026-08-25T14:00:04+00:00",
+                "wall_time_seconds": 4.0,
+                "requested_device": "cuda",
+                "resolved_device": "cuda",
+                "workers": 2,
+                "resume": False,
+                "fail_fast": False,
+                "expected_cell_count": 180,
+                "completed_before": 0,
+                "completed_after": 180,
+                "shard_count": 20,
+                "failures": [],
+                "runtime_metadata": runtime_metadata,
+            },
+        ],
+    }
+    (output / "execution_provenance.json").write_text(
+        json.dumps(execution_provenance, sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8",
     )
 
@@ -265,6 +381,7 @@ def test_phase05_report_writes_required_artifacts_deterministically_without_muta
 
     required = {
         "protocol_manifest.json",
+        "execution_provenance.json",
         "development/mechanism_metrics.csv",
         "development/flow_gate.csv",
         "development/jump_gate.csv",
@@ -304,13 +421,33 @@ def test_phase05_report_writes_required_artifacts_deterministically_without_muta
 
     figure_paths = sorted((output / "figures").glob("*.png"))
     first_figures = {path.name: _sha(path) for path in figure_paths}
+    first_manifest_hash = _sha(output / "run_manifest.json")
     write_phase05_report_artifacts(output)
     assert {path.name: _sha(path) for path in figure_paths} == first_figures
+    assert _sha(output / "run_manifest.json") == first_manifest_hash
 
     protocol_manifest = json.loads((output / "protocol_manifest.json").read_text())
     run_manifest = json.loads((output / "run_manifest.json").read_text())
+    execution_provenance = json.loads(
+        (output / "execution_provenance.json").read_text(encoding="utf-8")
+    )
     assert protocol_manifest["spec_commit"] == "1" * 40
+    assert run_manifest["spec_sha256"] == "5" * 64
+    assert run_manifest["implementation_sha"] == "6" * 40
+    assert run_manifest["simulator_config_sha256"] == "7" * 64
     assert run_manifest["phase0_execution_sha"] == "2" * 40
+    assert run_manifest["phase05_config_sha256"] == "4" * 64
+    assert run_manifest["confirmation_started_at"] == "2026-08-25T12:34:56+00:00"
+    assert run_manifest["execution_provenance_sha256"] == _sha(
+        output / "execution_provenance.json"
+    )
+    assert run_manifest["execution_provenance"] == execution_provenance
+    assert run_manifest["execution_provenance"]["invocations"][1][
+        "resolved_device"
+    ] == "cuda"
+    assert run_manifest["execution_provenance"]["invocations"][1][
+        "runtime_metadata"
+    ]["cuda_devices"][0]["name"] == "Fixture GPU"
     assert run_manifest["development_bundles"] == [
         [401 + i, 501 + i, 601 + i] for i in range(5)
     ]
@@ -326,4 +463,20 @@ def test_phase05_report_writes_required_artifacts_deterministically_without_muta
         "matched_gru": 6888,
         "matched_representation_mlp": 6915,
     }
+    assert run_manifest["stage_timings"] == {
+        "confirmation": {"invocation_count": 2, "wall_time_seconds": 10.0},
+        "flow": {"invocation_count": 1, "wall_time_seconds": 2.5},
+        "robustness": {"invocation_count": 1, "wall_time_seconds": 4.0},
+    }
+    assert run_manifest["failures"] == [
+        {
+            "invocation_number": 2,
+            "stage": "confirmation",
+            "type": "RuntimeError",
+            "message": "transient fit failure",
+        }
+    ]
+    assert "report_runtime_metadata" not in run_manifest
+    assert "provenance_limitations" not in run_manifest
+    assert "execution_provenance.json" in run_manifest["source_artifact_sha256"]
     assert "grand_score" not in run_manifest
