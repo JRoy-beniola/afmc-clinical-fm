@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from afmc_fm.execution.persistence import canonical_config_hash
 from afmc_fm.phase05.config import Phase05Config, SeedBundle
 from afmc_fm.phase05.execution import (
     Phase05ExecutionOptions,
@@ -34,7 +35,7 @@ def _protocol_lock(config_hash: str) -> dict[str, object]:
 
 
 def _store(tmp_path: Path) -> Phase05Store:
-    config_hash = "2" * 64
+    config_hash = canonical_config_hash(Phase05Config(max_epochs=1, patience=1))
     lock = _protocol_lock(config_hash)
     protocol_hash = hashlib.sha256(_canonical_json_bytes(lock)).hexdigest()
     store = Phase05Store(
