@@ -1,9 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
-from scipy.stats import binomtest
 
-from afmc_fm.phase05.config import Phase05Config
 from afmc_fm.phase05.confirmation import (
     CONFIRMATORY_MODELS,
     PRIMARY_COMPARATORS,
@@ -15,6 +13,9 @@ from afmc_fm.phase05.confirmation import (
     paired_naulc_effects,
     persist_confirmation_analysis,
 )
+from scipy.stats import binomtest
+
+from afmc_fm.phase05.config import Phase05Config
 from afmc_fm.phase05.protocol import FrozenCandidate
 
 
