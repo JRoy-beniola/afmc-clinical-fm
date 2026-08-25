@@ -159,7 +159,6 @@ def test_phase05_confirm_finalizes_exact_cells_and_persists_outputs(
 ):
     output = _locked_output(tmp_path)
     frozen = _freeze(output)
-    config = load_phase05_config("configs/experiments/phase05.yaml")
 
     def persist_synthetic_results(jobs, *, store, **_kwargs):
         frames = []
