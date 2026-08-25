@@ -257,7 +257,7 @@ def test_develop_resume_is_noop_after_timing_audit_finalization(
     resume_calls: list[str] = []
 
     def resumed_run(jobs, **_kwargs):
-        stage = tuple(jobs)[0].shard.stage
+        stage = next(iter(jobs)).shard.stage
         resume_calls.append(stage)
         raise AssertionError(f"finalized {stage} stage was rerun")
 
