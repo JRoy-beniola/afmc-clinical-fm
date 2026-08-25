@@ -43,3 +43,24 @@ def test_readme_documents_cuda_checks_and_tmpdir_runtime_guardrail():
     assert "TMPDIR=/tmp ./.venv/bin/pytest" in readme
     assert "runtime guardrail" in readme
     assert "not a scientific workaround" in readme
+
+
+def test_readme_documents_phase05_protocol_and_nonclaim_boundary():
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    for text in (
+        "Phase 0.5",
+        "five development bundles",
+        "ten unseen confirmatory bundles",
+        "afmc-phase0 phase05 calibrate",
+        "afmc-phase0 phase05 develop",
+        "afmc-phase0 phase05 freeze",
+        "afmc-phase0 phase05 confirm",
+        "afmc-phase0 phase05 robustness",
+        "afmc-phase0 phase05 report",
+        "mechanism_metrics.csv",
+        "protocol_manifest.json",
+        "run_manifest.json",
+        "Ordinary CI and smoke runs do not produce official Phase 0.5 scientific results.",
+    ):
+        assert text in readme
