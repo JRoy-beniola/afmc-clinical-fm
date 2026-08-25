@@ -682,23 +682,34 @@ def _phase05_develop(args: argparse.Namespace) -> int:
         selected_flow=selected_flow,
         selected_jump=selected_jump,
     )
-    timing_metrics = _run_development_stage(
-        timing_jobs,
-        store=store,
-        config=config,
-        options=options,
-        simulator_config=simulator_config,
-    )
-    timing_audit = _timing_audit_table(
-        timing_metrics,
-        config,
-        selected_flow=selected_flow,
-        selected_jump=selected_jump,
-    )
-    store.replace_development_artifact(
-        "representation_timing_audit.csv",
-        _frame_csv_bytes(timing_audit),
-    )
+    timing_finalized = False
+    if args.resume:
+        timing_finalized = (
+            _validate_finalized_stage_cells(
+                store,
+                timing_jobs,
+                artifact_name="representation_timing_audit.csv",
+            )
+            is not None
+        )
+    if not timing_finalized:
+        timing_metrics = _run_development_stage(
+            timing_jobs,
+            store=store,
+            config=config,
+            options=options,
+            simulator_config=simulator_config,
+        )
+        timing_audit = _timing_audit_table(
+            timing_metrics,
+            config,
+            selected_flow=selected_flow,
+            selected_jump=selected_jump,
+        )
+        store.replace_development_artifact(
+            "representation_timing_audit.csv",
+            _frame_csv_bytes(timing_audit),
+        )
     return 0
 
 
