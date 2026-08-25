@@ -231,7 +231,7 @@ def _phase05_locked_store(
     except json.JSONDecodeError as error:
         raise RuntimeError("protocol_lock.json is invalid") from error
     if not isinstance(lock, dict):
-        raise RuntimeError("protocol_lock.json is invalid")
+        raise TypeError("protocol_lock.json is invalid")
     config_hash = canonical_config_hash(config)
     if lock.get("phase05_config_sha256") != config_hash:
         raise RuntimeError("protocol_lock.json does not match the runtime Phase-0.5 config")
@@ -479,7 +479,7 @@ def _phase05_develop(args: argparse.Namespace) -> int:
     )
     flow_gate = flow["gate_table"]
     if not isinstance(flow_gate, pd.DataFrame):
-        raise RuntimeError("flow selection did not produce a gate table")
+        raise TypeError("flow selection did not produce a gate table")
     store.replace_development_artifact("flow_gate.csv", _frame_csv_bytes(flow_gate))
     if not bool(flow["passed"]):
         raise RuntimeError("flow development gate failed; development stopped")
@@ -505,7 +505,7 @@ def _phase05_develop(args: argparse.Namespace) -> int:
     )
     jump_gate = jump["gate_table"]
     if not isinstance(jump_gate, pd.DataFrame):
-        raise RuntimeError("jump selection did not produce a gate table")
+        raise TypeError("jump selection did not produce a gate table")
     store.replace_development_artifact("jump_gate.csv", _frame_csv_bytes(jump_gate))
     if not bool(jump["passed"]):
         raise RuntimeError("jump development gate failed; development stopped")
