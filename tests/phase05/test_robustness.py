@@ -8,6 +8,7 @@ import torch
 
 from afmc_fm.execution.persistence import canonical_config_hash
 from afmc_fm.experiments.runner import build_complete_truth_targets
+from afmc_fm.phase05.baselines import build_capacity_audit
 from afmc_fm.phase05.config import Phase05Config, SeedBundle
 from afmc_fm.phase05.execution import (
     Phase05ExecutionOptions,
@@ -15,13 +16,19 @@ from afmc_fm.phase05.execution import (
     Phase05ShardSpec,
     run_phase05_jobs,
 )
+from afmc_fm.phase05.model import Phase05FlowJumpAdapter
+from afmc_fm.phase05.protocol import FrozenCandidate
 from afmc_fm.phase05.robustness import (
+    ROBUSTNESS_MODELS,
+    build_robustness_jobs,
     complete_truth_phase05_batch,
     evaluate_misspecification,
     evaluate_site_shift,
+    run_robustness_job,
 )
 from afmc_fm.phase05.runner import prepare_phase05_cohort
 from afmc_fm.phase05.store import Phase05CellResult, Phase05Store
+from afmc_fm.schema.events import EventType
 from afmc_fm.simulator.cohort import simulate_world
 from afmc_fm.simulator.config import SimulatorConfig
 
@@ -31,6 +38,51 @@ MODELS = (
     "matched_representation_mlp",
 )
 PRIMARY_SIZES = (5, 10, 20, 40)
+
+
+def _audited_frozen_candidate() -> FrozenCandidate:
+    candidate = Phase05FlowJumpAdapter(
+        representation_dim=16,
+        value_dim=3,
+        event_dim=len(EventType),
+        state_dim=24,
+        flow_mode="time_scaled",
+        jump_mode="residual",
+        uncertainty_mode="decoupled",
+        time_scale_days=30.0,
+    )
+    target_parameters = sum(
+        parameter.numel()
+        for parameter in candidate.parameters()
+        if parameter.requires_grad
+    )
+    audit = build_capacity_audit(
+        target_parameters=target_parameters,
+        value_dim=3,
+        event_dim=len(EventType),
+        representation_input_dim=19,
+    ).set_index("control")
+    return FrozenCandidate(
+        flow_mode="time_scaled",
+        jump_mode="residual",
+        uncertainty_mode="decoupled",
+        strict_history=True,
+        state_dim=24,
+        time_scale_days=30.0,
+        jump_eligible_event_codes=("SYNTHETIC_INTERVENTION",),
+        assimilation_semantics="phase0_grucell_unchanged",
+        trainable_parameters=target_parameters,
+        matched_gru_hidden_size=int(audit.loc["matched_gru", "hidden_size"]),
+        matched_gru_parameters=int(audit.loc["matched_gru", "actual_parameters"]),
+        matched_mlp_hidden_size=int(
+            audit.loc["matched_representation_mlp", "hidden_size"]
+        ),
+        matched_mlp_parameters=int(
+            audit.loc["matched_representation_mlp", "actual_parameters"]
+        ),
+        protocol_lock_sha256="a" * 64,
+        development_artifact_hashes={"flow_gate.csv": "b" * 64},
+    )
 
 
 def test_complete_truth_batch_uses_latent_emissions_not_observed_next_lab_masks():
@@ -57,6 +109,139 @@ def test_complete_truth_batch_uses_latent_emissions_not_observed_next_lab_masks(
     )
     assert np.any(expected_masks != sequence.target_next_masks)
     assert expected_masks.sum() > sequence.target_next_masks.sum()
+
+
+def test_robustness_job_plan_is_locked_to_three_models_two_worlds_and_ten_bundles():
+    config = Phase05Config()
+    frozen = _audited_frozen_candidate()
+
+    jobs = build_robustness_jobs(
+        config,
+        frozen,
+        frozen_candidate_hash="c" * 64,
+    )
+
+    assert ROBUSTNESS_MODELS == MODELS
+    assert len(jobs) == 2 * 10 * 6 * 3
+    assert {job.shard.world for job in jobs} == set(config.robustness_worlds)
+    assert {job.shard.seed_bundle for job in jobs} == set(config.confirmatory_bundles)
+    assert {job.n_train for job in jobs} == set(config.train_sizes)
+    assert {job.model for job in jobs} == set(MODELS)
+    assert all(job.frozen_candidate_hash == "c" * 64 for job in jobs)
+    candidate_variants = {job.variant for job in jobs if job.model == "phase05_candidate"}
+    assert candidate_variants == {"time_scaled__residual__decoupled"}
+
+
+def test_site_shift_dispatcher_trains_locked_models_and_emits_both_complete_truth_sites():
+    config = Phase05Config(max_epochs=1, patience=1)
+    frozen = _audited_frozen_candidate()
+    cohort = simulate_world(
+        "site_shift",
+        SimulatorConfig(cohort_size=80, followup_days=45.0),
+        seed=701,
+    )
+    prepared = prepare_phase05_cohort(cohort)
+    jobs = [
+        job
+        for job in build_robustness_jobs(
+            config,
+            frozen,
+            frozen_candidate_hash="c" * 64,
+        )
+        if job.shard.world == "site_shift"
+        and job.shard.seed_bundle == config.confirmatory_bundles[0]
+        and job.n_train == 5
+    ]
+
+    assert len(jobs) == 3
+    results = [
+        run_robustness_job(
+            job,
+            prepared,
+            config=config,
+            frozen=frozen,
+            device=torch.device("cpu"),
+        )
+        for job in jobs
+    ]
+
+    for job, result in zip(jobs, results, strict=True):
+        assert set(result["stage"]) == {"robustness"}
+        assert set(result["world"]) == {"site_shift"}
+        assert set(result["cohort_seed"]) == {701}
+        assert set(result["subset_seed"]) == {801}
+        assert set(result["model_seed"]) == {901}
+        assert set(result["n_train"]) == {5}
+        assert set(result["model"]) == {job.model}
+        assert set(result["variant"]) == {job.variant}
+        assert set(result["site_or_shift"]) == {"site_0", "site_1"}
+        assert set(result.loc[result["metric"] == "mae", "site_or_shift"]) == {
+            "site_0",
+            "site_1",
+        }
+        assert not result.duplicated(
+            [
+                "stage",
+                "world",
+                "cohort_seed",
+                "subset_seed",
+                "model_seed",
+                "n_train",
+                "model",
+                "variant",
+                "split",
+                "site_or_shift",
+                "metric",
+            ]
+        ).any()
+
+    by_model = {job.model: result for job, result in zip(jobs, results, strict=True)}
+    assert set(by_model["matched_gru"]["trainable_parameters"]) == {
+        frozen.matched_gru_parameters
+    }
+    assert set(by_model["matched_representation_mlp"]["trainable_parameters"]) == {
+        frozen.matched_mlp_parameters
+    }
+
+
+def test_misspecified_dispatcher_uses_standard_test_split_for_all_three_models():
+    config = Phase05Config(max_epochs=1, patience=1)
+    frozen = _audited_frozen_candidate()
+    cohort = simulate_world(
+        "misspecified",
+        SimulatorConfig(cohort_size=40, followup_days=45.0),
+        seed=701,
+    )
+    prepared = prepare_phase05_cohort(cohort)
+    jobs = [
+        job
+        for job in build_robustness_jobs(
+            config,
+            frozen,
+            frozen_candidate_hash="c" * 64,
+        )
+        if job.shard.world == "misspecified"
+        and job.shard.seed_bundle == config.confirmatory_bundles[0]
+        and job.n_train == 5
+    ]
+
+    assert len(jobs) == 3
+    results = [
+        run_robustness_job(
+            job,
+            prepared,
+            config=config,
+            frozen=frozen,
+            device=torch.device("cpu"),
+        )
+        for job in jobs
+    ]
+    for job, result in zip(jobs, results, strict=True):
+        assert set(result["stage"]) == {"robustness"}
+        assert set(result["world"]) == {"misspecified"}
+        assert set(result["model"]) == {job.model}
+        assert set(result["site_or_shift"]) == {"all"}
+        assert "mae" in set(result["metric"])
 
 
 def _site_shift_metrics() -> pd.DataFrame:
