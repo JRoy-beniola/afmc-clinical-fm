@@ -230,7 +230,7 @@ def _development_artifact_path(store: Phase05Store, filename: str) -> Path:
 def _gate_passed(path: Path, gate_name: str) -> bool:
     try:
         frame = pd.read_csv(path)
-    except Exception as error:  # noqa: BLE001 - persisted artifact boundary
+    except Exception as error:
         raise RuntimeError(f"{gate_name} gate artifact is unreadable") from error
     if frame.empty or "passed" not in frame.columns:
         raise RuntimeError(f"{gate_name} gate artifact is invalid")
