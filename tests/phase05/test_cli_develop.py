@@ -218,6 +218,48 @@ def _metric_rows(job) -> list[dict[str, object]]:
     ]
 
 
+def _persist_synthetic_jobs(jobs, store) -> pd.DataFrame:
+    frames = []
+    for job in jobs:
+        frame = pd.DataFrame(_metric_rows(job))
+        bundle = job.shard.seed_bundle
+        store.write_cell(
+            Phase05CellResult(
+                stage=job.shard.stage,
+                world=job.shard.world,
+                cohort_seed=bundle.cohort_seed,
+                subset_seed=bundle.subset_seed,
+                model_seed=bundle.model_seed,
+                n_train=job.n_train,
+                model=job.model,
+                variant=job.variant,
+                metrics=frame,
+            )
+        )
+        frames.append(frame)
+    return pd.concat(frames, ignore_index=True)
+
+
+def _develop_argv(output: Path, *, resume: bool = False) -> list[str]:
+    argv = [
+        "phase05",
+        "develop",
+        "--sim-config",
+        "configs/simulator/smoke.yaml",
+        "--exp-config",
+        "configs/experiments/phase05.yaml",
+        "--output",
+        str(output),
+        "--device",
+        "cpu",
+        "--workers",
+        "1",
+    ]
+    if resume:
+        argv.append("--resume")
+    return argv
+
+
 def test_phase05_develop_requires_existing_protocol_lock(tmp_path: Path):
     output = tmp_path / "phase05"
 
@@ -253,44 +295,11 @@ def test_phase05_develop_runs_sequential_stages_and_finalizes_artifacts(
         planned = tuple(jobs)
         stage = planned[0].shard.stage
         calls.append((stage, len(planned)))
-        frames = []
-        for job in planned:
-            frame = pd.DataFrame(_metric_rows(job))
-            bundle = job.shard.seed_bundle
-            store.write_cell(
-                Phase05CellResult(
-                    stage=stage,
-                    world=job.shard.world,
-                    cohort_seed=bundle.cohort_seed,
-                    subset_seed=bundle.subset_seed,
-                    model_seed=bundle.model_seed,
-                    n_train=job.n_train,
-                    model=job.model,
-                    variant=job.variant,
-                    metrics=frame,
-                )
-            )
-            frames.append(frame)
-        return pd.concat(frames, ignore_index=True)
+        return _persist_synthetic_jobs(planned, store)
 
     monkeypatch.setattr(cli, "run_phase05_jobs", fake_run_phase05_jobs, raising=False)
 
-    assert cli.main(
-        [
-            "phase05",
-            "develop",
-            "--sim-config",
-            "configs/simulator/smoke.yaml",
-            "--exp-config",
-            "configs/experiments/phase05.yaml",
-            "--output",
-            str(output),
-            "--device",
-            "cpu",
-            "--workers",
-            "1",
-        ]
-    ) == 0
+    assert cli.main(_develop_argv(output)) == 0
 
     assert calls == [
         ("flow", 60),
@@ -318,3 +327,50 @@ def test_phase05_develop_runs_sequential_stages_and_finalizes_artifacts(
 
     for stage in ("flow", "jump", "uncertainty", "timing_audit"):
         assert (output / "stages" / stage / "COMPLETE").is_file()
+
+
+def test_phase05_develop_resume_skips_finalized_flow_without_rewriting_it(
+    tmp_path: Path,
+    monkeypatch,
+):
+    output = _calibrated_output(tmp_path)
+    first_calls: list[str] = []
+
+    def interrupted_run(jobs, *, store, **_kwargs):
+        planned = tuple(jobs)
+        stage = planned[0].shard.stage
+        first_calls.append(stage)
+        if stage == "jump":
+            raise RuntimeError("injected interruption after flow")
+        return _persist_synthetic_jobs(planned, store)
+
+    monkeypatch.setattr(cli, "run_phase05_jobs", interrupted_run, raising=False)
+    with pytest.raises(RuntimeError, match="injected interruption"):
+        cli.main(_develop_argv(output))
+    assert first_calls == ["flow", "jump"]
+
+    flow_gate_path = output / "development" / "flow_gate.csv"
+    flow_cell_path = next((output / "stages" / "flow" / "cells").glob("*.json"))
+    gate_bytes = flow_gate_path.read_bytes()
+    gate_mtime = flow_gate_path.stat().st_mtime_ns
+    cell_bytes = flow_cell_path.read_bytes()
+    cell_mtime = flow_cell_path.stat().st_mtime_ns
+
+    resume_calls: list[str] = []
+
+    def resumed_run(jobs, *, store, **_kwargs):
+        planned = tuple(jobs)
+        stage = planned[0].shard.stage
+        resume_calls.append(stage)
+        if stage == "flow":
+            raise AssertionError("finalized flow stage was rerun")
+        return _persist_synthetic_jobs(planned, store)
+
+    monkeypatch.setattr(cli, "run_phase05_jobs", resumed_run, raising=False)
+    assert cli.main(_develop_argv(output, resume=True)) == 0
+
+    assert resume_calls == ["jump", "uncertainty", "timing_audit"]
+    assert flow_gate_path.read_bytes() == gate_bytes
+    assert flow_gate_path.stat().st_mtime_ns == gate_mtime
+    assert flow_cell_path.read_bytes() == cell_bytes
+    assert flow_cell_path.stat().st_mtime_ns == cell_mtime
