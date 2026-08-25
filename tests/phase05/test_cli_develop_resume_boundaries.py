@@ -188,3 +188,47 @@ def test_develop_resume_skips_finalized_flow_and_jump(tmp_path: Path, monkeypatc
     for path, (payload, mtime) in snapshots.items():
         assert path.read_bytes() == payload
         assert path.stat().st_mtime_ns == mtime
+
+
+def test_develop_resume_skips_finalized_uncertainty(tmp_path: Path, monkeypatch):
+    output = _locked_output(tmp_path)
+    first_calls: list[str] = []
+
+    def interrupted_run(jobs, *, store, **_kwargs):
+        planned = tuple(jobs)
+        stage = planned[0].shard.stage
+        first_calls.append(stage)
+        if stage == "timing_audit":
+            raise RuntimeError("injected interruption after uncertainty")
+        return _persist_synthetic_jobs(planned, store)
+
+    monkeypatch.setattr(cli, "run_phase05_jobs", interrupted_run)
+    with pytest.raises(RuntimeError, match="injected interruption"):
+        cli.main(_develop_argv(output))
+    assert first_calls == ["flow", "jump", "uncertainty", "timing_audit"]
+
+    uncertainty_gate = output / "development" / "uncertainty_gate.csv"
+    uncertainty_cell = next(
+        (output / "stages" / "uncertainty" / "cells").glob("*.json")
+    )
+    snapshots = {
+        path: (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in (uncertainty_gate, uncertainty_cell)
+    }
+
+    resume_calls: list[str] = []
+
+    def resumed_run(jobs, *, store, **_kwargs):
+        planned = tuple(jobs)
+        stage = planned[0].shard.stage
+        resume_calls.append(stage)
+        if stage in {"flow", "jump", "uncertainty"}:
+            raise AssertionError(f"finalized {stage} stage was rerun")
+        return _persist_synthetic_jobs(planned, store)
+
+    monkeypatch.setattr(cli, "run_phase05_jobs", resumed_run)
+    assert cli.main(_develop_argv(output, resume=True)) == 0
+    assert resume_calls == ["timing_audit"]
+    for path, (payload, mtime) in snapshots.items():
+        assert path.read_bytes() == payload
+        assert path.stat().st_mtime_ns == mtime
