@@ -100,6 +100,13 @@ def _benchmark(args: argparse.Namespace) -> int:
     return 0
 
 
+def _add_execution_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument("--workers", type=_positive_int, default=1)
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--fail-fast", action="store_true")
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="afmc-phase0")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -115,11 +122,33 @@ def _parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--sim-config", required=True)
     benchmark.add_argument("--exp-config", required=True)
     benchmark.add_argument("--output", required=True)
-    benchmark.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
-    benchmark.add_argument("--workers", type=_positive_int, default=1)
-    benchmark.add_argument("--resume", action="store_true")
-    benchmark.add_argument("--fail-fast", action="store_true")
+    _add_execution_options(benchmark)
     benchmark.set_defaults(handler=_benchmark)
+
+    phase05 = subparsers.add_parser("phase05")
+    phase05_subparsers = phase05.add_subparsers(
+        dest="phase05_command",
+        required=True,
+    )
+
+    calibrate = phase05_subparsers.add_parser("calibrate")
+    calibrate.add_argument("--phase0-metrics", required=True)
+    calibrate.add_argument("--exp-config", required=True)
+    calibrate.add_argument("--output", required=True)
+
+    for name in ("develop", "confirm", "robustness"):
+        stage = phase05_subparsers.add_parser(name)
+        stage.add_argument("--sim-config", required=True)
+        stage.add_argument("--exp-config", required=True)
+        stage.add_argument("--output", required=True)
+        _add_execution_options(stage)
+
+    freeze = phase05_subparsers.add_parser("freeze")
+    freeze.add_argument("--exp-config", required=True)
+    freeze.add_argument("--output", required=True)
+
+    report = phase05_subparsers.add_parser("report")
+    report.add_argument("--output", required=True)
     return parser
 
 
