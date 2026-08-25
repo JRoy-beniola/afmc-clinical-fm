@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 
 import pandas as pd
-
 from afmc_fm.phase05.reporting import write_phase05_report_artifacts
 
 
@@ -116,7 +115,10 @@ def _report_fixture(tmp_path: Path) -> Path:
                         "n_train": n_train,
                         "model": model,
                         "variant": model,
-                        "mean_mae": 1.4 - 0.01 * n_train + 0.05 * model_index + 0.02 * world_index,
+                        "mean_mae": 1.4
+                        - 0.01 * n_train
+                        + 0.05 * model_index
+                        + 0.02 * world_index,
                         "sd_mae": 0.03 + 0.002 * model_index,
                         "n_bundles": 10,
                     }
@@ -153,7 +155,10 @@ def _report_fixture(tmp_path: Path) -> Path:
                         "subset_seed": 801 + bundle_index,
                         "model_seed": 901 + bundle_index,
                         "comparator": comparator,
-                        "effect": 0.04 + 0.002 * bundle_index - 0.003 * comparator_index + 0.001 * world_index,
+                        "effect": 0.04
+                        + 0.002 * bundle_index
+                        - 0.003 * comparator_index
+                        + 0.001 * world_index,
                     }
                 )
     _write_csv(output / "confirmation" / "paired_naulc_effects.csv", effect_rows)
@@ -163,11 +168,25 @@ def _report_fixture(tmp_path: Path) -> Path:
     )
     _write_csv(
         output / "confirmation" / "bootstrap_intervals.csv",
-        [{"world": "smooth", "comparator": "matched_gru", "lower": 0.01, "upper": 0.08}],
+        [
+            {
+                "world": "smooth",
+                "comparator": "matched_gru",
+                "lower": 0.01,
+                "upper": 0.08,
+            }
+        ],
     )
     _write_csv(
         output / "confirmation" / "sign_tests.csv",
-        [{"world": "smooth", "comparator": "matched_gru", "p_value": 0.05, "holm_adjusted_p": 0.30}],
+        [
+            {
+                "world": "smooth",
+                "comparator": "matched_gru",
+                "p_value": 0.05,
+                "holm_adjusted_p": 0.30,
+            }
+        ],
     )
     _write_csv(
         output / "confirmation" / "capacity_audit.csv",
@@ -177,8 +196,9 @@ def _report_fixture(tmp_path: Path) -> Path:
         ],
     )
     confirmation = output / "confirmation"
+    frozen_hash = hashlib.sha256((output / "frozen_candidate.json").read_bytes()).hexdigest()
     (confirmation / "STARTED").write_text(
-        json.dumps({"frozen_candidate_sha256": hashlib.sha256((output / "frozen_candidate.json").read_bytes()).hexdigest()}) + "\n",
+        json.dumps({"frozen_candidate_sha256": frozen_hash}) + "\n",
         encoding="utf-8",
     )
 
