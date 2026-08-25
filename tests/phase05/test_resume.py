@@ -272,6 +272,38 @@ def test_confirmatory_jobs_require_started_marker_and_exact_frozen_candidate(tmp
         )
 
 
+def test_partial_confirmation_execution_does_not_finalize_stage(tmp_path):
+    store = _store(tmp_path)
+    candidate_hash = store.write_frozen_candidate(
+        {
+            "flow_mode": "time_scaled",
+            "jump_mode": "residual",
+            "uncertainty_mode": "deterministic",
+        }
+    )
+    store.mark_confirmation_started()
+    job = Phase05Job(
+        shard=Phase05ShardSpec(
+            "confirmation", "smooth", SeedBundle(701, 801, 901)
+        ),
+        n_train=5,
+        model="phase05_candidate",
+        variant="time_scaled__residual__deterministic",
+        frozen_candidate_hash=candidate_hash,
+    )
+
+    run_phase05_jobs(
+        (job,),
+        store=store,
+        config=Phase05Config(max_epochs=1, patience=1),
+        options=Phase05ExecutionOptions(device="cpu", workers=1),
+        prepare_shard=lambda spec: object(),
+        run_job=lambda job, prepared, device: _metric_frame(job, 1.0),
+    )
+
+    assert not (store.output / "stages" / "confirmation" / "COMPLETE").exists()
+
+
 def test_multiworker_execution_uses_spawn_and_keeps_persistence_in_parent(tmp_path):
     store = _store(tmp_path)
     jobs = (
