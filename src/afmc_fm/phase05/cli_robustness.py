@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
@@ -93,7 +94,7 @@ def run_phase05_robustness_cli(
     frozen = freeze_candidate(output, config)
     _require_finalized_confirmation(output)
 
-    frozen_candidate_hash = store.mark_confirmation_started()
+    frozen_candidate_hash = hashlib.sha256(frozen_path.read_bytes()).hexdigest()
     jobs = build_robustness_jobs(
         config,
         frozen,
