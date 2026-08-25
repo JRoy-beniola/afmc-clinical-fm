@@ -1,5 +1,7 @@
+import json
 import math
 import re
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -135,4 +137,45 @@ def build_protocol_lock(
     }
 
 
-__all__ = ["build_protocol_lock", "estimate_phase0_relative_noise_floor"]
+def _gate_passed(path: Path, gate_name: str) -> bool:
+    if not path.is_file():
+        raise RuntimeError(f"missing required {gate_name} gate artifact")
+    frame = pd.read_csv(path)
+    if frame.empty or "passed" not in frame.columns:
+        raise RuntimeError(f"invalid {gate_name} gate artifact")
+    normalized = {str(value).strip().lower() for value in frame["passed"].dropna()}
+    if not normalized or not normalized.issubset({"true", "false", "1", "0"}):
+        raise RuntimeError(f"invalid {gate_name} gate artifact")
+    return bool(normalized & {"true", "1"})
+
+
+def _write_development_failure(output: Path, failed_gates: list[str]) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "status": "development_failed",
+        "failed_gates": failed_gates,
+    }
+    data = (json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode(
+        "utf-8"
+    )
+    (output / "development_failure.json").write_bytes(data)
+
+
+def freeze_candidate(output: str | Path, config: Phase05Config):
+    del config
+    output_path = Path(output)
+    development = output_path / "development"
+    if not _gate_passed(development / "flow_gate.csv", "flow"):
+        _write_development_failure(output_path, ["flow"])
+        raise RuntimeError("flow gate failed; confirmation is not permitted")
+    if not _gate_passed(development / "jump_gate.csv", "jump"):
+        _write_development_failure(output_path, ["jump"])
+        raise RuntimeError("jump gate failed; confirmation is not permitted")
+    raise NotImplementedError("successful candidate freezing is not implemented yet")
+
+
+__all__ = [
+    "build_protocol_lock",
+    "estimate_phase0_relative_noise_floor",
+    "freeze_candidate",
+]
