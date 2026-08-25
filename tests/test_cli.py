@@ -337,3 +337,72 @@ def test_phase05_calibrate_persists_locked_protocol_and_is_idempotent(tmp_path: 
 
     assert main(argv) == 0
     assert lock_path.read_bytes() == before
+
+
+def _write_successful_phase05_development_artifacts(output: Path) -> None:
+    development = output / "development"
+    development.mkdir(parents=True, exist_ok=True)
+    (development / "flow_gate.csv").write_text(
+        "candidate,passed,selected,trainable_parameters\n"
+        "gated,true,false,6000\n"
+        "time_scaled,true,true,5900\n",
+        encoding="utf-8",
+    )
+    (development / "jump_gate.csv").write_text(
+        "candidate,passed,selected,trainable_parameters\n"
+        "gru,true,false,6500\n"
+        "residual,true,true,6400\n",
+        encoding="utf-8",
+    )
+    (development / "uncertainty_gate.csv").write_text(
+        "candidate,selected,trainable_parameters\n"
+        "joint,false,7000\n"
+        "decoupled,true,6900\n"
+        "deterministic,false,6400\n",
+        encoding="utf-8",
+    )
+    (development / "representation_timing_audit.csv").write_text(
+        "strict_history,mean_delta_inclusive_minus_strict\ntrue,-0.03\n",
+        encoding="utf-8",
+    )
+
+
+def test_phase05_freeze_consumes_completed_development_and_is_idempotent(tmp_path: Path):
+    metrics_path = tmp_path / "phase0_metrics.csv"
+    _phase05_calibration_metrics().to_csv(metrics_path, index=False)
+    output = tmp_path / "phase05"
+    assert main(
+        [
+            "phase05",
+            "calibrate",
+            "--phase0-metrics",
+            str(metrics_path),
+            "--exp-config",
+            "configs/experiments/phase05.yaml",
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    _write_successful_phase05_development_artifacts(output)
+    argv = [
+        "phase05",
+        "freeze",
+        "--exp-config",
+        "configs/experiments/phase05.yaml",
+        "--output",
+        str(output),
+    ]
+
+    assert main(argv) == 0
+    frozen_path = output / "frozen_candidate.json"
+    assert frozen_path.is_file()
+    before = frozen_path.read_bytes()
+    frozen = json.loads(before)
+    assert frozen["flow_mode"] == "time_scaled"
+    assert frozen["jump_mode"] == "residual"
+    assert frozen["uncertainty_mode"] == "decoupled"
+    assert frozen["strict_history"] is True
+    assert frozen["trainable_parameters"] == 6900
+
+    assert main(argv) == 0
+    assert frozen_path.read_bytes() == before
