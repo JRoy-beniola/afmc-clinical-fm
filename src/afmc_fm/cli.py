@@ -710,6 +710,15 @@ def _phase05_develop(args: argparse.Namespace) -> int:
             "representation_timing_audit.csv",
             _frame_csv_bytes(timing_audit),
         )
+
+    from afmc_fm.phase05.development_outputs import (
+        persist_development_mechanism_metrics,
+    )
+
+    persist_development_mechanism_metrics(
+        store,
+        (flow_jobs, jump_jobs, uncertainty_jobs),
+    )
     return 0
 
 
