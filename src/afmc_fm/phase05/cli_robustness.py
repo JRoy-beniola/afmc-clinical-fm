@@ -15,6 +15,7 @@ from afmc_fm.phase05.execution import (
 )
 from afmc_fm.phase05.protocol import FrozenCandidate, freeze_candidate
 from afmc_fm.phase05.robustness import build_robustness_jobs, run_robustness_job
+from afmc_fm.phase05.robustness_outputs import persist_robustness_outputs
 from afmc_fm.phase05.runner import PreparedPhase05Cohort, prepare_phase05_cohort
 from afmc_fm.phase05.store import Phase05Store
 from afmc_fm.simulator.cohort import simulate_world
@@ -106,7 +107,7 @@ def run_phase05_robustness_cli(
         resume=args.resume,
         fail_fast=args.fail_fast,
     )
-    run_jobs(
+    metrics = run_jobs(
         jobs,
         store=store,
         config=config,
@@ -122,7 +123,22 @@ def run_phase05_robustness_cli(
         ),
     )
 
-    raise RuntimeError("Phase-0.5 robustness finalization is not yet wired")
+    expected_cell_ids = frozenset(job.cell_id for job in jobs)
+    expected_seed_bundles = frozenset(
+        bundle.as_tuple() for bundle in config.confirmatory_bundles
+    )
+    observed = store.validate_resume(
+        "robustness",
+        expected_cell_ids=expected_cell_ids,
+        expected_seed_bundles=expected_seed_bundles,
+        frozen_candidate_hash=frozen_candidate_hash,
+    )
+    if observed != expected_cell_ids:
+        raise RuntimeError("robustness execution did not persist the exact planned cell set")
+
+    persist_robustness_outputs(output, metrics, jobs=jobs)
+    store.mark_stage_complete("robustness", expected_cell_ids)
+    return 0
 
 
 __all__ = ["run_phase05_robustness_cli"]
