@@ -80,7 +80,9 @@ def _load_provenance(path: Path) -> dict[str, Any]:
 
 
 def _normalize_json(value: object) -> object:
-    if value is None or type(value) in {str, bool, int, float}:
+    if isinstance(value, str):
+        return str(value)
+    if value is None or type(value) in {bool, int, float}:
         return value
     if isinstance(value, dict):
         if any(type(key) is not str for key in value):
