@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 
 _PRIMARY_TRAIN_SIZES = (5, 10, 20, 40)
+_TARGET_WORLD_ORDER = ("smooth", "jumps", "informative_observation")
 _BUNDLE_COLUMNS = ["cohort_seed", "subset_seed", "model_seed"]
 
 
@@ -109,6 +110,16 @@ def _confirmatory_model_aulcs(
     return pd.DataFrame(rows)
 
 
+def _target_worlds(metrics: pd.DataFrame) -> tuple[str, ...]:
+    observed = set(pd.unique(metrics.get("world", pd.Series(dtype=str))))
+    if not observed:
+        raise ValueError("confirmatory metrics contain no worlds")
+    unknown = observed - set(_TARGET_WORLD_ORDER)
+    if unknown:
+        raise ValueError(f"unexpected confirmatory target worlds: {sorted(unknown)}")
+    return tuple(world for world in _TARGET_WORLD_ORDER if world in observed)
+
+
 def paired_confirmatory_naulc_effects(
     metrics: pd.DataFrame,
     candidate: str,
@@ -116,9 +127,7 @@ def paired_confirmatory_naulc_effects(
 ) -> pd.DataFrame:
     if not candidate or not comparator or candidate == comparator:
         raise ValueError("candidate and comparator must be distinct non-empty model names")
-    worlds = tuple(sorted(pd.unique(metrics.get("world", pd.Series(dtype=str)))))
-    if not worlds:
-        raise ValueError("confirmatory metrics contain no worlds")
+    worlds = _target_worlds(metrics)
 
     rows: list[pd.DataFrame] = []
     for world in worlds:
@@ -142,13 +151,17 @@ def paired_confirmatory_naulc_effects(
             suffixes=("_candidate", "_comparator"),
             validate="one_to_one",
         )
+        if np.any(merged["naulc_comparator"].to_numpy(dtype=float) <= 0):
+            raise ValueError("confirmatory comparator nAULC values must be positive")
         merged.insert(0, "world", world)
         merged["candidate"] = candidate
         merged["comparator"] = comparator
         merged["effect"] = merged["naulc_comparator"] - merged["naulc_candidate"]
+        merged["relative_improvement_pct"] = (
+            100.0 * merged["effect"] / merged["naulc_comparator"]
+        )
         rows.append(merged)
-    result = pd.concat(rows, ignore_index=True)
-    return result.sort_values(["world", *_BUNDLE_COLUMNS]).reset_index(drop=True)
+    return pd.concat(rows, ignore_index=True).reset_index(drop=True)
 
 
 __all__ = [
