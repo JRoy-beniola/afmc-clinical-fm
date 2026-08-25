@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 from scipy.stats import binomtest
 
 from afmc_fm.phase05.config import Phase05Config
@@ -14,8 +15,12 @@ from afmc_fm.phase05.confirmation import (
     paired_bootstrap_mean_ci,
     paired_naulc_effects,
     persist_confirmation_analysis,
+    run_confirmation_job,
 )
 from afmc_fm.phase05.protocol import FrozenCandidate
+from afmc_fm.phase05.runner import prepare_phase05_cohort
+from afmc_fm.simulator.cohort import simulate_world
+from afmc_fm.simulator.config import SimulatorConfig
 
 WORLDS = ("smooth", "jumps", "informative_observation")
 PRIMARY_SIZES = (5, 10, 20, 40)
@@ -159,6 +164,78 @@ def test_confirmation_model_plan_contains_exact_locked_model_set():
     assert all(job.frozen_candidate_hash == "c" * 64 for job in jobs)
     candidate_variants = {job.variant for job in jobs if job.model == "phase05_candidate"}
     assert candidate_variants == {"time_scaled__residual__decoupled"}
+
+
+def test_confirmation_dispatcher_executes_every_locked_model_with_exact_provenance():
+    config = Phase05Config(max_epochs=1, patience=1)
+    frozen = _frozen_candidate()
+    cohort = simulate_world(
+        "jumps",
+        SimulatorConfig(
+            cohort_size=36,
+            followup_days=45.0,
+            intervention_rate=0.2,
+        ),
+        seed=701,
+    )
+    prepared = prepare_phase05_cohort(cohort, include_historical=True)
+    jobs = [
+        job
+        for job in build_confirmation_jobs(
+            config,
+            frozen,
+            frozen_candidate_hash="c" * 64,
+        )
+        if job.shard.world == "jumps"
+        and job.shard.seed_bundle == config.confirmatory_bundles[0]
+        and job.n_train == 5
+    ]
+
+    assert len(jobs) == 7
+    results = [
+        run_confirmation_job(
+            job,
+            prepared,
+            config=config,
+            frozen=frozen,
+            device=torch.device("cpu"),
+        )
+        for job in jobs
+    ]
+
+    for job, result in zip(jobs, results, strict=True):
+        assert set(result["stage"]) == {"confirmation"}
+        assert set(result["world"]) == {"jumps"}
+        assert set(result["cohort_seed"]) == {701}
+        assert set(result["subset_seed"]) == {801}
+        assert set(result["model_seed"]) == {901}
+        assert set(result["n_train"]) == {5}
+        assert set(result["model"]) == {job.model}
+        assert set(result["variant"]) == {job.variant}
+        assert "mae" in set(result["metric"])
+        assert not result.duplicated(
+            [
+                "stage",
+                "world",
+                "cohort_seed",
+                "subset_seed",
+                "model_seed",
+                "n_train",
+                "model",
+                "variant",
+                "split",
+                "site_or_shift",
+                "metric",
+            ]
+        ).any()
+
+    by_model = {job.model: result for job, result in zip(jobs, results, strict=True)}
+    assert set(by_model["matched_gru"]["trainable_parameters"]) == {
+        frozen.matched_gru_parameters
+    }
+    assert set(by_model["matched_representation_mlp"]["trainable_parameters"]) == {
+        frozen.matched_mlp_parameters
+    }
 
 
 def test_primary_gate_requires_same_two_worlds_against_both_controls_and_early_n_win():
