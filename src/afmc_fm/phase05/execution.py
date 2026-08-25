@@ -273,6 +273,11 @@ def _require_stage_unlocked(store: Phase05Store, stage: str) -> None:
         marker = store.output / "stages" / "confirmation" / "COMPLETE"
         if not marker.is_file():
             raise RuntimeError("confirmation stage must be complete before robustness")
+        gate = store.output / "confirmation" / "primary_gate_summary.csv"
+        if not gate.is_file():
+            raise RuntimeError(
+                "primary confirmatory gate must be finalized before robustness"
+            )
 
 
 def _persist_result(store: Phase05Store, job: Phase05Job, frame: pd.DataFrame) -> None:
