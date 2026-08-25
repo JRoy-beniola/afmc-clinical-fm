@@ -720,14 +720,14 @@ def _phase05_freeze(args: argparse.Namespace) -> int:
 
 
 def _phase05_confirm(args: argparse.Namespace) -> int:
-    config = load_phase05_config(args.exp_config)
-    output = Path(args.output)
-    _phase05_locked_store(output, config)
-    frozen_path = output / "frozen_candidate.json"
-    if not frozen_path.is_file():
-        raise RuntimeError("frozen_candidate.json is required before Phase-0.5 confirmation")
-    freeze_candidate(output, config)
-    return 0
+    from afmc_fm.phase05.cli_confirmation import run_phase05_confirmation_cli
+
+    return run_phase05_confirmation_cli(
+        args,
+        run_jobs=run_phase05_jobs,
+        locked_store=_phase05_locked_store,
+        simulator_from_yaml=_simulator_from_yaml,
+    )
 
 
 def _add_execution_options(parser: argparse.ArgumentParser) -> None:
