@@ -453,13 +453,12 @@ def _timing_audit_table(
     return pd.DataFrame(rows)
 
 
-def _resume_selected_development_gate(
+def _validate_finalized_stage_cells(
     store: Phase05Store,
     jobs: tuple[Phase05Job, ...],
     *,
     artifact_name: str,
-    allowed_candidates: frozenset[str],
-) -> str | None:
+) -> Path | None:
     stage = jobs[0].shard.stage
     marker = store.output / "stages" / stage / "COMPLETE"
     artifact = store.output / "development" / artifact_name
@@ -481,6 +480,24 @@ def _resume_selected_development_gate(
     )
     if observed != expected_cell_ids:
         raise RuntimeError(f"{stage} resume state does not contain the exact finalized cell set")
+    return artifact
+
+
+def _resume_selected_development_gate(
+    store: Phase05Store,
+    jobs: tuple[Phase05Job, ...],
+    *,
+    artifact_name: str,
+    allowed_candidates: frozenset[str],
+) -> str | None:
+    stage = jobs[0].shard.stage
+    artifact = _validate_finalized_stage_cells(
+        store,
+        jobs,
+        artifact_name=artifact_name,
+    )
+    if artifact is None:
+        return None
 
     try:
         gate = pd.read_csv(artifact)
@@ -507,6 +524,43 @@ def _resume_selected_development_gate(
     candidate = str(row["candidate"])
     if candidate not in allowed_candidates:
         raise RuntimeError(f"{stage} finalized gate selected an unknown candidate")
+    return candidate
+
+
+def _resume_selected_uncertainty(
+    store: Phase05Store,
+    jobs: tuple[Phase05Job, ...],
+) -> str | None:
+    stage = jobs[0].shard.stage
+    artifact = _validate_finalized_stage_cells(
+        store,
+        jobs,
+        artifact_name="uncertainty_gate.csv",
+    )
+    if artifact is None:
+        return None
+    try:
+        gate = pd.read_csv(artifact)
+    except Exception as error:
+        raise RuntimeError("uncertainty finalized artifact is unreadable") from error
+    required = {"candidate", "selected"}
+    if gate.empty or not required.issubset(gate.columns):
+        raise RuntimeError("uncertainty finalized artifact is invalid")
+    normalized = {
+        str(value).strip().lower() for value in gate["selected"].dropna()
+    }
+    if not normalized or not normalized.issubset({"true", "false", "1", "0"}):
+        raise RuntimeError("uncertainty finalized artifact is invalid")
+    selected = gate.loc[
+        gate["selected"].astype(str).str.strip().str.lower().isin({"true", "1"})
+    ]
+    if len(selected) != 1:
+        raise RuntimeError("uncertainty finalized artifact must contain exactly one selection")
+    candidate = str(selected.iloc[0]["candidate"])
+    if candidate not in {"joint", "decoupled", "deterministic"}:
+        raise RuntimeError("uncertainty finalized artifact selected an unknown candidate")
+    if stage != "uncertainty":
+        raise RuntimeError("uncertainty resume validator received the wrong stage")
     return candidate
 
 
@@ -592,31 +646,35 @@ def _phase05_develop(args: argparse.Namespace) -> int:
         selected_flow=selected_flow,
         selected_jump=selected_jump,
     )
-    uncertainty_metrics = _run_development_stage(
-        uncertainty_jobs,
-        store=store,
-        config=config,
-        options=options,
-        simulator_config=simulator_config,
-    )
-    uncertainty = select_uncertainty(
-        uncertainty_metrics,
-        selected_flow=selected_flow,
-        selected_jump=selected_jump,
-        locked_uncertainty_mae_tolerance=float(
-            lock["locked_uncertainty_mae_tolerance"]
-        ),
-    )
-    uncertainty_gate = _uncertainty_gate_table(
-        uncertainty_metrics,
-        selected_flow=selected_flow,
-        selected_jump=selected_jump,
-        selection=uncertainty,
-    )
-    store.replace_development_artifact(
-        "uncertainty_gate.csv",
-        _frame_csv_bytes(uncertainty_gate),
-    )
+    selected_uncertainty = None
+    if args.resume:
+        selected_uncertainty = _resume_selected_uncertainty(store, uncertainty_jobs)
+    if selected_uncertainty is None:
+        uncertainty_metrics = _run_development_stage(
+            uncertainty_jobs,
+            store=store,
+            config=config,
+            options=options,
+            simulator_config=simulator_config,
+        )
+        uncertainty = select_uncertainty(
+            uncertainty_metrics,
+            selected_flow=selected_flow,
+            selected_jump=selected_jump,
+            locked_uncertainty_mae_tolerance=float(
+                lock["locked_uncertainty_mae_tolerance"]
+            ),
+        )
+        uncertainty_gate = _uncertainty_gate_table(
+            uncertainty_metrics,
+            selected_flow=selected_flow,
+            selected_jump=selected_jump,
+            selection=uncertainty,
+        )
+        store.replace_development_artifact(
+            "uncertainty_gate.csv",
+            _frame_csv_bytes(uncertainty_gate),
+        )
 
     timing_jobs = _phase05_development_jobs(
         config,
