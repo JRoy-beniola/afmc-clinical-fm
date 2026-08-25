@@ -485,7 +485,7 @@ def run_phase05_jobs(
         shard_specs[job.shard.shard_id] = job.shard
 
     if options.workers == 1:
-        failures = _run_single_worker_shards(
+        _run_single_worker_shards(
             by_shard,
             shard_specs,
             store=store,
@@ -496,7 +496,7 @@ def run_phase05_jobs(
             fail_fast=options.fail_fast,
         )
     else:
-        failures = _run_parallel_shards(
+        _run_parallel_shards(
             by_shard,
             shard_specs,
             store=store,
@@ -512,13 +512,6 @@ def run_phase05_jobs(
         expected_seed_bundles=expected_seed_bundles,
         frozen_candidate_hash=candidate_hash,
     )
-    if (
-        stage in _CONFIRMATORY_STAGES
-        and not failures
-        and persisted == expected_cell_ids
-    ):
-        store.mark_stage_complete(stage, expected_cell_ids)
-
     available_jobs = [job for job in planned if job.cell_id in persisted]
     frames = [_load_persisted_frame(store, job) for job in available_jobs]
     return aggregate_phase05_frames(frames)
