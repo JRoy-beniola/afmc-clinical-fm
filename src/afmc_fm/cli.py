@@ -16,7 +16,7 @@ from afmc_fm.execution.persistence import canonical_config_hash
 from afmc_fm.execution.scheduler import ExecutionOptions, run_scheduled_benchmark
 from afmc_fm.experiments.runner import ExperimentConfig
 from afmc_fm.phase05.config import load_phase05_config
-from afmc_fm.phase05.protocol import build_protocol_lock
+from afmc_fm.phase05.protocol import build_protocol_lock, freeze_candidate
 from afmc_fm.phase05.store import Phase05Store
 from afmc_fm.schema.events import events_to_frame
 from afmc_fm.simulator.cohort import SimulatedCohort, simulate_cohort
@@ -142,6 +142,12 @@ def _phase05_calibrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _phase05_freeze(args: argparse.Namespace) -> int:
+    config = load_phase05_config(args.exp_config)
+    freeze_candidate(args.output, config)
+    return 0
+
+
 def _add_execution_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--workers", type=_positive_int, default=1)
@@ -189,6 +195,7 @@ def _parser() -> argparse.ArgumentParser:
     freeze = phase05_subparsers.add_parser("freeze")
     freeze.add_argument("--exp-config", required=True)
     freeze.add_argument("--output", required=True)
+    freeze.set_defaults(handler=_phase05_freeze)
 
     report = phase05_subparsers.add_parser("report")
     report.add_argument("--output", required=True)
