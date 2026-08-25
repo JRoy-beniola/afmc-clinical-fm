@@ -11,11 +11,10 @@ import pandas as pd
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 
-from afmc_fm.execution.manifest import collect_runtime_metadata, execution_commit_sha
-
 _SOURCE_ARTIFACTS = (
     "protocol_lock.json",
     "frozen_candidate.json",
+    "execution_provenance.json",
     "development/mechanism_metrics.csv",
     "development/flow_gate.csv",
     "development/jump_gate.csv",
@@ -55,6 +54,16 @@ def _json_object(path: Path) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise TypeError(f"reporting JSON artifact must contain an object: {path}")
     return payload
+
+
+def _require_hex(value: object, length: int, name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != length
+        or any(character not in "0123456789abcdefABCDEF" for character in value)
+    ):
+        raise RuntimeError(f"{name} is missing or invalid")
+    return value.lower()
 
 
 def _require_sources(output: Path) -> dict[str, Path]:
@@ -310,19 +319,140 @@ def _stage_counts(output: Path) -> dict[str, dict[str, int]]:
     return counts
 
 
+def _execution_provenance(
+    output: Path,
+    lock: dict[str, object],
+) -> dict[str, object]:
+    provenance = _json_object(output / "execution_provenance.json")
+    if provenance.get("schema_version") != 1:
+        raise RuntimeError("execution provenance schema is incompatible")
+    identity = provenance.get("identity")
+    if not isinstance(identity, dict):
+        raise RuntimeError("execution provenance is missing protocol identity")
+    spec_sha256 = _require_hex(identity.get("spec_sha256"), 64, "spec_sha256")
+    config_sha256 = _require_hex(
+        identity.get("config_sha256"), 64, "execution provenance config hash"
+    )
+    protocol_sha256 = _require_hex(
+        identity.get("protocol_lock_sha256"),
+        64,
+        "execution provenance protocol-lock hash",
+    )
+    if config_sha256 != str(lock.get("phase05_config_sha256", "")).lower():
+        raise RuntimeError("execution provenance Phase-0.5 config hash mismatch")
+    if protocol_sha256 != _sha256(output / "protocol_lock.json"):
+        raise RuntimeError("execution provenance protocol-lock hash mismatch")
+    _require_hex(provenance.get("implementation_sha"), 40, "implementation_sha")
+    _require_hex(
+        provenance.get("simulator_config_sha256"),
+        64,
+        "simulator_config_sha256",
+    )
+    invocations = provenance.get("invocations")
+    if not isinstance(invocations, list) or not invocations:
+        raise RuntimeError("execution provenance contains no execution invocations")
+    for invocation in invocations:
+        if not isinstance(invocation, dict):
+            raise RuntimeError("execution provenance contains an invalid invocation")
+    identity["spec_sha256"] = spec_sha256
+    identity["config_sha256"] = config_sha256
+    identity["protocol_lock_sha256"] = protocol_sha256
+    return provenance
+
+
+def _confirmation_start(
+    output: Path,
+    provenance: dict[str, object],
+) -> dict[str, object]:
+    marker = _json_object(output / "confirmation" / "STARTED")
+    if marker.get("identity") != provenance.get("identity"):
+        raise RuntimeError("confirmation start protocol identity mismatch")
+    expected_frozen_hash = _sha256(output / "frozen_candidate.json")
+    if marker.get("frozen_candidate_sha256") != expected_frozen_hash:
+        raise RuntimeError("confirmation start frozen-candidate hash mismatch")
+    started_at = marker.get("started_at")
+    if not isinstance(started_at, str) or not started_at:
+        raise RuntimeError("confirmation start timestamp is missing")
+    return marker
+
+
+def _stage_timings(invocations: list[object]) -> dict[str, dict[str, int | float]]:
+    summaries: dict[str, dict[str, int | float]] = {}
+    for invocation in invocations:
+        if not isinstance(invocation, dict):
+            raise RuntimeError("execution provenance contains an invalid invocation")
+        stage = invocation.get("stage")
+        wall_time = invocation.get("wall_time_seconds")
+        if not isinstance(stage, str) or not stage:
+            raise RuntimeError("execution invocation stage is invalid")
+        if type(wall_time) not in {int, float} or wall_time < 0:
+            raise RuntimeError("execution invocation wall time is invalid")
+        summary = summaries.setdefault(
+            stage,
+            {"invocation_count": 0, "wall_time_seconds": 0.0},
+        )
+        summary["invocation_count"] = int(summary["invocation_count"]) + 1
+        summary["wall_time_seconds"] = float(summary["wall_time_seconds"]) + float(
+            wall_time
+        )
+    return {stage: summaries[stage] for stage in sorted(summaries)}
+
+
+def _execution_failures(invocations: list[object]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for invocation in invocations:
+        if not isinstance(invocation, dict):
+            raise RuntimeError("execution provenance contains an invalid invocation")
+        invocation_number = invocation.get("invocation_number")
+        stage = invocation.get("stage")
+        failures = invocation.get("failures")
+        if type(invocation_number) is not int or invocation_number <= 0:
+            raise RuntimeError("execution invocation number is invalid")
+        if not isinstance(stage, str) or not stage:
+            raise RuntimeError("execution invocation stage is invalid")
+        if not isinstance(failures, list):
+            raise RuntimeError("execution invocation failures are invalid")
+        for failure in failures:
+            if not isinstance(failure, dict):
+                raise RuntimeError("execution failure record is invalid")
+            failure_type = failure.get("type")
+            message = failure.get("message")
+            if not isinstance(failure_type, str) or not isinstance(message, str):
+                raise RuntimeError("execution failure record is invalid")
+            rows.append(
+                {
+                    "invocation_number": invocation_number,
+                    "stage": stage,
+                    "type": failure_type,
+                    "message": message,
+                }
+            )
+    return rows
+
+
 def _run_manifest(
     output: Path,
     lock: dict[str, object],
     frozen: dict[str, object],
     source_paths: dict[str, Path],
 ) -> dict[str, object]:
+    provenance = _execution_provenance(output, lock)
+    marker = _confirmation_start(output, provenance)
+    identity = provenance["identity"]
+    if not isinstance(identity, dict):
+        raise RuntimeError("execution provenance is missing protocol identity")
+    invocations = provenance["invocations"]
+    if not isinstance(invocations, list):
+        raise RuntimeError("execution provenance invocations are invalid")
     return {
         "schema_version": 1,
         "synthetic": True,
-        "implementation_sha": execution_commit_sha(),
+        "spec_sha256": identity["spec_sha256"],
+        "implementation_sha": provenance["implementation_sha"],
         "spec_commit": lock.get("spec_commit"),
         "phase0_execution_sha": lock.get("phase0_execution_sha"),
         "phase0_metrics_sha256": lock.get("phase0_metrics_sha256"),
+        "simulator_config_sha256": provenance["simulator_config_sha256"],
         "phase05_config_sha256": lock.get("phase05_config_sha256"),
         "protocol_lock_sha256": _sha256(output / "protocol_lock.json"),
         "frozen_candidate_sha256": _sha256(output / "frozen_candidate.json"),
@@ -338,15 +468,15 @@ def _run_manifest(
             "matched_representation_mlp": frozen.get("matched_mlp_parameters"),
         },
         "confirmation_start_sha256": _sha256(output / "confirmation" / "STARTED"),
+        "confirmation_started_at": marker["started_at"],
+        "execution_provenance_sha256": _sha256(output / "execution_provenance.json"),
+        "execution_provenance": provenance,
+        "stage_timings": _stage_timings(invocations),
+        "failures": _execution_failures(invocations),
         "source_artifact_sha256": {
             name: _sha256(path) for name, path in sorted(source_paths.items())
         },
         "persisted_stage_counts": _stage_counts(output),
-        "report_runtime_metadata": collect_runtime_metadata("cpu"),
-        "provenance_limitations": [
-            "Stage execution wall times and resolved training devices are not yet persisted by the Phase-0.5 stage store; reporting does not infer them from file mtimes.",
-            "report_runtime_metadata describes the report-generation process, not the scientific training execution environment.",
-        ],
     }
 
 
