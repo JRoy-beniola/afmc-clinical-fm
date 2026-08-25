@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import asdict
@@ -6,18 +7,25 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from afmc_fm.config import load_yaml
 from afmc_fm.execution import manifest as _execution_manifest
 from afmc_fm.execution.device import runtime_diagnostics
+from afmc_fm.execution.persistence import canonical_config_hash
 from afmc_fm.execution.scheduler import ExecutionOptions, run_scheduled_benchmark
 from afmc_fm.experiments.runner import ExperimentConfig
+from afmc_fm.phase05.config import load_phase05_config
+from afmc_fm.phase05.protocol import build_protocol_lock
+from afmc_fm.phase05.store import Phase05Store
 from afmc_fm.schema.events import events_to_frame
 from afmc_fm.simulator.cohort import SimulatedCohort, simulate_cohort
 from afmc_fm.simulator.config import SimulatorConfig
 
 _phase0_gate_summary = _execution_manifest._phase0_gate_summary
 _plot_learning_curves = _execution_manifest._plot_learning_curves
+_PHASE05_SPEC_COMMIT = "67c6662c64e69606bcbd3eca2bc8139548013051"
+_PHASE0_EXECUTION_SHA = "d6f105eee73fcb8e9cc5987d292b1bb98a687382"
 
 
 def _simulator_from_yaml(path: str | Path) -> tuple[SimulatorConfig, int]:
@@ -100,6 +108,40 @@ def _benchmark(args: argparse.Namespace) -> int:
     return 0
 
 
+def _canonical_json_bytes(payload: object) -> bytes:
+    return (
+        json.dumps(
+            payload,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _phase05_calibrate(args: argparse.Namespace) -> int:
+    metrics_path = Path(args.phase0_metrics)
+    metrics_bytes = metrics_path.read_bytes()
+    metrics = pd.read_csv(metrics_path)
+    config = load_phase05_config(args.exp_config)
+    lock = build_protocol_lock(
+        config,
+        metrics,
+        phase0_metrics_sha256=hashlib.sha256(metrics_bytes).hexdigest(),
+        spec_commit=_PHASE05_SPEC_COMMIT,
+        phase0_execution_sha=_PHASE0_EXECUTION_SHA,
+    )
+    protocol_hash = hashlib.sha256(_canonical_json_bytes(lock)).hexdigest()
+    store = Phase05Store(
+        Path(args.output),
+        protocol_hash,
+        config_hash=canonical_config_hash(config),
+    )
+    store.write_protocol_lock(lock)
+    return 0
+
+
 def _add_execution_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--workers", type=_positive_int, default=1)
@@ -135,6 +177,7 @@ def _parser() -> argparse.ArgumentParser:
     calibrate.add_argument("--phase0-metrics", required=True)
     calibrate.add_argument("--exp-config", required=True)
     calibrate.add_argument("--output", required=True)
+    calibrate.set_defaults(handler=_phase05_calibrate)
 
     for name in ("develop", "confirm", "robustness"):
         stage = phase05_subparsers.add_parser(name)
