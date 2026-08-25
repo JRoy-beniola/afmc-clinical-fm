@@ -719,6 +719,17 @@ def _phase05_freeze(args: argparse.Namespace) -> int:
     return 0
 
 
+def _phase05_confirm(args: argparse.Namespace) -> int:
+    config = load_phase05_config(args.exp_config)
+    output = Path(args.output)
+    _phase05_locked_store(output, config)
+    frozen_path = output / "frozen_candidate.json"
+    if not frozen_path.is_file():
+        raise RuntimeError("frozen_candidate.json is required before Phase-0.5 confirmation")
+    freeze_candidate(output, config)
+    return 0
+
+
 def _add_execution_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--workers", type=_positive_int, default=1)
@@ -764,6 +775,8 @@ def _parser() -> argparse.ArgumentParser:
         _add_execution_options(stage)
         if name == "develop":
             stage.set_defaults(handler=_phase05_develop)
+        elif name == "confirm":
+            stage.set_defaults(handler=_phase05_confirm)
 
     freeze = phase05_subparsers.add_parser("freeze")
     freeze.add_argument("--exp-config", required=True)
