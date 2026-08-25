@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -26,11 +27,11 @@ THREAD_ENVIRONMENT_VARIABLES = (
 )
 _CONFIRMATORY_STAGES = frozenset({"confirmation", "robustness"})
 _DEVELOPMENT_STAGES = frozenset({"flow", "jump", "uncertainty", "timing_audit"})
-_STAGE_PREDECESSOR = {
-    "jump": "flow",
-    "uncertainty": "jump",
-    "timing_audit": "uncertainty",
-    "robustness": "confirmation",
+_DEVELOPMENT_FINAL_ARTIFACTS = {
+    "flow": "flow_gate.csv",
+    "jump": "jump_gate.csv",
+    "uncertainty": "uncertainty_gate.csv",
+    "timing_audit": "representation_timing_audit.csv",
 }
 
 
@@ -222,16 +223,55 @@ def _validate_job_scope(jobs: tuple[Phase05Job, ...], config: Phase05Config) -> 
     return stage
 
 
-def _require_stage_unlocked(store: Phase05Store, stage: str) -> None:
-    predecessor = _STAGE_PREDECESSOR.get(stage)
-    if predecessor is None:
+def _development_artifact_path(store: Phase05Store, filename: str) -> Path:
+    return store.output / "development" / filename
+
+
+def _gate_passed(path: Path, gate_name: str) -> bool:
+    try:
+        frame = pd.read_csv(path)
+    except Exception as error:  # noqa: BLE001 - persisted artifact boundary
+        raise RuntimeError(f"{gate_name} gate artifact is unreadable") from error
+    if frame.empty or "passed" not in frame.columns:
+        raise RuntimeError(f"{gate_name} gate artifact is invalid")
+    normalized = {str(value).strip().lower() for value in frame["passed"].dropna()}
+    if not normalized or not normalized.issubset({"true", "false", "1", "0"}):
+        raise RuntimeError(f"{gate_name} gate artifact is invalid")
+    return bool(normalized & {"true", "1"})
+
+
+def _require_development_stage_open(store: Phase05Store, stage: str) -> None:
+    artifact = _DEVELOPMENT_FINAL_ARTIFACTS.get(stage)
+    if artifact is None:
         return
-    marker = store.output / "stages" / predecessor / "COMPLETE"
-    if marker.is_file():
+    if _development_artifact_path(store, artifact).exists():
+        raise RuntimeError(f"{stage} stage is already finalized")
+
+
+def _require_stage_unlocked(store: Phase05Store, stage: str) -> None:
+    if stage == "jump":
+        path = _development_artifact_path(store, "flow_gate.csv")
+        if not path.is_file():
+            raise RuntimeError("flow stage must be complete before jump")
+        if not _gate_passed(path, "flow"):
+            raise RuntimeError("flow gate must pass before jump")
+        return
+    if stage == "uncertainty":
+        path = _development_artifact_path(store, "jump_gate.csv")
+        if not path.is_file():
+            raise RuntimeError("jump stage must be complete before uncertainty")
+        if not _gate_passed(path, "jump"):
+            raise RuntimeError("jump gate must pass before uncertainty")
+        return
+    if stage == "timing_audit":
+        path = _development_artifact_path(store, "uncertainty_gate.csv")
+        if not path.is_file():
+            raise RuntimeError("uncertainty stage must be complete before timing_audit")
         return
     if stage == "robustness":
-        raise RuntimeError("confirmation stage must be complete before robustness")
-    raise RuntimeError(f"{predecessor} stage must be complete before {stage}")
+        marker = store.output / "stages" / "confirmation" / "COMPLETE"
+        if not marker.is_file():
+            raise RuntimeError("confirmation stage must be complete before robustness")
 
 
 def _persist_result(store: Phase05Store, job: Phase05Job, frame: pd.DataFrame) -> None:
@@ -418,6 +458,7 @@ def run_phase05_jobs(
 ) -> pd.DataFrame:
     planned = tuple(jobs)
     stage = _validate_job_scope(planned, config)
+    _require_development_stage_open(store, stage)
     _require_stage_unlocked(store, stage)
 
     device = resolve_phase05_device(options.device)
@@ -471,7 +512,11 @@ def run_phase05_jobs(
         expected_seed_bundles=expected_seed_bundles,
         frozen_candidate_hash=candidate_hash,
     )
-    if not failures and persisted == expected_cell_ids:
+    if (
+        stage in _CONFIRMATORY_STAGES
+        and not failures
+        and persisted == expected_cell_ids
+    ):
         store.mark_stage_complete(stage, expected_cell_ids)
 
     available_jobs = [job for job in planned if job.cell_id in persisted]
