@@ -15,7 +15,8 @@ from afmc_fm.execution.device import runtime_diagnostics
 from afmc_fm.execution.persistence import canonical_config_hash
 from afmc_fm.execution.scheduler import ExecutionOptions, run_scheduled_benchmark
 from afmc_fm.experiments.runner import ExperimentConfig
-from afmc_fm.phase05.config import load_phase05_config
+from afmc_fm.phase05.config import Phase05Config, load_phase05_config
+from afmc_fm.phase05.execution import Phase05Job, plan_phase05_shards
 from afmc_fm.phase05.protocol import build_protocol_lock, freeze_candidate
 from afmc_fm.phase05.store import Phase05Store
 from afmc_fm.schema.events import events_to_frame
@@ -140,6 +141,57 @@ def _phase05_calibrate(args: argparse.Namespace) -> int:
     )
     store.write_protocol_lock(lock)
     return 0
+
+
+def _phase05_development_jobs(
+    config: Phase05Config,
+    stage: str,
+    *,
+    selected_flow: str | None = None,
+    selected_jump: str | None = None,
+) -> tuple[Phase05Job, ...]:
+    if stage == "flow":
+        variants = (
+            "none__none__deterministic",
+            "gated__none__deterministic",
+            "time_scaled__none__deterministic",
+        )
+    elif stage == "jump":
+        if selected_flow is None:
+            raise RuntimeError("jump planning requires a selected flow")
+        variants = tuple(
+            f"{selected_flow}__{jump}__deterministic"
+            for jump in ("none", "gru", "residual")
+        )
+    elif stage == "uncertainty":
+        if selected_flow is None or selected_jump is None:
+            raise RuntimeError("uncertainty planning requires selected flow and jump")
+        variants = tuple(
+            f"{selected_flow}__{selected_jump}__{uncertainty}"
+            for uncertainty in ("joint", "decoupled", "deterministic")
+        )
+    elif stage == "timing_audit":
+        if selected_flow is None or selected_jump is None:
+            raise RuntimeError("timing audit planning requires selected flow and jump")
+        base = f"{selected_flow}__{selected_jump}__deterministic"
+        variants = (
+            f"{base}__strict_history",
+            f"{base}__inclusive_history",
+        )
+    else:
+        raise ValueError(f"unknown Phase-0.5 development stage: {stage}")
+
+    return tuple(
+        Phase05Job(
+            shard=shard,
+            n_train=n_train,
+            model="phase05_flow_jump",
+            variant=variant,
+        )
+        for shard in plan_phase05_shards(config, stage)
+        for n_train in config.primary_train_sizes
+        for variant in variants
+    )
 
 
 def _phase05_freeze(args: argparse.Namespace) -> int:
