@@ -1,6 +1,6 @@
 import pytest
 
-import afmc_fm.cli as cli
+from afmc_fm import cli
 from afmc_fm.phase05.config import load_phase05_config
 
 
