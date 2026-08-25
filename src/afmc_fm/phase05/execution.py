@@ -4,11 +4,14 @@ import hashlib
 import json
 import multiprocessing
 import os
+import re
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 import pandas as pd
@@ -16,8 +19,10 @@ import torch
 from threadpoolctl import threadpool_limits
 
 from afmc_fm.execution.device import resolve_device
+from afmc_fm.execution.manifest import collect_runtime_metadata, execution_commit_sha
 from afmc_fm.execution.persistence import canonical_config_hash
 from afmc_fm.phase05.config import Phase05Config, SeedBundle
+from afmc_fm.phase05.provenance import failure_payload, record_execution_invocation
 from afmc_fm.phase05.store import Phase05CellResult, Phase05Store
 
 THREAD_ENVIRONMENT_VARIABLES = (
@@ -34,6 +39,7 @@ _DEVELOPMENT_FINAL_ARTIFACTS = {
     "uncertainty": "uncertainty_gate.csv",
     "timing_audit": "representation_timing_audit.csv",
 }
+_SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,12 +86,20 @@ class Phase05ExecutionOptions:
     workers: int = 1
     resume: bool = False
     fail_fast: bool = False
+    simulator_config_hash: str | None = None
 
     def __post_init__(self) -> None:
         if self.workers < 1:
             raise ValueError("workers must be at least 1")
         if self.device not in {"auto", "cpu", "cuda"}:
             raise ValueError("device must be auto, cpu, or cuda")
+        if (
+            self.simulator_config_hash is not None
+            and _SHA256_RE.fullmatch(self.simulator_config_hash) is None
+        ):
+            raise ValueError(
+                "simulator_config_hash must be a 64-character hexadecimal SHA-256"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -475,6 +489,59 @@ def _run_parallel_shards(
     return failures
 
 
+def _persisted_expected_count(
+    store: Phase05Store,
+    stage: str,
+    expected_cell_ids: frozenset[str],
+) -> int:
+    cells = store.output / "stages" / stage / "cells"
+    return sum((cells / f"{cell_id}.json").is_file() for cell_id in expected_cell_ids)
+
+
+def _record_execution(
+    store: Phase05Store,
+    *,
+    stage: str,
+    options: Phase05ExecutionOptions,
+    device: torch.device,
+    expected_cell_ids: frozenset[str],
+    shard_count: int,
+    completed_before: int,
+    completed_after: int,
+    failures: Sequence[BaseException],
+    started_at: datetime,
+    started_clock: float,
+    runtime_metadata: dict[str, object],
+) -> None:
+    ended_at = datetime.now(UTC)
+    record_execution_invocation(
+        store,
+        implementation_sha=execution_commit_sha(),
+        simulator_config_sha256=(
+            options.simulator_config_hash.lower()
+            if options.simulator_config_hash is not None
+            else None
+        ),
+        invocation={
+            "stage": stage,
+            "started_at": started_at.isoformat(),
+            "ended_at": ended_at.isoformat(),
+            "wall_time_seconds": max(0.0, perf_counter() - started_clock),
+            "requested_device": options.device,
+            "resolved_device": device.type,
+            "workers": options.workers,
+            "resume": options.resume,
+            "fail_fast": options.fail_fast,
+            "expected_cell_count": len(expected_cell_ids),
+            "completed_before": completed_before,
+            "completed_after": completed_after,
+            "shard_count": shard_count,
+            "failures": [failure_payload(error) for error in failures],
+            "runtime_metadata": runtime_metadata,
+        },
+    )
+
+
 def run_phase05_jobs(
     jobs: Sequence[Phase05Job],
     *,
@@ -512,33 +579,71 @@ def run_phase05_jobs(
         by_shard.setdefault(job.shard.shard_id, []).append(job)
         shard_specs[job.shard.shard_id] = job.shard
 
-    if options.workers == 1:
-        _run_single_worker_shards(
-            by_shard,
-            shard_specs,
-            store=store,
-            completed=completed,
-            device=device,
-            prepare_shard=prepare_shard,
-            run_job=run_job,
-            fail_fast=options.fail_fast,
-        )
-    else:
-        _run_parallel_shards(
-            by_shard,
-            shard_specs,
-            store=store,
-            completed=completed,
+    started_at = datetime.now(UTC)
+    started_clock = perf_counter()
+    runtime_metadata = collect_runtime_metadata(device.type)
+    failures: list[BaseException] = []
+    try:
+        if options.workers == 1:
+            failures = _run_single_worker_shards(
+                by_shard,
+                shard_specs,
+                store=store,
+                completed=completed,
+                device=device,
+                prepare_shard=prepare_shard,
+                run_job=run_job,
+                fail_fast=options.fail_fast,
+            )
+        else:
+            failures = _run_parallel_shards(
+                by_shard,
+                shard_specs,
+                store=store,
+                completed=completed,
+                options=options,
+                prepare_shard=prepare_shard,
+                run_job=run_job,
+            )
+    except Exception as error:
+        failures.append(error)
+        _record_execution(
+            store,
+            stage=stage,
             options=options,
-            prepare_shard=prepare_shard,
-            run_job=run_job,
+            device=device,
+            expected_cell_ids=expected_cell_ids,
+            shard_count=len(by_shard),
+            completed_before=len(completed),
+            completed_after=_persisted_expected_count(
+                store, stage, expected_cell_ids
+            ),
+            failures=failures,
+            started_at=started_at,
+            started_clock=started_clock,
+            runtime_metadata=runtime_metadata,
         )
+        raise
 
     persisted = store.validate_resume(
         stage,
         expected_cell_ids=expected_cell_ids,
         expected_seed_bundles=expected_seed_bundles,
         frozen_candidate_hash=candidate_hash,
+    )
+    _record_execution(
+        store,
+        stage=stage,
+        options=options,
+        device=device,
+        expected_cell_ids=expected_cell_ids,
+        shard_count=len(by_shard),
+        completed_before=len(completed),
+        completed_after=len(persisted),
+        failures=failures,
+        started_at=started_at,
+        started_clock=started_clock,
+        runtime_metadata=runtime_metadata,
     )
     available_jobs = [job for job in planned if job.cell_id in persisted]
     frames = [_load_persisted_frame(store, job) for job in available_jobs]
