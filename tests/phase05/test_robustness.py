@@ -6,6 +6,7 @@ import torch
 from afmc_fm.experiments.runner import build_complete_truth_targets
 from afmc_fm.phase05.robustness import (
     complete_truth_phase05_batch,
+    evaluate_misspecification,
     evaluate_site_shift,
 )
 from afmc_fm.phase05.runner import prepare_phase05_cohort
@@ -17,6 +18,7 @@ MODELS = (
     "matched_gru",
     "matched_representation_mlp",
 )
+PRIMARY_SIZES = (5, 10, 20, 40)
 
 
 def test_complete_truth_batch_uses_latent_emissions_not_observed_next_lab_masks():
@@ -112,3 +114,50 @@ def test_site_shift_reports_raw_absolute_relative_and_calibration_degradation():
     }
     assert gate["wins"].tolist() == [10, 10]
     assert gate["passed"].all()
+
+
+def _misspecified_metrics(candidate_multiplier: float) -> pd.DataFrame:
+    rows = []
+    for index in range(10):
+        bundle = (701 + index, 801 + index, 901 + index)
+        seed_scale = 1.0 + 0.01 * index
+        multipliers = {
+            "phase05_candidate": candidate_multiplier,
+            "matched_gru": 1.0,
+            "matched_representation_mlp": 1.08,
+        }
+        for n_train in PRIMARY_SIZES:
+            n_scale = 1.0 - 0.04 * np.log2(n_train / 5)
+            for model in MODELS:
+                rows.append(
+                    {
+                        "world": "misspecified",
+                        "cohort_seed": bundle[0],
+                        "subset_seed": bundle[1],
+                        "model_seed": bundle[2],
+                        "n_train": n_train,
+                        "model": model,
+                        "split": "test",
+                        "site_or_shift": "all",
+                        "metric": "mae",
+                        "value": seed_scale * n_scale * multipliers[model],
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def test_misspecification_uses_per_seed_best_control_and_five_percent_tolerance():
+    passing = evaluate_misspecification(_misspecified_metrics(1.03), tolerance=0.05)
+    per_seed = passing["per_seed"]
+    summary = passing["summary"]
+
+    assert len(per_seed) == 10
+    assert set(per_seed["best_control_model"]) == {"matched_gru"}
+    assert per_seed["relative_excess"].tolist() == pytest.approx([0.03] * 10)
+    assert summary["mean_relative_excess"] == pytest.approx(0.03)
+    assert summary["tolerance"] == pytest.approx(0.05)
+    assert summary["passed"] is True
+
+    failing = evaluate_misspecification(_misspecified_metrics(1.06), tolerance=0.05)
+    assert failing["summary"]["mean_relative_excess"] == pytest.approx(0.06)
+    assert failing["summary"]["passed"] is False
