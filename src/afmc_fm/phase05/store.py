@@ -6,6 +6,7 @@ import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -143,17 +144,16 @@ class Phase05Store:
             raise RuntimeError("frozen_candidate.json is required before confirmation")
         self._validate_protocol_identity()
         candidate_hash = hashlib.sha256(candidate_path.read_bytes()).hexdigest()
+        path = self._confirmation_marker_path()
+        if path.exists():
+            self._validate_confirmation_marker(candidate_hash)
+            return candidate_hash
         payload = {
             "identity": self.identity,
             "frozen_candidate_sha256": candidate_hash,
+            "started_at": datetime.now(UTC).isoformat(),
         }
-        path = self._confirmation_marker_path()
-        data = _canonical_json_bytes(payload)
-        if path.exists():
-            if path.read_bytes() == data:
-                return candidate_hash
-            raise ValueError("confirmation start marker does not match protocol identity")
-        _atomic_write_bytes(path, data)
+        _atomic_write_bytes(path, _canonical_json_bytes(payload))
         return candidate_hash
 
     def write_cell(self, result: Phase05CellResult) -> str:
@@ -388,12 +388,23 @@ class Phase05Store:
         path = self._confirmation_marker_path()
         if not path.is_file():
             return
-        expected = {
-            "identity": self.identity,
-            "frozen_candidate_sha256": candidate_hash,
-        }
-        if _load_json_object(path) != expected:
+        payload = _load_json_object(path)
+        if set(payload) != {"identity", "frozen_candidate_sha256", "started_at"}:
             raise ValueError("confirmation marker protocol identity mismatch")
+        if payload.get("identity") != self.identity:
+            raise ValueError("confirmation marker protocol identity mismatch")
+        if payload.get("frozen_candidate_sha256") != candidate_hash:
+            raise ValueError("confirmation marker protocol identity mismatch")
+        started_at = payload.get("started_at")
+        if not isinstance(started_at, str):
+            raise ValueError("confirmation marker start timestamp is invalid")
+        try:
+            parsed = datetime.fromisoformat(started_at)
+        except ValueError as error:
+            raise ValueError("confirmation marker start timestamp is invalid") from error
+        offset = parsed.utcoffset()
+        if parsed.tzinfo is None or offset is None or offset.total_seconds() != 0:
+            raise ValueError("confirmation marker start timestamp must be UTC")
 
     def _current_frozen_candidate_hash(self) -> str:
         path = self.output / "frozen_candidate.json"
