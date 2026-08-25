@@ -556,26 +556,35 @@ def _phase05_develop(args: argparse.Namespace) -> int:
         "jump",
         selected_flow=selected_flow,
     )
-    jump_metrics = _run_development_stage(
-        jump_jobs,
-        store=store,
-        config=config,
-        options=options,
-        simulator_config=simulator_config,
-    )
-    jump = select_jump(
-        jump_metrics,
-        selected_flow=selected_flow,
-        flow_passed=True,
-        locked_min_relative_effect=float(lock["locked_min_relative_effect"]),
-    )
-    jump_gate = jump["gate_table"]
-    if not isinstance(jump_gate, pd.DataFrame):
-        raise TypeError("jump selection did not produce a gate table")
-    store.replace_development_artifact("jump_gate.csv", _frame_csv_bytes(jump_gate))
-    if not bool(jump["passed"]):
-        raise RuntimeError("jump development gate failed; development stopped")
-    selected_jump = str(jump["selected"])
+    selected_jump = None
+    if args.resume:
+        selected_jump = _resume_selected_development_gate(
+            store,
+            jump_jobs,
+            artifact_name="jump_gate.csv",
+            allowed_candidates=frozenset({"gru", "residual"}),
+        )
+    if selected_jump is None:
+        jump_metrics = _run_development_stage(
+            jump_jobs,
+            store=store,
+            config=config,
+            options=options,
+            simulator_config=simulator_config,
+        )
+        jump = select_jump(
+            jump_metrics,
+            selected_flow=selected_flow,
+            flow_passed=True,
+            locked_min_relative_effect=float(lock["locked_min_relative_effect"]),
+        )
+        jump_gate = jump["gate_table"]
+        if not isinstance(jump_gate, pd.DataFrame):
+            raise TypeError("jump selection did not produce a gate table")
+        store.replace_development_artifact("jump_gate.csv", _frame_csv_bytes(jump_gate))
+        if not bool(jump["passed"]):
+            raise RuntimeError("jump development gate failed; development stopped")
+        selected_jump = str(jump["selected"])
 
     uncertainty_jobs = _phase05_development_jobs(
         config,
