@@ -453,6 +453,63 @@ def _timing_audit_table(
     return pd.DataFrame(rows)
 
 
+def _resume_selected_development_gate(
+    store: Phase05Store,
+    jobs: tuple[Phase05Job, ...],
+    *,
+    artifact_name: str,
+    allowed_candidates: frozenset[str],
+) -> str | None:
+    stage = jobs[0].shard.stage
+    marker = store.output / "stages" / stage / "COMPLETE"
+    artifact = store.output / "development" / artifact_name
+    marker_exists = marker.is_file()
+    artifact_exists = artifact.is_file()
+    if not marker_exists and not artifact_exists:
+        return None
+    if marker_exists != artifact_exists:
+        raise RuntimeError(f"{stage} resume state is incomplete")
+
+    expected_cell_ids = frozenset(job.cell_id for job in jobs)
+    expected_seed_bundles = frozenset(
+        job.shard.seed_bundle.as_tuple() for job in jobs
+    )
+    observed = store.validate_resume(
+        stage,
+        expected_cell_ids=expected_cell_ids,
+        expected_seed_bundles=expected_seed_bundles,
+    )
+    if observed != expected_cell_ids:
+        raise RuntimeError(f"{stage} resume state does not contain the exact finalized cell set")
+
+    try:
+        gate = pd.read_csv(artifact)
+    except Exception as error:
+        raise RuntimeError(f"{stage} finalized gate artifact is unreadable") from error
+    required = {"candidate", "passed", "selected"}
+    if gate.empty or not required.issubset(gate.columns):
+        raise RuntimeError(f"{stage} finalized gate artifact is invalid")
+    for column in ("passed", "selected"):
+        normalized = {
+            str(value).strip().lower() for value in gate[column].dropna()
+        }
+        if not normalized or not normalized.issubset({"true", "false", "1", "0"}):
+            raise RuntimeError(f"{stage} finalized gate artifact is invalid")
+
+    selected = gate.loc[
+        gate["selected"].astype(str).str.strip().str.lower().isin({"true", "1"})
+    ]
+    if len(selected) != 1:
+        raise RuntimeError(f"{stage} finalized gate must contain exactly one selection")
+    row = selected.iloc[0]
+    if str(row["passed"]).strip().lower() not in {"true", "1"}:
+        raise RuntimeError(f"{stage} finalized selection did not pass its gate")
+    candidate = str(row["candidate"])
+    if candidate not in allowed_candidates:
+        raise RuntimeError(f"{stage} finalized gate selected an unknown candidate")
+    return candidate
+
+
 def _phase05_develop(args: argparse.Namespace) -> int:
     config = load_phase05_config(args.exp_config)
     simulator_config, _ = _simulator_from_yaml(args.sim_config)
@@ -466,24 +523,33 @@ def _phase05_develop(args: argparse.Namespace) -> int:
     )
 
     flow_jobs = _phase05_development_jobs(config, "flow")
-    flow_metrics = _run_development_stage(
-        flow_jobs,
-        store=store,
-        config=config,
-        options=options,
-        simulator_config=simulator_config,
-    )
-    flow = select_flow(
-        flow_metrics,
-        locked_min_relative_effect=float(lock["locked_min_relative_effect"]),
-    )
-    flow_gate = flow["gate_table"]
-    if not isinstance(flow_gate, pd.DataFrame):
-        raise TypeError("flow selection did not produce a gate table")
-    store.replace_development_artifact("flow_gate.csv", _frame_csv_bytes(flow_gate))
-    if not bool(flow["passed"]):
-        raise RuntimeError("flow development gate failed; development stopped")
-    selected_flow = str(flow["selected"])
+    selected_flow = None
+    if args.resume:
+        selected_flow = _resume_selected_development_gate(
+            store,
+            flow_jobs,
+            artifact_name="flow_gate.csv",
+            allowed_candidates=frozenset({"gated", "time_scaled"}),
+        )
+    if selected_flow is None:
+        flow_metrics = _run_development_stage(
+            flow_jobs,
+            store=store,
+            config=config,
+            options=options,
+            simulator_config=simulator_config,
+        )
+        flow = select_flow(
+            flow_metrics,
+            locked_min_relative_effect=float(lock["locked_min_relative_effect"]),
+        )
+        flow_gate = flow["gate_table"]
+        if not isinstance(flow_gate, pd.DataFrame):
+            raise TypeError("flow selection did not produce a gate table")
+        store.replace_development_artifact("flow_gate.csv", _frame_csv_bytes(flow_gate))
+        if not bool(flow["passed"]):
+            raise RuntimeError("flow development gate failed; development stopped")
+        selected_flow = str(flow["selected"])
 
     jump_jobs = _phase05_development_jobs(
         config,
