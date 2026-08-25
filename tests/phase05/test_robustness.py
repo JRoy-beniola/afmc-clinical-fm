@@ -1,15 +1,27 @@
+import hashlib
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
 import torch
 
+from afmc_fm.execution.persistence import canonical_config_hash
 from afmc_fm.experiments.runner import build_complete_truth_targets
+from afmc_fm.phase05.config import Phase05Config, SeedBundle
+from afmc_fm.phase05.execution import (
+    Phase05ExecutionOptions,
+    Phase05Job,
+    Phase05ShardSpec,
+    run_phase05_jobs,
+)
 from afmc_fm.phase05.robustness import (
     complete_truth_phase05_batch,
     evaluate_misspecification,
     evaluate_site_shift,
 )
 from afmc_fm.phase05.runner import prepare_phase05_cohort
+from afmc_fm.phase05.store import Phase05CellResult, Phase05Store
 from afmc_fm.simulator.cohort import simulate_world
 from afmc_fm.simulator.config import SimulatorConfig
 
@@ -161,3 +173,97 @@ def test_misspecification_uses_per_seed_best_control_and_five_percent_tolerance(
     failing = evaluate_misspecification(_misspecified_metrics(1.06), tolerance=0.05)
     assert failing["summary"]["mean_relative_excess"] == pytest.approx(0.06)
     assert failing["summary"]["passed"] is False
+
+
+def _canonical_json_bytes(payload: object) -> bytes:
+    return (
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+
+
+def _robustness_store(tmp_path):
+    config = Phase05Config(max_epochs=1, patience=1)
+    config_hash = canonical_config_hash(config)
+    lock = {
+        "schema_version": 1,
+        "phase05_config_sha256": config_hash,
+    }
+    protocol_hash = hashlib.sha256(_canonical_json_bytes(lock)).hexdigest()
+    store = Phase05Store(
+        tmp_path / "phase05",
+        protocol_hash,
+        spec_hash="1" * 64,
+        config_hash=config_hash,
+    )
+    store.write_protocol_lock(lock)
+    candidate_hash = store.write_frozen_candidate(
+        {
+            "flow_mode": "time_scaled",
+            "jump_mode": "residual",
+            "uncertainty_mode": "deterministic",
+        }
+    )
+    store.mark_confirmation_started()
+    confirmation_result = Phase05CellResult(
+        stage="confirmation",
+        world="smooth",
+        cohort_seed=701,
+        subset_seed=801,
+        model_seed=901,
+        n_train=5,
+        model="phase05_candidate",
+        variant="time_scaled__residual__deterministic",
+        metrics=pd.DataFrame([{"metric": "mae", "value": 1.0}]),
+        frozen_candidate_hash=candidate_hash,
+    )
+    store.write_cell(confirmation_result)
+    store.mark_stage_complete("confirmation", {confirmation_result.cell_id})
+    return store, config, candidate_hash
+
+
+def test_robustness_requires_finalized_primary_gate_and_does_not_mutate_it(tmp_path):
+    store, config, candidate_hash = _robustness_store(tmp_path)
+    job = Phase05Job(
+        shard=Phase05ShardSpec(
+            "robustness", "site_shift", SeedBundle(701, 801, 901)
+        ),
+        n_train=5,
+        model="phase05_candidate",
+        variant="time_scaled__residual__deterministic",
+        frozen_candidate_hash=candidate_hash,
+    )
+    options = Phase05ExecutionOptions(device="cpu", workers=1)
+
+    with pytest.raises(
+        RuntimeError,
+        match="primary confirmatory gate must be finalized before robustness",
+    ):
+        run_phase05_jobs(
+            (job,),
+            store=store,
+            config=config,
+            options=options,
+            prepare_shard=lambda spec: object(),
+            run_job=lambda job, prepared, device: pd.DataFrame(
+                [{"metric": "mae", "value": 1.0}]
+            ),
+        )
+
+    gate_path = store.output / "confirmation" / "primary_gate_summary.csv"
+    gate_path.parent.mkdir(parents=True, exist_ok=True)
+    gate_path.write_bytes(b"world,headline_passed\nsmooth,false\n")
+    before = gate_path.read_bytes()
+
+    result = run_phase05_jobs(
+        (job,),
+        store=store,
+        config=config,
+        options=options,
+        prepare_shard=lambda spec: object(),
+        run_job=lambda job, prepared, device: pd.DataFrame(
+            [{"metric": "mae", "value": 1.0}]
+        ),
+    )
+
+    assert not result.empty
+    assert gate_path.read_bytes() == before
