@@ -2,12 +2,14 @@ import hashlib
 import json
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from afmc_fm import cli
 from afmc_fm.execution.persistence import canonical_config_hash
 from afmc_fm.phase05.config import load_phase05_config
 from afmc_fm.phase05.protocol import freeze_candidate
+from afmc_fm.phase05.store import Phase05CellResult
 
 
 def _locked_output(tmp_path: Path) -> Path:
@@ -74,6 +76,40 @@ def _confirm_argv(output: Path) -> list[str]:
     ]
 
 
+def _synthetic_confirmation_metric(job) -> pd.DataFrame:
+    bundle = job.shard.seed_bundle
+    train_rank = {5: 0, 10: 1, 20: 2, 40: 3, 80: 4, 100: 5}[job.n_train]
+    model_offset = {
+        "phase05_candidate": -0.12,
+        "matched_gru": 0.02,
+        "matched_representation_mlp": 0.04,
+        "representation_linear": 0.08,
+        "representation_mlp_original": 0.07,
+        "gru_original": 0.06,
+        "phase0_flow_jump_reference": 0.05,
+    }[job.model]
+    bundle_index = bundle.cohort_seed - 700
+    value = 1.2 - 0.05 * train_rank + model_offset + 0.001 * bundle_index
+    return pd.DataFrame(
+        [
+            {
+                "stage": "confirmation",
+                "world": job.shard.world,
+                "cohort_seed": bundle.cohort_seed,
+                "subset_seed": bundle.subset_seed,
+                "model_seed": bundle.model_seed,
+                "n_train": job.n_train,
+                "model": job.model,
+                "variant": job.variant,
+                "split": "test",
+                "site_or_shift": "all",
+                "metric": "mae",
+                "value": value,
+            }
+        ]
+    )
+
+
 def test_phase05_confirm_requires_frozen_candidate_before_start(tmp_path: Path):
     output = _locked_output(tmp_path)
 
@@ -115,3 +151,87 @@ def test_phase05_confirm_binds_frozen_candidate_before_any_fit(
 
     with pytest.raises(RuntimeError, match="injected stop before confirmation fit"):
         cli.main(_confirm_argv(output))
+
+
+def test_phase05_confirm_finalizes_exact_cells_and_persists_outputs(
+    tmp_path: Path,
+    monkeypatch,
+):
+    output = _locked_output(tmp_path)
+    frozen = _freeze(output)
+    config = load_phase05_config("configs/experiments/phase05.yaml")
+
+    def persist_synthetic_results(jobs, *, store, **_kwargs):
+        frames = []
+        for job in tuple(jobs):
+            frame = _synthetic_confirmation_metric(job)
+            bundle = job.shard.seed_bundle
+            store.write_cell(
+                Phase05CellResult(
+                    stage="confirmation",
+                    world=job.shard.world,
+                    cohort_seed=bundle.cohort_seed,
+                    subset_seed=bundle.subset_seed,
+                    model_seed=bundle.model_seed,
+                    n_train=job.n_train,
+                    model=job.model,
+                    variant=job.variant,
+                    metrics=frame,
+                    frozen_candidate_hash=job.frozen_candidate_hash,
+                )
+            )
+            frames.append(frame)
+        return pd.concat(frames, ignore_index=True)
+
+    monkeypatch.setattr(cli, "run_phase05_jobs", persist_synthetic_results)
+
+    assert cli.main(_confirm_argv(output)) == 0
+
+    assert (output / "stages" / "confirmation" / "COMPLETE").is_file()
+    confirmation = output / "confirmation"
+    expected_files = {
+        "metrics.csv",
+        "learning_curves.csv",
+        "paired_naulc_effects.csv",
+        "primary_gate_summary.csv",
+        "bootstrap_intervals.csv",
+        "sign_tests.csv",
+        "capacity_audit.csv",
+    }
+    assert expected_files.issubset({path.name for path in confirmation.iterdir()})
+
+    metrics = pd.read_csv(confirmation / "metrics.csv")
+    assert len(metrics) == 1260
+    assert set(metrics["model"]) == {
+        "phase05_candidate",
+        "matched_gru",
+        "matched_representation_mlp",
+        "representation_linear",
+        "representation_mlp_original",
+        "gru_original",
+        "phase0_flow_jump_reference",
+    }
+
+    curves = pd.read_csv(confirmation / "learning_curves.csv")
+    assert len(curves) == 3 * 6 * 7
+    assert {
+        "world",
+        "n_train",
+        "model",
+        "variant",
+        "mean_mae",
+        "sd_mae",
+        "n_bundles",
+    }.issubset(curves.columns)
+    assert set(curves["n_bundles"]) == {10}
+
+    capacity = pd.read_csv(confirmation / "capacity_audit.csv")
+    assert set(capacity["control"]) == {
+        "matched_gru",
+        "matched_representation_mlp",
+    }
+    assert set(capacity["target_parameters"]) == {frozen.trainable_parameters}
+
+    primary = pd.read_csv(confirmation / "primary_gate_summary.csv")
+    assert len(primary) == 6
+    assert set(primary["headline_passed"].astype(str).str.lower()) == {"true"}
