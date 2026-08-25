@@ -8,6 +8,7 @@ import pandas as pd
 
 from afmc_fm.phase05.config import Phase05Config, load_phase05_config
 from afmc_fm.phase05.confirmation import build_confirmation_jobs, run_confirmation_job
+from afmc_fm.phase05.confirmation_outputs import persist_confirmation_outputs
 from afmc_fm.phase05.execution import (
     Phase05ExecutionOptions,
     Phase05Job,
@@ -79,7 +80,7 @@ def run_phase05_confirmation_cli(
         resume=args.resume,
         fail_fast=args.fail_fast,
     )
-    run_jobs(
+    metrics = run_jobs(
         jobs,
         store=store,
         config=config,
@@ -94,4 +95,26 @@ def run_phase05_confirmation_cli(
             frozen=frozen,
         ),
     )
+
+    expected_cell_ids = frozenset(job.cell_id for job in jobs)
+    expected_seed_bundles = frozenset(
+        bundle.as_tuple() for bundle in config.confirmatory_bundles
+    )
+    observed = store.validate_resume(
+        "confirmation",
+        expected_cell_ids=expected_cell_ids,
+        expected_seed_bundles=expected_seed_bundles,
+        frozen_candidate_hash=frozen_candidate_hash,
+    )
+    if observed != expected_cell_ids:
+        raise RuntimeError("confirmation execution did not persist the exact planned cell set")
+
+    persist_confirmation_outputs(
+        output,
+        metrics,
+        config=config,
+        frozen=frozen,
+        jobs=jobs,
+    )
+    store.mark_stage_complete("confirmation", expected_cell_ids)
     return 0
