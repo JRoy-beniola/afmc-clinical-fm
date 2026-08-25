@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 
@@ -5,6 +6,11 @@ import pandas as pd
 import pytest
 
 from afmc_fm.cli import _experiment_from_yaml, _parser, main
+from afmc_fm.execution.persistence import canonical_config_hash
+from afmc_fm.phase05.config import load_phase05_config
+
+_PHASE05_SPEC_COMMIT = "67c6662c64e69606bcbd3eca2bc8139548013051"
+_PHASE0_EXECUTION_SHA = "d6f105eee73fcb8e9cc5987d292b1bb98a687382"
 
 
 def test_simulate_cli_writes_synthetic_outputs(tmp_path: Path):
@@ -271,3 +277,63 @@ def test_phase05_parser_exposes_locked_stage_specific_arguments():
             True,
             True,
         )
+
+
+def _phase05_calibration_metrics() -> pd.DataFrame:
+    rows = []
+    worlds = ("smooth", "jumps", "informative_observation")
+    train_sizes = (5, 10, 20, 40)
+    models = ("flow_jump", "representation_linear", "gru_from_scratch")
+    bundles = tuple((100 + index, 200 + index, 300 + index) for index in range(1, 6))
+    for world_index, world in enumerate(worlds):
+        for n_index, n_train in enumerate(train_sizes):
+            for model_index, model in enumerate(models):
+                base = 1.0 + 0.1 * world_index + 0.01 * n_index + 0.001 * model_index
+                for seed_index, bundle in enumerate(bundles):
+                    rows.append(
+                        {
+                            "benchmark": "low_n",
+                            "site_or_shift": "all",
+                            "ablation": "none",
+                            "metric": "mae",
+                            "world": world,
+                            "n_train": n_train,
+                            "model": model,
+                            "cohort_seed": bundle[0],
+                            "subset_seed": bundle[1],
+                            "model_seed": bundle[2],
+                            "value": base * (1.0 + 0.01 * (seed_index - 2)),
+                        }
+                    )
+    return pd.DataFrame(rows)
+
+
+def test_phase05_calibrate_persists_locked_protocol_and_is_idempotent(tmp_path: Path):
+    metrics_path = tmp_path / "phase0_metrics.csv"
+    _phase05_calibration_metrics().to_csv(metrics_path, index=False)
+    output = tmp_path / "phase05"
+    argv = [
+        "phase05",
+        "calibrate",
+        "--phase0-metrics",
+        str(metrics_path),
+        "--exp-config",
+        "configs/experiments/phase05.yaml",
+        "--output",
+        str(output),
+    ]
+
+    assert main(argv) == 0
+    lock_path = output / "protocol_lock.json"
+    assert lock_path.is_file()
+    before = lock_path.read_bytes()
+    lock = json.loads(before)
+    assert lock["phase0_metrics_sha256"] == hashlib.sha256(metrics_path.read_bytes()).hexdigest()
+    assert lock["spec_commit"] == _PHASE05_SPEC_COMMIT
+    assert lock["phase0_execution_sha"] == _PHASE0_EXECUTION_SHA
+    assert lock["phase05_config_sha256"] == canonical_config_hash(
+        load_phase05_config("configs/experiments/phase05.yaml")
+    )
+
+    assert main(argv) == 0
+    assert lock_path.read_bytes() == before
