@@ -42,6 +42,7 @@ CONFIRMATORY_MODELS = (
 )
 PRIMARY_COMPARATORS = ("matched_gru", "matched_representation_mlp")
 _TARGET_WORLD_ORDER = ("smooth", "jumps", "informative_observation")
+_WORLD_RANK = {world: index for index, world in enumerate(_TARGET_WORLD_ORDER)}
 _EARLY_TRAIN_SIZES = (5, 10, 20)
 _BUNDLE_COLUMNS = ["cohort_seed", "subset_seed", "model_seed"]
 
@@ -112,6 +113,19 @@ def holm_adjust(p_values) -> np.ndarray:
     adjusted = np.empty_like(adjusted_sorted)
     adjusted[order] = adjusted_sorted
     return adjusted
+
+
+def _sort_locked_worlds(frame: pd.DataFrame, *extra: str) -> pd.DataFrame:
+    result = frame.copy()
+    result["_world_rank"] = result["world"].map(_WORLD_RANK)
+    if result["_world_rank"].isna().any():
+        unknown = sorted(set(result.loc[result["_world_rank"].isna(), "world"]))
+        raise ValueError(f"unexpected primary target worlds: {unknown}")
+    return (
+        result.sort_values(["_world_rank", *extra], kind="mergesort")
+        .drop(columns="_world_rank")
+        .reset_index(drop=True)
+    )
 
 
 def _model_variants(frozen: FrozenCandidate) -> dict[str, str]:
@@ -403,8 +417,11 @@ def evaluate_primary_gate(
     for comparator in comparators:
         effects = paired_naulc_effects(metrics, candidate, comparator)
         effects_by_comparator[comparator] = effects
-        for world, group in effects.groupby("world", sort=True):
+        for world, group in effects.groupby("world", sort=False):
             values = _ten_effects(group["effect"].to_numpy(dtype=float))
+            relative = _ten_effects(
+                group["relative_improvement_pct"].to_numpy(dtype=float)
+            )
             mean_effect = float(np.mean(values))
             wins = int(np.sum(values > 0))
             world_rows.append(
@@ -412,18 +429,19 @@ def evaluate_primary_gate(
                     "world": world,
                     "comparator": comparator,
                     "mean_effect": mean_effect,
+                    "median_effect": float(np.median(values)),
+                    "sd_effect": float(np.std(values, ddof=1)),
                     "wins": wins,
                     "win_fraction": wins / 10.0,
+                    "mean_relative_improvement_pct": float(np.mean(relative)),
                     "passed": bool(mean_effect > 0 and wins >= win_requirement),
                 }
             )
-    world_summary = pd.DataFrame(world_rows).sort_values(
-        ["world", "comparator"]
-    ).reset_index(drop=True)
+    world_summary = _sort_locked_worlds(
+        pd.DataFrame(world_rows),
+        "comparator",
+    )
     observed_worlds = set(world_summary["world"].unique())
-    unknown_worlds = observed_worlds - set(_TARGET_WORLD_ORDER)
-    if unknown_worlds:
-        raise ValueError(f"unexpected primary target worlds: {sorted(unknown_worlds)}")
     worlds = tuple(world for world in _TARGET_WORLD_ORDER if world in observed_worlds)
     passing_sets = []
     for comparator in comparators:
@@ -461,9 +479,10 @@ def evaluate_primary_gate(
                 all_pass = all_pass and passed
             row["passed"] = all_pass
             early_rows.append(row)
-    early_summary = pd.DataFrame(early_rows).sort_values(
-        ["world", "n_train"]
-    ).reset_index(drop=True)
+    early_summary = _sort_locked_worlds(
+        pd.DataFrame(early_rows),
+        "n_train",
+    )
     early_n_passed = bool(
         early_summary.loc[early_summary["world"].isin(shared_passing_worlds), "passed"].any()
     )
@@ -536,15 +555,19 @@ def persist_confirmation_analysis(
                 }
             )
 
-    effects_frame = pd.concat(effect_frames, ignore_index=True).sort_values(
-        ["world", "comparator", *_BUNDLE_COLUMNS]
-    ).reset_index(drop=True)
-    bootstrap_frame = pd.DataFrame(bootstrap_rows).sort_values(
-        ["world", "comparator"]
-    ).reset_index(drop=True)
-    sign_frame = pd.DataFrame(sign_rows).sort_values(
-        ["world", "comparator"]
-    ).reset_index(drop=True)
+    effects_frame = _sort_locked_worlds(
+        pd.concat(effect_frames, ignore_index=True),
+        "comparator",
+        *_BUNDLE_COLUMNS,
+    )
+    bootstrap_frame = _sort_locked_worlds(
+        pd.DataFrame(bootstrap_rows),
+        "comparator",
+    )
+    sign_frame = _sort_locked_worlds(
+        pd.DataFrame(sign_rows),
+        "comparator",
+    )
     sign_frame["holm_p_value"] = holm_adjust(sign_frame["p_value"].to_numpy(dtype=float))
 
     primary_summary = gate["world_summary"].copy()
