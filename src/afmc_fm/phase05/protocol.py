@@ -222,6 +222,18 @@ def _selected_gate_row(path: Path, selection_column: str, gate_name: str) -> pd.
     return selected.iloc[0]
 
 
+def _selected_passing_gate_row(path: Path, gate_name: str) -> pd.Series:
+    selected = _selected_gate_row(path, "selected", gate_name)
+    if "passed" not in selected.index:
+        raise RuntimeError(f"invalid {gate_name} gate artifact")
+    passed = str(selected["passed"]).strip().lower()
+    if passed not in {"true", "false", "1", "0"}:
+        raise RuntimeError(f"invalid {gate_name} gate artifact")
+    if passed not in {"true", "1"}:
+        raise RuntimeError(f"selected {gate_name} candidate must have passed")
+    return selected
+
+
 def _sha256(path: Path) -> str:
     if not path.is_file():
         raise RuntimeError(f"missing required freeze input: {path.name}")
@@ -315,8 +327,8 @@ def freeze_candidate(output: str | Path, config: Phase05Config) -> FrozenCandida
         _write_development_failure(output_path, ["jump"])
         raise RuntimeError("jump gate failed; confirmation is not permitted")
 
-    flow = _selected_gate_row(flow_path, "selected", "flow")
-    jump = _selected_gate_row(jump_path, "selected", "jump")
+    flow = _selected_passing_gate_row(flow_path, "flow")
+    jump = _selected_passing_gate_row(jump_path, "jump")
     uncertainty = _selected_gate_row(
         uncertainty_path,
         "selected",
