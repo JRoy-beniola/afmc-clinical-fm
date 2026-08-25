@@ -241,6 +241,23 @@ def _gate_passed(path: Path, gate_name: str) -> bool:
     return bool(normalized & {"true", "1"})
 
 
+def _validate_primary_gate_artifact(path: Path) -> None:
+    try:
+        frame = pd.read_csv(path)
+    except Exception as error:
+        raise RuntimeError("primary confirmatory gate artifact is invalid") from error
+    if frame.empty or not {"world", "headline_passed"}.issubset(frame.columns):
+        raise RuntimeError("primary confirmatory gate artifact is invalid")
+    normalized = {
+        str(value).strip().lower() for value in frame["headline_passed"].dropna()
+    }
+    if (
+        len(normalized) != 1
+        or not normalized.issubset({"true", "false", "1", "0"})
+    ):
+        raise RuntimeError("primary confirmatory gate artifact is invalid")
+
+
 def _require_development_stage_open(store: Phase05Store, stage: str) -> None:
     artifact = _DEVELOPMENT_FINAL_ARTIFACTS.get(stage)
     if artifact is None:
@@ -278,6 +295,7 @@ def _require_stage_unlocked(store: Phase05Store, stage: str) -> None:
             raise RuntimeError(
                 "primary confirmatory gate must be finalized before robustness"
             )
+        _validate_primary_gate_artifact(gate)
 
 
 def _persist_result(store: Phase05Store, job: Phase05Job, frame: pd.DataFrame) -> None:
