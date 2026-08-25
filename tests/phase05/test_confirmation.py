@@ -1,6 +1,9 @@
 import numpy as np
 import pandas as pd
 import pytest
+from scipy.stats import binomtest
+
+from afmc_fm.phase05.config import Phase05Config
 from afmc_fm.phase05.confirmation import (
     CONFIRMATORY_MODELS,
     PRIMARY_COMPARATORS,
@@ -12,9 +15,6 @@ from afmc_fm.phase05.confirmation import (
     paired_naulc_effects,
     persist_confirmation_analysis,
 )
-from scipy.stats import binomtest
-
-from afmc_fm.phase05.config import Phase05Config
 from afmc_fm.phase05.protocol import FrozenCandidate
 
 WORLDS = ("smooth", "jumps", "informative_observation")
@@ -64,6 +64,8 @@ def _metric_rows(
                         value += candidate_offsets[world]
                         if early_n_loss and n_train in (5, 10, 20):
                             value += 0.20
+                        elif early_n_loss and n_train == 40:
+                            value -= 0.80
                     elif model == "matched_representation_mlp":
                         value += 0.01
                     rows.append(
