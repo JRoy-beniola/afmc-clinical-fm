@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 matplotlib.use("Agg")
-from matplotlib import pyplot as plt  # noqa: E402
+from matplotlib import pyplot as plt
 
 from afmc_fm.execution.manifest import collect_runtime_metadata, execution_commit_sha
 
@@ -53,7 +53,7 @@ def _json_object(path: Path) -> dict[str, object]:
     except (OSError, json.JSONDecodeError) as error:
         raise RuntimeError(f"invalid reporting JSON artifact: {path}") from error
     if not isinstance(payload, dict):
-        raise RuntimeError(f"reporting JSON artifact must contain an object: {path}")
+        raise TypeError(f"reporting JSON artifact must contain an object: {path}")
     return payload
 
 
@@ -277,7 +277,14 @@ def _protocol_manifest(
 
 def _stage_counts(output: Path) -> dict[str, dict[str, int]]:
     counts: dict[str, dict[str, int]] = {}
-    for stage in ("flow", "jump", "uncertainty", "timing_audit", "confirmation", "robustness"):
+    for stage in (
+        "flow",
+        "jump",
+        "uncertainty",
+        "timing_audit",
+        "confirmation",
+        "robustness",
+    ):
         cell_dir = output / "stages" / stage / "cells"
         cell_paths = tuple(sorted(cell_dir.glob("*.json"))) if cell_dir.is_dir() else ()
         shard_ids = set()
