@@ -228,6 +228,10 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _development_hashes(development: Path) -> dict[str, str]:
+    return {name: _sha256(development / name) for name in _DEVELOPMENT_ARTIFACTS}
+
+
 def _write_development_failure(output: Path, failed_gates: list[str]) -> None:
     output.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -247,9 +251,58 @@ def _write_frozen_candidate(output: Path, candidate: FrozenCandidate) -> None:
     (output / "frozen_candidate.json").write_bytes(data)
 
 
+def _load_frozen_candidate(path: Path) -> FrozenCandidate:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return FrozenCandidate(
+            flow_mode=str(payload["flow_mode"]),
+            jump_mode=str(payload["jump_mode"]),
+            uncertainty_mode=str(payload["uncertainty_mode"]),
+            strict_history=bool(payload["strict_history"]),
+            state_dim=int(payload["state_dim"]),
+            time_scale_days=float(payload["time_scale_days"]),
+            jump_eligible_event_codes=tuple(payload["jump_eligible_event_codes"]),
+            assimilation_semantics=str(payload["assimilation_semantics"]),
+            trainable_parameters=int(payload["trainable_parameters"]),
+            matched_gru_hidden_size=int(payload["matched_gru_hidden_size"]),
+            matched_gru_parameters=int(payload["matched_gru_parameters"]),
+            matched_mlp_hidden_size=int(payload["matched_mlp_hidden_size"]),
+            matched_mlp_parameters=int(payload["matched_mlp_parameters"]),
+            protocol_lock_sha256=str(payload["protocol_lock_sha256"]),
+            development_artifact_hashes=dict(payload["development_artifact_hashes"]),
+        )
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise RuntimeError("frozen candidate artifact is invalid") from error
+
+
+def _reuse_or_reject_frozen_candidate(
+    output: Path,
+    development: Path,
+    config: Phase05Config,
+) -> FrozenCandidate | None:
+    frozen_path = output / "frozen_candidate.json"
+    if not frozen_path.is_file():
+        return None
+
+    existing = _load_frozen_candidate(frozen_path)
+    protocol_hash = _sha256(output / "protocol_lock.json")
+    artifact_hashes = _development_hashes(development)
+    if (
+        existing.protocol_lock_sha256 != protocol_hash
+        or existing.development_artifact_hashes != artifact_hashes
+        or existing.time_scale_days != config.time_scale_days
+    ):
+        raise RuntimeError("frozen candidate conflicts with current freeze inputs")
+    return existing
+
+
 def freeze_candidate(output: str | Path, config: Phase05Config) -> FrozenCandidate:
     output_path = Path(output)
     development = output_path / "development"
+    existing = _reuse_or_reject_frozen_candidate(output_path, development, config)
+    if existing is not None:
+        return existing
+
     flow_path = development / "flow_gate.csv"
     jump_path = development / "jump_gate.csv"
     uncertainty_path = development / "uncertainty_gate.csv"
@@ -281,9 +334,7 @@ def freeze_candidate(output: str | Path, config: Phase05Config) -> FrozenCandida
     ).set_index("control")
 
     protocol_lock = output_path / "protocol_lock.json"
-    development_artifact_hashes = {
-        name: _sha256(development / name) for name in _DEVELOPMENT_ARTIFACTS
-    }
+    development_artifact_hashes = _development_hashes(development)
     frozen = FrozenCandidate(
         flow_mode=str(flow["candidate"]),
         jump_mode=str(jump["candidate"]),
