@@ -730,6 +730,15 @@ def _phase05_confirm(args: argparse.Namespace) -> int:
     )
 
 
+def _phase05_robustness(args: argparse.Namespace) -> int:
+    from afmc_fm.phase05.cli_robustness import run_phase05_robustness_cli
+
+    return run_phase05_robustness_cli(
+        args,
+        locked_store=_phase05_locked_store,
+    )
+
+
 def _add_execution_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--workers", type=_positive_int, default=1)
@@ -777,6 +786,8 @@ def _parser() -> argparse.ArgumentParser:
             stage.set_defaults(handler=_phase05_develop)
         elif name == "confirm":
             stage.set_defaults(handler=_phase05_confirm)
+        elif name == "robustness":
+            stage.set_defaults(handler=_phase05_robustness)
 
     freeze = phase05_subparsers.add_parser("freeze")
     freeze.add_argument("--exp-config", required=True)
