@@ -1,5 +1,6 @@
 import hashlib
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -152,3 +153,40 @@ def test_successful_freeze_records_architecture_capacity_controls_and_provenance
     persisted = json.loads((output / "frozen_candidate.json").read_text(encoding="utf-8"))
     assert persisted == frozen.to_dict()
     assert not (output / "development_failure.json").exists()
+
+
+def test_identical_refreeze_is_idempotent_and_does_not_rewrite_artifact(tmp_path):
+    output = tmp_path / "phase05"
+    _write_success_inputs(output)
+    config = Phase05Config()
+    first = freeze_candidate(output, config)
+    frozen_path = output / "frozen_candidate.json"
+    before_bytes = frozen_path.read_bytes()
+    before_mtime = frozen_path.stat().st_mtime_ns
+    time.sleep(0.01)
+
+    second = freeze_candidate(output, config)
+
+    assert second == first
+    assert frozen_path.read_bytes() == before_bytes
+    assert frozen_path.stat().st_mtime_ns == before_mtime
+
+
+def test_refreeze_rejects_changed_decision_input_and_preserves_original_candidate(tmp_path):
+    output = tmp_path / "phase05"
+    _write_success_inputs(output)
+    config = Phase05Config()
+    freeze_candidate(output, config)
+    frozen_path = output / "frozen_candidate.json"
+    before_bytes = frozen_path.read_bytes()
+
+    _write_gate(
+        output,
+        "representation_timing_audit.csv",
+        "strict_history,mean_delta_inclusive_minus_strict\ntrue,-0.04\n",
+    )
+
+    with pytest.raises(RuntimeError, match="frozen candidate conflicts"):
+        freeze_candidate(output, config)
+
+    assert frozen_path.read_bytes() == before_bytes
