@@ -3,10 +3,12 @@ import json
 import time
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from afmc_fm.phase05.baselines import build_capacity_audit
 from afmc_fm.phase05.config import Phase05Config
+from afmc_fm.phase05.development import select_flow
 from afmc_fm.phase05.protocol import freeze_candidate
 
 
@@ -28,16 +30,16 @@ def _write_success_inputs(output: Path) -> None:
     _write_gate(
         output,
         "flow_gate.csv",
-        "candidate,passed,trainable_parameters\n"
-        "gated,false,6000\n"
-        "time_scaled,true,5900\n",
+        "candidate,passed,selected,trainable_parameters\n"
+        "gated,true,false,6000\n"
+        "time_scaled,true,true,5900\n",
     )
     _write_gate(
         output,
         "jump_gate.csv",
-        "candidate,passed,trainable_parameters\n"
-        "gru,false,6500\n"
-        "residual,true,6400\n",
+        "candidate,passed,selected,trainable_parameters\n"
+        "gru,true,false,6500\n"
+        "residual,true,true,6400\n",
     )
     _write_gate(
         output,
@@ -57,6 +59,45 @@ def _write_success_inputs(output: Path) -> None:
         '{"schema_version":1,"locked_min_relative_effect":0.02}\n',
         encoding="utf-8",
     )
+
+
+def _flow_selection_frame() -> pd.DataFrame:
+    rows = []
+    for variant, value, parameters in (
+        ("none__none__deterministic", 1.0, 5000),
+        ("gated__none__deterministic", 0.960, 6000),
+        ("time_scaled__none__deterministic", 0.956, 5900),
+    ):
+        for seed_index in range(1, 6):
+            for n_train in (5, 10, 20, 40):
+                rows.append(
+                    {
+                        "world": "smooth",
+                        "metric": "mae",
+                        "variant": variant,
+                        "cohort_seed": 400 + seed_index,
+                        "subset_seed": 500 + seed_index,
+                        "model_seed": 600 + seed_index,
+                        "n_train": n_train,
+                        "value": value,
+                        "trainable_parameters": parameters,
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def test_development_gate_marks_the_selected_candidate_when_multiple_candidates_pass():
+    result = select_flow(
+        _flow_selection_frame(),
+        locked_min_relative_effect=0.02,
+    )
+
+    gate = result["gate_table"].set_index("candidate")
+    assert bool(gate.loc["gated", "passed"]) is True
+    assert bool(gate.loc["time_scaled", "passed"]) is True
+    assert bool(gate.loc["gated", "selected"]) is False
+    assert bool(gate.loc["time_scaled", "selected"]) is True
+    assert result["selected"] == "time_scaled"
 
 
 def test_freeze_refuses_failed_flow_gate_and_records_machine_readable_failure(tmp_path):
