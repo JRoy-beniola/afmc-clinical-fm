@@ -232,3 +232,38 @@ def test_develop_resume_skips_finalized_uncertainty(tmp_path: Path, monkeypatch)
     for path, (payload, mtime) in snapshots.items():
         assert path.read_bytes() == payload
         assert path.stat().st_mtime_ns == mtime
+
+
+def test_develop_resume_is_noop_after_timing_audit_finalization(
+    tmp_path: Path,
+    monkeypatch,
+):
+    output = _locked_output(tmp_path)
+
+    def first_run(jobs, *, store, **_kwargs):
+        return _persist_synthetic_jobs(tuple(jobs), store)
+
+    monkeypatch.setattr(cli, "run_phase05_jobs", first_run)
+    assert cli.main(_develop_argv(output)) == 0
+
+    timing_artifact = output / "development" / "representation_timing_audit.csv"
+    timing_cell = next(
+        (output / "stages" / "timing_audit" / "cells").glob("*.json")
+    )
+    snapshots = {
+        path: (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in (timing_artifact, timing_cell)
+    }
+    resume_calls: list[str] = []
+
+    def resumed_run(jobs, **_kwargs):
+        stage = tuple(jobs)[0].shard.stage
+        resume_calls.append(stage)
+        raise AssertionError(f"finalized {stage} stage was rerun")
+
+    monkeypatch.setattr(cli, "run_phase05_jobs", resumed_run)
+    assert cli.main(_develop_argv(output, resume=True)) == 0
+    assert resume_calls == []
+    for path, (payload, mtime) in snapshots.items():
+        assert path.read_bytes() == payload
+        assert path.stat().st_mtime_ns == mtime
