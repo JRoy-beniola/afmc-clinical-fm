@@ -10,6 +10,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -498,12 +499,26 @@ def _persisted_expected_count(
     return sum((cells / f"{cell_id}.json").is_file() for cell_id in expected_cell_ids)
 
 
+def _resolve_simulator_config_hash(
+    options: Phase05ExecutionOptions,
+    prepare_shard: Callable[[Phase05ShardSpec], Any],
+) -> str | None:
+    if options.simulator_config_hash is not None:
+        return options.simulator_config_hash.lower()
+    if isinstance(prepare_shard, partial):
+        simulator_config = (prepare_shard.keywords or {}).get("simulator_config")
+        if simulator_config is not None:
+            return canonical_config_hash(simulator_config)
+    return None
+
+
 def _record_execution(
     store: Phase05Store,
     *,
     stage: str,
     options: Phase05ExecutionOptions,
     device: torch.device,
+    simulator_config_hash: str | None,
     expected_cell_ids: frozenset[str],
     shard_count: int,
     completed_before: int,
@@ -517,11 +532,7 @@ def _record_execution(
     record_execution_invocation(
         store,
         implementation_sha=execution_commit_sha(),
-        simulator_config_sha256=(
-            options.simulator_config_hash.lower()
-            if options.simulator_config_hash is not None
-            else None
-        ),
+        simulator_config_sha256=simulator_config_hash,
         invocation={
             "stage": stage,
             "started_at": started_at.isoformat(),
@@ -557,6 +568,7 @@ def run_phase05_jobs(
     _require_stage_unlocked(store, stage)
 
     device = resolve_phase05_device(options.device)
+    simulator_config_hash = _resolve_simulator_config_hash(options, prepare_shard)
     expected_cell_ids = frozenset(job.cell_id for job in planned)
     expected_seed_bundles = frozenset(job.shard.seed_bundle.as_tuple() for job in planned)
     candidate_hash = (
@@ -612,6 +624,7 @@ def run_phase05_jobs(
             stage=stage,
             options=options,
             device=device,
+            simulator_config_hash=simulator_config_hash,
             expected_cell_ids=expected_cell_ids,
             shard_count=len(by_shard),
             completed_before=len(completed),
@@ -636,6 +649,7 @@ def run_phase05_jobs(
         stage=stage,
         options=options,
         device=device,
+        simulator_config_hash=simulator_config_hash,
         expected_cell_ids=expected_cell_ids,
         shard_count=len(by_shard),
         completed_before=len(completed),
