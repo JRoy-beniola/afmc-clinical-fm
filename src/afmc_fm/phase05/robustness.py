@@ -5,6 +5,7 @@ import pandas as pd
 import torch
 
 from afmc_fm.experiments.runner import build_complete_truth_targets
+from afmc_fm.phase05.analysis import normalized_log_n_aulc
 from afmc_fm.phase05.runner import padded_phase05_batch
 from afmc_fm.phase05.sequences import Phase05Sequence
 from afmc_fm.simulator.cohort import SimulatedPatient
@@ -210,4 +211,113 @@ def evaluate_site_shift(
     return {"per_seed": per_seed, "gate_summary": gate_summary}
 
 
-__all__ = ["complete_truth_phase05_batch", "evaluate_site_shift"]
+def _misspecified_model_aulcs(metrics: pd.DataFrame, model: str) -> pd.DataFrame:
+    frame = metrics.loc[
+        (metrics["world"] == "misspecified")
+        & (metrics["model"] == model)
+        & (metrics["metric"] == "mae")
+    ].copy()
+    if "split" in frame.columns:
+        frame = frame.loc[frame["split"] == "test"]
+    if "site_or_shift" in frame.columns:
+        frame = frame.loc[frame["site_or_shift"] == "all"]
+    rows: list[dict[str, object]] = []
+    for bundle, group in frame.groupby(_BUNDLE_COLUMNS, sort=True):
+        rows.append(
+            {
+                "cohort_seed": int(bundle[0]),
+                "subset_seed": int(bundle[1]),
+                "model_seed": int(bundle[2]),
+                "naulc": normalized_log_n_aulc(group),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def evaluate_misspecification(
+    metrics: pd.DataFrame,
+    *,
+    candidate: str = _DEFAULT_CANDIDATE,
+    comparators: tuple[str, str] = _DEFAULT_COMPARATORS,
+    tolerance: float = 0.05,
+) -> dict[str, object]:
+    if len(comparators) != 2 or len(set(comparators)) != 2:
+        raise ValueError("misspecification evaluation requires exactly two comparators")
+    if candidate in comparators:
+        raise ValueError("candidate must be distinct from misspecification comparators")
+    if not np.isfinite(tolerance) or not 0 <= tolerance <= 1:
+        raise ValueError("misspecification tolerance must be finite and between zero and one")
+    required_columns = {
+        "world",
+        "cohort_seed",
+        "subset_seed",
+        "model_seed",
+        "n_train",
+        "model",
+        "metric",
+        "value",
+    }
+    missing = required_columns - set(metrics.columns)
+    if missing:
+        raise ValueError(f"missing misspecification metric columns: {sorted(missing)}")
+
+    candidate_aulc = _misspecified_model_aulcs(metrics, candidate)
+    comparator_aulcs = [
+        _misspecified_model_aulcs(metrics, comparator) for comparator in comparators
+    ]
+    candidate_bundles = set(
+        candidate_aulc[_BUNDLE_COLUMNS].itertuples(index=False, name=None)
+    )
+    if len(candidate_bundles) != 10:
+        raise ValueError(
+            "misspecification evaluation requires exactly ten candidate confirmatory bundles"
+        )
+    for comparator_aulc in comparator_aulcs:
+        comparator_bundles = set(
+            comparator_aulc[_BUNDLE_COLUMNS].itertuples(index=False, name=None)
+        )
+        if comparator_bundles != candidate_bundles:
+            raise ValueError(
+                "misspecification evaluation requires ten exactly matched confirmatory bundles"
+            )
+
+    per_seed = candidate_aulc.rename(columns={"naulc": "candidate_naulc"})
+    for comparator, comparator_aulc in zip(
+        comparators, comparator_aulcs, strict=True
+    ):
+        per_seed = per_seed.merge(
+            comparator_aulc.rename(columns={"naulc": f"{comparator}_naulc"}),
+            on=_BUNDLE_COLUMNS,
+            validate="one_to_one",
+        )
+    control_columns = [f"{comparator}_naulc" for comparator in comparators]
+    control_values = per_seed[control_columns].to_numpy(dtype=float)
+    if not np.isfinite(control_values).all() or np.any(control_values <= 0):
+        raise ValueError("misspecification control nAULC values must be finite and positive")
+    best_indices = np.argmin(control_values, axis=1)
+    per_seed["best_control_model"] = [comparators[index] for index in best_indices]
+    per_seed["best_control_naulc"] = control_values[
+        np.arange(len(per_seed)), best_indices
+    ]
+    per_seed["relative_excess"] = (
+        per_seed["candidate_naulc"] - per_seed["best_control_naulc"]
+    ) / per_seed["best_control_naulc"]
+    per_seed = per_seed.sort_values(_BUNDLE_COLUMNS, kind="mergesort").reset_index(drop=True)
+    relative_excess = per_seed["relative_excess"].to_numpy(dtype=float)
+    if not np.isfinite(relative_excess).all():
+        raise ValueError("misspecification relative excess must be finite")
+    mean_relative_excess = float(np.mean(relative_excess))
+    summary = {
+        "mean_relative_excess": mean_relative_excess,
+        "median_relative_excess": float(np.median(relative_excess)),
+        "tolerance": float(tolerance),
+        "passed": bool(mean_relative_excess <= tolerance),
+    }
+    return {"per_seed": per_seed, "summary": summary}
+
+
+__all__ = [
+    "complete_truth_phase05_batch",
+    "evaluate_misspecification",
+    "evaluate_site_shift",
+]
