@@ -21,6 +21,7 @@ CONFIRMATORY_MODELS = (
     "phase0_flow_jump_reference",
 )
 PRIMARY_COMPARATORS = ("matched_gru", "matched_representation_mlp")
+_TARGET_WORLD_ORDER = ("smooth", "jumps", "informative_observation")
 _EARLY_TRAIN_SIZES = (5, 10, 20)
 _BUNDLE_COLUMNS = ["cohort_seed", "subset_seed", "model_seed"]
 
@@ -214,7 +215,11 @@ def evaluate_primary_gate(
     world_summary = pd.DataFrame(world_rows).sort_values(
         ["world", "comparator"]
     ).reset_index(drop=True)
-    worlds = tuple(sorted(world_summary["world"].unique()))
+    observed_worlds = set(world_summary["world"].unique())
+    unknown_worlds = observed_worlds - set(_TARGET_WORLD_ORDER)
+    if unknown_worlds:
+        raise ValueError(f"unexpected primary target worlds: {sorted(unknown_worlds)}")
+    worlds = tuple(world for world in _TARGET_WORLD_ORDER if world in observed_worlds)
     passing_sets = []
     for comparator in comparators:
         passing_sets.append(
@@ -226,7 +231,8 @@ def evaluate_primary_gate(
                 ]
             )
         )
-    shared_passing_worlds = tuple(sorted(set.intersection(*passing_sets)))
+    shared = set.intersection(*passing_sets)
+    shared_passing_worlds = tuple(world for world in worlds if world in shared)
 
     early_rows: list[dict[str, object]] = []
     for world in worlds:
@@ -282,11 +288,7 @@ def persist_confirmation_analysis(
     config: Phase05Config,
     candidate: str = "phase05_candidate",
 ) -> dict[str, Path]:
-    if tuple(config.target_worlds) != (
-        "smooth",
-        "jumps",
-        "informative_observation",
-    ):
+    if tuple(config.target_worlds) != _TARGET_WORLD_ORDER:
         raise ValueError("primary confirmatory analysis requires the three locked target worlds")
     gate = evaluate_primary_gate(
         metrics,
