@@ -739,6 +739,13 @@ def _phase05_robustness(args: argparse.Namespace) -> int:
     )
 
 
+def _phase05_report(args: argparse.Namespace) -> int:
+    from afmc_fm.phase05.reporting import write_phase05_report_artifacts
+
+    write_phase05_report_artifacts(args.output)
+    return 0
+
+
 def _add_execution_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--workers", type=_positive_int, default=1)
@@ -796,6 +803,7 @@ def _parser() -> argparse.ArgumentParser:
 
     report = phase05_subparsers.add_parser("report")
     report.add_argument("--output", required=True)
+    report.set_defaults(handler=_phase05_report)
     return parser
 
 
