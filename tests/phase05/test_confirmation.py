@@ -4,6 +4,7 @@ import pytest
 import torch
 from scipy.stats import binomtest
 
+from afmc_fm.phase05.baselines import build_capacity_audit
 from afmc_fm.phase05.config import Phase05Config
 from afmc_fm.phase05.confirmation import (
     CONFIRMATORY_MODELS,
@@ -42,6 +43,37 @@ def _frozen_candidate() -> FrozenCandidate:
         matched_gru_parameters=6888,
         matched_mlp_hidden_size=216,
         matched_mlp_parameters=6915,
+        protocol_lock_sha256="a" * 64,
+        development_artifact_hashes={"flow_gate.csv": "b" * 64},
+    )
+
+
+def _audited_frozen_candidate() -> FrozenCandidate:
+    target_parameters = 1000
+    audit = build_capacity_audit(
+        target_parameters=target_parameters,
+        value_dim=3,
+        event_dim=3,
+        representation_input_dim=19,
+    ).set_index("control")
+    return FrozenCandidate(
+        flow_mode="time_scaled",
+        jump_mode="residual",
+        uncertainty_mode="decoupled",
+        strict_history=True,
+        state_dim=24,
+        time_scale_days=30.0,
+        jump_eligible_event_codes=("SYNTHETIC_INTERVENTION",),
+        assimilation_semantics="phase0_grucell_unchanged",
+        trainable_parameters=target_parameters,
+        matched_gru_hidden_size=int(audit.loc["matched_gru", "hidden_size"]),
+        matched_gru_parameters=int(audit.loc["matched_gru", "actual_parameters"]),
+        matched_mlp_hidden_size=int(
+            audit.loc["matched_representation_mlp", "hidden_size"]
+        ),
+        matched_mlp_parameters=int(
+            audit.loc["matched_representation_mlp", "actual_parameters"]
+        ),
         protocol_lock_sha256="a" * 64,
         development_artifact_hashes={"flow_gate.csv": "b" * 64},
     )
@@ -168,7 +200,7 @@ def test_confirmation_model_plan_contains_exact_locked_model_set():
 
 def test_confirmation_dispatcher_executes_every_locked_model_with_exact_provenance():
     config = Phase05Config(max_epochs=1, patience=1)
-    frozen = _frozen_candidate()
+    frozen = _audited_frozen_candidate()
     cohort = simulate_world(
         "jumps",
         SimulatorConfig(
