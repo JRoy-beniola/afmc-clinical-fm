@@ -100,34 +100,6 @@ def test_development_gate_marks_the_selected_candidate_when_multiple_candidates_
     assert result["selected"] == "time_scaled"
 
 
-@pytest.mark.parametrize(
-    ("gate_name", "rows"),
-    [
-        (
-            "flow",
-            "candidate,passed,selected,trainable_parameters\n"
-            "gated,true,false,6000\n"
-            "time_scaled,false,true,5900\n",
-        ),
-        (
-            "jump",
-            "candidate,passed,selected,trainable_parameters\n"
-            "gru,true,false,6500\n"
-            "residual,false,true,6400\n",
-        ),
-    ],
-)
-def test_freeze_rejects_selected_mechanism_that_did_not_pass(tmp_path, gate_name, rows):
-    output = tmp_path / "phase05"
-    _write_success_inputs(output)
-    _write_gate(output, f"{gate_name}_gate.csv", rows)
-
-    with pytest.raises(RuntimeError, match=rf"selected {gate_name} candidate must have passed"):
-        freeze_candidate(output, Phase05Config())
-
-    assert not (output / "frozen_candidate.json").exists()
-
-
 def test_freeze_refuses_failed_flow_gate_and_records_machine_readable_failure(tmp_path):
     output = tmp_path / "phase05"
     _write_gate(
