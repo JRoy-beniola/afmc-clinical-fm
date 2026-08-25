@@ -16,6 +16,7 @@ import torch
 from threadpoolctl import threadpool_limits
 
 from afmc_fm.execution.device import resolve_device
+from afmc_fm.execution.persistence import canonical_config_hash
 from afmc_fm.phase05.config import Phase05Config, SeedBundle
 from afmc_fm.phase05.store import Phase05CellResult, Phase05Store
 
@@ -321,7 +322,11 @@ def _candidate_hash(store: Phase05Store) -> str:
 def _require_confirmation_binding(
     store: Phase05Store,
     jobs: tuple[Phase05Job, ...],
+    config: Phase05Config,
 ) -> str:
+    runtime_config_hash = canonical_config_hash(config)
+    if runtime_config_hash != store.config_hash:
+        raise ValueError("runtime config hash does not match persisted protocol identity")
     marker = store.output / "confirmation" / "STARTED"
     if not marker.is_file():
         raise RuntimeError("confirmation must be started before confirmatory execution")
@@ -465,7 +470,7 @@ def run_phase05_jobs(
     expected_cell_ids = frozenset(job.cell_id for job in planned)
     expected_seed_bundles = frozenset(job.shard.seed_bundle.as_tuple() for job in planned)
     candidate_hash = (
-        _require_confirmation_binding(store, planned)
+        _require_confirmation_binding(store, planned, config)
         if stage in _CONFIRMATORY_STAGES
         else None
     )
