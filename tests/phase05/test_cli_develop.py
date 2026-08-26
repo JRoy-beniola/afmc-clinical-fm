@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
@@ -287,26 +288,64 @@ def test_phase05_lifecycle_calibrates_develops_sequentially_and_freezes(
     tmp_path: Path,
     monkeypatch,
 ):
+    config = replace(
+        load_phase05_config("configs/experiments/phase05.yaml"),
+        max_epochs=1,
+        patience=1,
+    )
+    monkeypatch.setattr(cli, "load_phase05_config", lambda _path: config)
+    official_job_plan = cli._phase05_development_jobs
+
+    def smoke_job_plan(config, stage, **kwargs):
+        jobs = official_job_plan(config, stage, **kwargs)
+        smoke_bundle = config.development_bundles[0]
+        return tuple(
+            job
+            for job in jobs
+            if job.shard.seed_bundle == smoke_bundle and job.n_train in {5, 10}
+        )
+
+    monkeypatch.setattr(cli, "_phase05_development_jobs", smoke_job_plan)
     output = _calibrated_output(tmp_path)
     lock_path = output / "protocol_lock.json"
     lock_before = lock_path.read_bytes()
     calls: list[tuple[str, int]] = []
 
-    def fake_run_phase05_jobs(jobs, *, store, **_kwargs):
+    def fake_run_phase05_jobs(jobs, *, store, config, **_kwargs):
         planned = tuple(jobs)
         stage = planned[0].shard.stage
         calls.append((stage, len(planned)))
-        return _persist_synthetic_jobs(planned, store)
+        assert {job.shard.seed_bundle for job in planned} == {
+            config.development_bundles[0]
+        }
+        assert {job.n_train for job in planned} == {5, 10}
+        assert (config.max_epochs, config.patience) == (1, 1)
+        _persist_synthetic_jobs(planned, store)
+
+        gate_fixtures = []
+        for job in planned:
+            if job.n_train != 5:
+                continue
+            for bundle in config.development_bundles:
+                fixture_shard = replace(job.shard, seed_bundle=bundle)
+                for n_train in config.primary_train_sizes:
+                    fixture_job = replace(
+                        job,
+                        shard=fixture_shard,
+                        n_train=n_train,
+                    )
+                    gate_fixtures.append(pd.DataFrame(_metric_rows(fixture_job)))
+        return pd.concat(gate_fixtures, ignore_index=True)
 
     monkeypatch.setattr(cli, "run_phase05_jobs", fake_run_phase05_jobs, raising=False)
 
     assert cli.main(_develop_argv(output)) == 0
 
     assert calls == [
-        ("flow", 60),
-        ("jump", 60),
-        ("uncertainty", 180),
-        ("timing_audit", 120),
+        ("flow", 6),
+        ("jump", 6),
+        ("uncertainty", 18),
+        ("timing_audit", 12),
     ]
     assert lock_path.read_bytes() == lock_before
 
