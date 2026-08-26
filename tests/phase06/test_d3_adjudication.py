@@ -118,10 +118,9 @@ def _d2_result(
                     "component": component,
                     "sum_squares": shares[component],
                     "variance_share": shares[component],
-                    "factor_classification": (
-                        statuses[component]
-                        if component in statuses
-                        else "not_applicable"
+                    "factor_classification": statuses.get(
+                        component,
+                        "not_applicable",
                     ),
                 }
             )
@@ -130,7 +129,7 @@ def _d2_result(
                 {
                     "n_train": n_train,
                     "factor": factor,
-                    "largest_count": int(round(frequencies[factor] * 10_000)),
+                    "largest_count": round(frequencies[factor] * 10_000),
                     "largest_frequency": frequencies[factor],
                     "bootstrap_resamples": 10_000,
                     "bootstrap_seed": 20260826,
