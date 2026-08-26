@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import importlib
+import importlib.util
+
 import pandas as pd
 import pytest
 
@@ -10,10 +13,11 @@ _CONTROL_VARIANT = "none__none__deterministic"
 _CANDIDATE_VARIANT = "time_scaled__none__deterministic"
 
 
-def _d2_fixture() -> pd.DataFrame:
+def _d2_fixture(*, stage: str = "d2a") -> pd.DataFrame:
     cohorts = (401, 402, 403, 404, 405)
     subsets = (501, 502, 503, 504, 505)
     models = (601, 602, 603, 604, 605)
+    multiplier = {"d2a": 1, "d2b": 2}[stage]
     cohort_effect = {401: 0.00, 402: 0.02, 403: -0.02, 404: 0.00, 405: 0.00}
     subset_effect = {501: 0.00, 502: 0.005, 503: -0.005, 504: 0.00, 505: 0.00}
     model_effect = {601: -0.20, 602: -0.10, 603: 0.00, 604: 0.10, 605: 0.20}
@@ -21,7 +25,7 @@ def _d2_fixture() -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for i, cohort_seed in enumerate(cohorts):
         for j, subset_seed in enumerate(subsets):
-            model_seed = models[(i + j) % 5]
+            model_seed = models[(i + multiplier * j) % 5]
             base_delta = (
                 cohort_effect[cohort_seed]
                 + subset_effect[subset_seed]
@@ -37,7 +41,7 @@ def _d2_fixture() -> pd.DataFrame:
                 ):
                     rows.append(
                         {
-                            "stage": "d2a",
+                            "stage": stage,
                             "world": "smooth",
                             "cohort_seed": cohort_seed,
                             "subset_seed": subset_seed,
@@ -52,12 +56,22 @@ def _d2_fixture() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _analyze_d2b():
+    spec = importlib.util.find_spec("afmc_fm.phase06.d2b")
+    assert spec is not None, "afmc_fm.phase06.d2b must exist"
+    module = importlib.import_module("afmc_fm.phase06.d2b")
+    analyze = getattr(module, "analyze_d2b", None)
+    assert callable(analyze), "analyze_d2b must exist"
+    return analyze
+
+
 def test_d2_analysis_recovers_dominant_model_seed_and_weak_subset() -> None:
     result = analyze_d2a(_d2_fixture(), Phase06Config())
 
     assert isinstance(result, D2AnalysisResult)
     assert len(result.effect_rows) == 50
     assert set(result.effect_rows["n_train"]) == {5, 40}
+    assert set(result.effect_rows["stage"]) == {"d2a"}
     assert result.effect_rows["Delta_MAE"].notna().all()
 
     for n_train in (5, 40):
@@ -99,3 +113,33 @@ def test_d2_analysis_rejects_incomplete_orthogonal_array() -> None:
 
     with pytest.raises(ValueError, match="complete 25-combination orthogonal array"):
         analyze_d2a(metrics, Phase06Config())
+
+
+def test_d2b_analysis_accepts_only_complementary_array_and_preserves_stage() -> None:
+    analyze_d2b = _analyze_d2b()
+    result = analyze_d2b(_d2_fixture(stage="d2b"), Phase06Config())
+
+    assert isinstance(result, D2AnalysisResult)
+    assert len(result.effect_rows) == 50
+    assert set(result.effect_rows["stage"]) == {"d2b"}
+    observed = {
+        (int(row.cohort_seed), int(row.subset_seed), int(row.model_seed))
+        for row in result.effect_rows.itertuples()
+    }
+    expected = {
+        (401 + i, 501 + j, 601 + ((i + 2 * j) % 5))
+        for i in range(5)
+        for j in range(5)
+    }
+    assert observed == expected
+    assert result.n_shift_summary["bootstrap_seed"] == 20260826
+    assert result.n_shift_summary["bootstrap_resamples"] == 10_000
+
+
+def test_d2a_and_d2b_reject_each_others_array() -> None:
+    analyze_d2b = _analyze_d2b()
+
+    with pytest.raises(ValueError, match="complete 25-combination orthogonal array"):
+        analyze_d2a(_d2_fixture(stage="d2b"), Phase06Config())
+    with pytest.raises(ValueError, match="complete 25-combination orthogonal array"):
+        analyze_d2b(_d2_fixture(stage="d2a"), Phase06Config())
