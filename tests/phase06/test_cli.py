@@ -223,7 +223,7 @@ def test_d2b_passes_exact_child_plan_only_after_parent_binding(tmp_path, monkeyp
                 "--output",
                 str(child),
                 "--device",
-                "cpu",
+                "cuda",
                 "--resume",
             ]
         )
@@ -237,7 +237,7 @@ def test_d2b_passes_exact_child_plan_only_after_parent_binding(tmp_path, monkeyp
     assert observed["store"] is store
     assert observed["analysis_store"] is store
     assert observed["analysis_cells"] == cells
-    assert observed["device"] == "cpu"
+    assert observed["device"] == "cuda"
     assert observed["resume"] is True
 
 
@@ -253,7 +253,7 @@ def test_d2b_refuses_same_parent_and_child_output(tmp_path):
                 "--output",
                 str(tmp_path),
                 "--device",
-                "cpu",
+                "cuda",
             ]
         )
 
