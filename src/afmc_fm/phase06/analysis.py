@@ -155,7 +155,7 @@ def _classify_d1(table: pd.DataFrame) -> dict[str, object]:
         "classification": classification,
         "mean_delta_mae_by_n": mean_by_n,
         "n40_time_scaled_wins": n40_wins,
-        "n40_bundle_count": int(len(n40)),
+        "n40_bundle_count": len(n40),
         "conditions": conditions,
         "effect_orientation": {
             "mae": "none - time_scaled",
