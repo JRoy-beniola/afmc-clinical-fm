@@ -91,7 +91,7 @@ def test_fake_complete_d1_d2_pipeline_persists_analysis_and_adjudicates(
     calls: list[str] = []
 
     def capture_stage_run(cells, store, *args, **kwargs):
-        calls.append(tuple(cells)[0].stage)
+        calls.append(next(iter(cells)).stage)
         return _fake_stage_run(cells, store, *args, **kwargs)
 
     monkeypatch.setattr(phase06_cli, "run_phase06_stage", capture_stage_run)
