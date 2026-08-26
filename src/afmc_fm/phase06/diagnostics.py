@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict, fields
 import math
+from dataclasses import asdict, fields
 
 import pandas as pd
 import torch
