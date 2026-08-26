@@ -1,0 +1,19 @@
+{
+  "cell_index_csv": "docs/results/phase0/raw/cell_index.csv",
+  "cell_index_csv_sha256": "db0ee76fd92433e3bf24843179560b1c514592e0e950b70baefc637a1a538367",
+  "cell_metrics_exactly_match_metrics_csv": true,
+  "cell_results_jsonl": "docs/results/phase0/raw/cell_results.jsonl",
+  "cell_results_jsonl_sha256": "f9208f90ad96abf9918a4646c0e281cdd6d072be252e868b8b8c9e7c24a1377f",
+  "cell_schema_version": 1,
+  "metrics_csv_row_count": 23520,
+  "official_execution_sha": "d6f105eee73fcb8e9cc5987d292b1bb98a687382",
+  "official_output_directory": "outputs/phase0_full_cuda_d6f105eee73fcb8e9cc5987d292b1bb98a687382",
+  "persisted_cell_count": 2730,
+  "persisted_metric_row_count": 23520,
+  "phase": "phase0",
+  "run_identity": {
+    "experiment_config_hash": "36750615c642581ac7af76a400fa5cbe9b6ca81be5da401c029b240981d73115",
+    "protocol_anchor": "be5a66b2e45362f60c90844e4e25673fb7bb3e21",
+    "simulator_config_hash": "f093115ae47274680e8b7cf1c7fea440a739079881099227e5b8c4abc0320aa8"
+  }
+}

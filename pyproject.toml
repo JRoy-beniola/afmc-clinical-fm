@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "afmc-clinical-fm"
+version = "0.1.0"
+description = "Synthetic low-data longitudinal clinical modelling research harness"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=2.0",
+  "pandas>=2.2",
+  "scipy>=1.13",
+  "scikit-learn>=1.5",
+  "torch>=2.3",
+  "PyYAML>=6.0",
+  "matplotlib>=3.9",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2",
+  "pytest-cov>=5.0",
+  "ruff>=0.5",
+]
+
+[project.scripts]
+afmc-phase0 = "afmc_fm.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

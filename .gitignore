@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Real/private clinical data: never commit
+/data/
+/clinical_data/
+/patient_data/
+/private_data/
+/private/
+
+# Large or derived artifacts
+*.parquet
+*.feather
+*.pkl
+*.joblib
+*.ckpt
+*.pt
+*.pth
+/outputs/
+/runs/
+/wandb/
+
+# Notebook state
+.ipynb_checkpoints/
+
+# Python package metadata
+*.egg-info/

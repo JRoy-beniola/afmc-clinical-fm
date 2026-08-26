@@ -1,0 +1,7 @@
+seed: 7
+cohort_size: 24
+n_sites: 2
+latent_dim: 4
+followup_days: 180.0
+mean_event_interval_days: 14.0
+observation_regime: mnar

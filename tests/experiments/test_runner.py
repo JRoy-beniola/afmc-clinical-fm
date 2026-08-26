@@ -1,0 +1,384 @@
+import numpy as np
+import pandas as pd
+import torch
+
+from afmc_fm.data.encoding import SummaryHistoryEncoder
+from afmc_fm.data.sequences import build_patient_sequence
+from afmc_fm.data.splits import split_patient_ids
+from afmc_fm.data.tasks import LongitudinalTask
+from afmc_fm.experiments.runner import (
+    ABLATION_IDS,
+    ExperimentConfig,
+    build_complete_truth_targets,
+    run_low_n_benchmark,
+    run_observation_shift_benchmark,
+    sample_low_n_train_ids,
+    select_low_n_budget,
+)
+from afmc_fm.simulator.cohort import simulate_cohort, simulate_world
+from afmc_fm.simulator.config import SimulatorConfig
+
+
+def test_low_n_sampling_is_exact_and_reproducible():
+    pool = [f"p{i}" for i in range(200)]
+    a = sample_low_n_train_ids(pool, n=40, seed=3)
+    b = sample_low_n_train_ids(pool, n=40, seed=3)
+    assert a == b
+    assert len(a) == 40
+    assert len(set(a)) == 40
+
+
+def test_low_n_ids_are_sampled_only_from_training_pool():
+    ids = [f"p{i}" for i in range(100)]
+    train, validation, test = split_patient_ids(ids, seed=4)
+    sampled = set(sample_low_n_train_ids(train, n=20, seed=2))
+    assert sampled.isdisjoint(validation)
+    assert sampled.isdisjoint(test)
+
+
+def test_tiny_benchmark_returns_unique_tidy_metric_rows():
+    cohort = simulate_cohort(
+        SimulatorConfig(cohort_size=36, followup_days=45.0), seed=8
+    )
+    config = ExperimentConfig(train_sizes=(5,), subset_seeds=(1,), model_seeds=(1,), max_epochs=2, patience=1)
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("engineered_linear", "representation_linear"),
+    )
+    assert not results.empty
+    assert results["model"].nunique() == 2
+    assert (results["n_fit"] + results["n_validation"] == results["n_train"]).all()
+    assert (results["n_validation"] >= 1).all()
+    key = ["model", "n_train", "seed", "site_or_shift", "metric"]
+    assert not results.duplicated(key).any()
+
+
+def test_linear_probe_models_report_torch_ridge_parameter_counts():
+    cohort = simulate_cohort(
+        SimulatorConfig(cohort_size=36, followup_days=45.0), seed=32
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        subset_seeds=(1,),
+        model_seeds=(1,),
+        max_epochs=1,
+        patience=1,
+    )
+
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("engineered_linear", "representation_linear"),
+        device=torch.device("cpu"),
+    )
+
+    parameter_counts = results.groupby("model")["trainable_parameters"].first()
+    assert (parameter_counts > 0).all()
+
+
+def test_named_worlds_preserve_interface_but_change_generating_assumptions():
+    config = SimulatorConfig(cohort_size=4, followup_days=45.0)
+    smooth = simulate_world("smooth", config, seed=5)
+    misspecified = simulate_world("misspecified", config, seed=5)
+    assert type(smooth) is type(misspecified)
+    assert len(smooth.patients) == len(misspecified.patients) == 4
+    assert smooth.config.world_name == "smooth"
+    assert misspecified.config.world_name == "misspecified"
+    assert not np.allclose(
+        smooth.patients[0].parameters.progression_scale,
+        misspecified.patients[0].parameters.progression_scale,
+    )
+
+
+def test_observation_shift_reports_both_sites_for_observation_models():
+    cohort = simulate_world(
+        "site_shift",
+        SimulatorConfig(cohort_size=30, followup_days=45.0),
+        seed=9,
+    )
+    config = ExperimentConfig(train_sizes=(5,), subset_seeds=(1,), model_seeds=(1,), max_epochs=1, patience=1)
+    results = run_observation_shift_benchmark(cohort, config)
+    assert set(results["model"]) == {"flow_jump", "flow_jump_observation"}
+    raw = results[results["site_or_shift"].isin(["site_0", "site_1"])]
+    for model_name in ("flow_jump", "flow_jump_observation"):
+        assert set(raw.loc[raw["model"] == model_name, "site_or_shift"]) == {
+            "site_0",
+            "site_1",
+        }
+
+
+def test_fit_and_validation_patients_stay_within_total_low_n_budget():
+    development = [f"dev-{index}" for index in range(80)]
+    final_test = {f"test-{index}" for index in range(20)}
+    budget = select_low_n_budget(
+        development,
+        n=5,
+        subset_seed=11,
+        validation_fraction=0.2,
+    )
+    labelled = set(budget.fit_ids) | set(budget.validation_ids)
+    assert len(labelled) == 5
+    assert set(budget.fit_ids).isdisjoint(budget.validation_ids)
+    assert labelled <= set(development)
+    assert labelled.isdisjoint(final_test)
+
+
+def test_complete_truth_targets_do_not_condition_on_observation_masks():
+    patient = simulate_world(
+        "site_shift",
+        SimulatorConfig(cohort_size=1, followup_days=90.0),
+        seed=14,
+    ).patients[0]
+    task = LongitudinalTask(patient.complete_outcomes.value_codes)
+    sequence = build_patient_sequence(
+        patient,
+        SummaryHistoryEncoder(task, representation_dim=16, seed=0),
+        task,
+    )
+    targets, masks = build_complete_truth_targets(patient)
+    assert len(sequence.times) == len(patient.complete_outcomes.times)
+    assert targets.shape == sequence.target_next_values.shape
+    assert masks.shape == sequence.target_next_masks.shape
+    assert masks.sum() >= sequence.target_next_masks.sum()
+    assert np.all(masks.sum(axis=1) % 3 == 0)
+
+
+def test_tiny_benchmark_runs_explicit_baseline_decomposition():
+    cohort = simulate_cohort(
+        SimulatorConfig(cohort_size=36, followup_days=45.0), seed=12
+    )
+    config = ExperimentConfig(train_sizes=(5,), subset_seeds=(1,), model_seeds=(1,), max_epochs=1, patience=1)
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=(
+            "engineered_linear",
+            "representation_linear",
+            "representation_mlp",
+            "gru_from_scratch",
+            "flow_jump",
+        ),
+    )
+    assert set(results["model"]) == {
+        "engineered_linear",
+        "representation_linear",
+        "representation_mlp",
+        "gru_from_scratch",
+        "flow_jump",
+    }
+
+
+def test_representation_mlp_uses_torch_optimized_backend_by_default():
+    cohort = simulate_cohort(
+        SimulatorConfig(cohort_size=30, followup_days=45.0), seed=25
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        subset_seeds=(1,),
+        model_seeds=(1,),
+        max_epochs=1,
+        patience=1,
+    )
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("representation_mlp",),
+    )
+    assert results["trainable_parameters"].nunique() == 1
+    assert results["trainable_parameters"].iloc[0] == 673
+    assert set(results["backend"]) == {"torch_lbfgs"}
+    assert np.isfinite(results["value"]).all()
+
+
+def test_representation_mlp_can_select_sklearn_reference_backend():
+    cohort = simulate_cohort(
+        SimulatorConfig(cohort_size=30, followup_days=45.0), seed=25
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        subset_seeds=(1,),
+        model_seeds=(1,),
+        max_epochs=1,
+        patience=1,
+    )
+
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("representation_mlp",),
+        mlp_backend="sklearn",
+    )
+
+    assert set(results["backend"]) == {"sklearn_lbfgs"}
+    assert np.isfinite(results["value"]).all()
+
+
+def test_required_ablation_variants_are_runnable_and_tidy():
+    cohort = simulate_cohort(
+        SimulatorConfig(cohort_size=30, followup_days=45.0), seed=15
+    )
+    config = ExperimentConfig(train_sizes=(5,), subset_seeds=(1,), model_seeds=(1,), max_epochs=1, patience=1)
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("flow_jump_observation",),
+        ablations=ABLATION_IDS,
+    )
+    assert set(results["ablation"]) == set(ABLATION_IDS)
+    key = ["model", "ablation", "n_train", "seed", "site_or_shift", "metric"]
+    assert not results.duplicated(key).any()
+
+
+def test_neural_benchmark_reports_forecasting_event_and_latent_metrics():
+    cohort = simulate_cohort(
+        SimulatorConfig(
+            cohort_size=36,
+            followup_days=90.0,
+            intervention_rate=0.15,
+        ),
+        seed=18,
+    )
+    config = ExperimentConfig(train_sizes=(5,), subset_seeds=(1,), model_seeds=(1,), max_epochs=1, patience=1)
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("flow_jump",),
+        device=torch.device("cpu"),
+    )
+    assert {
+        "mae",
+        "rmse",
+        "nll",
+        "coverage_90",
+        "event_roc_auc",
+        "event_brier",
+        "event_log_loss",
+        "latent_aligned_r2",
+    } <= set(results["metric"])
+    assert np.isfinite(results["value"]).all()
+
+
+def test_explicit_cpu_matches_default_neural_results():
+    cohort = simulate_cohort(
+        SimulatorConfig(cohort_size=30, followup_days=45.0), seed=27
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        subset_seeds=(2,),
+        model_seeds=(3,),
+        max_epochs=1,
+        patience=1,
+    )
+
+    default = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("gru_from_scratch",),
+    )
+    explicit_cpu = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("gru_from_scratch",),
+        device=torch.device("cpu"),
+    )
+
+    key = ["model", "ablation", "metric", "site_or_shift"]
+    pd.testing.assert_frame_equal(
+        default.sort_values(key).reset_index(drop=True),
+        explicit_cpu.sort_values(key).reset_index(drop=True),
+    )
+
+
+def test_repetitions_regenerate_independent_cohorts_and_report_seed_roles():
+    cohort = simulate_world(
+        "smooth",
+        SimulatorConfig(cohort_size=36, followup_days=45.0),
+        seed=101,
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        cohort_seeds=(101, 102),
+        subset_seeds=(201, 202),
+        model_seeds=(301, 302),
+        max_epochs=1,
+        patience=1,
+    )
+    results = run_low_n_benchmark(
+        cohort,
+        config,
+        model_names=("engineered_linear",),
+    )
+    assert set(results["cohort_seed"]) == {101, 102}
+    assert set(results["subset_seed"]) == {201, 202}
+    assert set(results["model_seed"]) == {301, 302}
+
+
+def test_model_results_do_not_depend_on_registry_iteration_order():
+    cohort = simulate_world(
+        "jumps",
+        SimulatorConfig(cohort_size=30, followup_days=45.0),
+        seed=103,
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        cohort_seeds=(103,),
+        subset_seeds=(203,),
+        model_seeds=(303,),
+        max_epochs=1,
+        patience=1,
+    )
+    names = ("gru_from_scratch", "flow_jump")
+    forward = run_low_n_benchmark(cohort, config, model_names=names)
+    reverse = run_low_n_benchmark(cohort, config, model_names=tuple(reversed(names)))
+    key = ["model", "ablation", "metric"]
+    forward = forward.sort_values(key).reset_index(drop=True)
+    reverse = reverse.sort_values(key).reset_index(drop=True)
+    np.testing.assert_allclose(forward["value"], reverse["value"], equal_nan=True)
+
+
+def test_observation_shift_honors_configured_train_and_test_sites():
+    cohort = simulate_world(
+        "site_shift",
+        SimulatorConfig(cohort_size=30, followup_days=45.0),
+        seed=21,
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        subset_seeds=(1,),
+        model_seeds=(1,),
+        train_site=1,
+        test_sites=(1, 0),
+        max_epochs=1,
+        patience=1,
+    )
+    results = run_observation_shift_benchmark(cohort, config)
+    assert {"site_1", "site_0", "site_0_minus_site_1"} <= set(
+        results["site_or_shift"]
+    )
+
+
+def test_observation_shift_runs_on_explicit_cpu_device():
+    cohort = simulate_world(
+        "site_shift",
+        SimulatorConfig(cohort_size=30, followup_days=45.0),
+        seed=29,
+    )
+    config = ExperimentConfig(
+        train_sizes=(5,),
+        subset_seeds=(2,),
+        model_seeds=(3,),
+        max_epochs=1,
+        patience=1,
+    )
+
+    results = run_observation_shift_benchmark(
+        cohort,
+        config,
+        model_names=("flow_jump",),
+        device=torch.device("cpu"),
+    )
+
+    assert not results.empty
+    defined_metrics = results[results["metric"] != "event_roc_auc"]
+    assert np.isfinite(defined_metrics["value"]).all()

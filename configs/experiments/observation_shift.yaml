@@ -1,0 +1,15 @@
+train_sizes: [5, 10, 20, 40, 80, 100]
+cohort_seeds: [101, 102, 103, 104, 105]
+subset_seeds: [201, 202, 203, 204, 205]
+model_seeds: [301, 302, 303, 304, 305]
+max_epochs: 100
+patience: 12
+learning_rate: 0.001
+weight_decay: 0.0001
+lambda_event: 1.0
+lambda_obs: 0.2
+train_site: 0
+test_sites: [0, 1]
+worlds: [site_shift]
+models: [flow_jump, flow_jump_observation]
+ablations: [none, no_observation_head]
