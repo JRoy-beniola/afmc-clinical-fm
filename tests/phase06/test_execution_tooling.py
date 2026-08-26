@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -10,6 +11,13 @@ RUNNER = ROOT / "tools" / "execution" / "phase06" / "run_stage.sh"
 STARTER = ROOT / "tools" / "execution" / "phase06" / "start_stage.sh"
 README = ROOT / "tools" / "execution" / "phase06" / "README.txt"
 MONITOR = ROOT / "tools" / "monitoring" / "phase06" / "monitor_stage.py"
+VALIDATION = (
+    ROOT
+    / "docs"
+    / "superpowers"
+    / "validation"
+    / "2026-08-26-phase0-6-core-validation.md"
+)
 
 
 def _load_monitor_module():
@@ -35,8 +43,7 @@ def test_runner_locks_stage_scope_validation_and_d2_prerequisites():
     text = RUNNER.read_text(encoding="utf-8")
 
     assert '[[ "$STAGE" != "d1" && "$STAGE" != "d2a" ]]' in text
-    assert "implementation status: READY FOR D1 EXECUTION" in text
-    assert "branch/head SHA" in text
+    assert "READY FOR D1 EXECUTION" in text
     assert 'git diff --quiet "$VALIDATED_SHA" "$HEAD" -- src configs pyproject.toml' in text
     assert '"$PY" -m afmc_fm.phase06.cli "$STAGE"' in text
     assert "--device cuda" in text
@@ -44,6 +51,24 @@ def test_runner_locks_stage_scope_validation_and_d2_prerequisites():
     assert 'analysis/phase06_d1_classification.json' in text
     assert 'afmc_fm.phase06.cli adjudicate' not in text
     assert '"d2b"' not in text
+
+
+def test_runner_validation_parser_matches_committed_task12_record():
+    runner = RUNNER.read_text(encoding="utf-8")
+    validation = VALIDATION.read_text(encoding="utf-8")
+
+    assert re.search(
+        r"(?im)implementation status:.*READY FOR D1 EXECUTION",
+        validation,
+    )
+    match = re.search(
+        r"(?im)validated implementation SHA:\s*`?([0-9a-f]{40})`?",
+        validation,
+    )
+    assert match is not None
+
+    assert "implementation status:.*READY FOR D1 EXECUTION" in runner
+    assert "Validated implementation SHA|branch/head SHA" in runner
 
 
 def test_tmux_starter_creates_runner_and_monitor_windows_only():
