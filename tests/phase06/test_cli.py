@@ -33,19 +33,19 @@ def test_d1_binds_protocol_before_planning_and_passes_locked_40_cells(
     monkeypatch.setattr(phase06_cli, "plan_d1_cells", plan_after_binding)
     monkeypatch.setattr(phase06_cli, "run_phase06_stage", capture_run)
 
-    result = phase06_cli.main(
-        [
-            "d1",
-            "--config",
-            "configs/experiments/phase06.yaml",
-            "--output",
-            str(tmp_path),
-            "--device",
-            "cpu",
-        ]
-    )
+    with pytest.raises(ValueError, match="d1 stage is not complete"):
+        phase06_cli.main(
+            [
+                "d1",
+                "--config",
+                "configs/experiments/phase06.yaml",
+                "--output",
+                str(tmp_path),
+                "--device",
+                "cpu",
+            ]
+        )
 
-    assert result == 0
     cells = observed["cells"]
     assert len(cells) == 40
     assert len({cell.cell_id for cell in cells}) == 40
@@ -58,6 +58,7 @@ def test_d1_binds_protocol_before_planning_and_passes_locked_40_cells(
     assert len(store.protocol_hash) == 64
     assert len(store.config_hash) == 64
     assert (tmp_path / "protocol_lock.json").is_file()
+    assert not (tmp_path / "analysis" / "phase06_d1_reproduction.csv").exists()
 
 
 def test_d2a_binds_protocol_before_planning_and_passes_locked_100_cells(
@@ -79,20 +80,20 @@ def test_d2a_binds_protocol_before_planning_and_passes_locked_100_cells(
     monkeypatch.setattr(phase06_cli, "plan_d2a_cells", plan_after_binding)
     monkeypatch.setattr(phase06_cli, "run_phase06_stage", capture_run)
 
-    result = phase06_cli.main(
-        [
-            "d2a",
-            "--config",
-            "configs/experiments/phase06.yaml",
-            "--output",
-            str(tmp_path),
-            "--device",
-            "cpu",
-            "--resume",
-        ]
-    )
+    with pytest.raises(ValueError, match="d2a stage is not complete"):
+        phase06_cli.main(
+            [
+                "d2a",
+                "--config",
+                "configs/experiments/phase06.yaml",
+                "--output",
+                str(tmp_path),
+                "--device",
+                "cpu",
+                "--resume",
+            ]
+        )
 
-    assert result == 0
     cells = observed["cells"]
     assert len(cells) == 100
     assert len({cell.cell_id for cell in cells}) == 100
@@ -100,6 +101,7 @@ def test_d2a_binds_protocol_before_planning_and_passes_locked_100_cells(
     assert observed["planned"] == cells
     assert observed["device"] == "cpu"
     assert observed["resume"] is True
+    assert not (tmp_path / "analysis" / "phase06_d2_effects.csv").exists()
 
 
 def test_conflicting_output_protocol_fails_before_planning(tmp_path, monkeypatch):
@@ -127,6 +129,17 @@ def test_conflicting_output_protocol_fails_before_planning(tmp_path, monkeypatch
         )
 
     assert planned is False
+
+
+def test_adjudicate_requires_completed_hash_valid_stages(tmp_path):
+    config = phase06_cli.load_phase06_config("configs/experiments/phase06.yaml")
+    phase05_config = phase06_cli.load_phase05_config(config.phase05_config)
+    phase06_cli._bind_store(config, phase05_config, tmp_path)
+
+    with pytest.raises(ValueError, match="d1 stage is not complete"):
+        phase06_cli.main(["adjudicate", "--output", str(tmp_path)])
+
+    assert not (tmp_path / "analysis" / "phase06_d3_adjudication.json").exists()
 
 
 def test_parser_exposes_only_d1_d2a_and_adjudicate_scientific_commands(tmp_path):
