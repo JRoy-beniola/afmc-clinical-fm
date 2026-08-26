@@ -2,14 +2,14 @@ import hashlib
 from pathlib import Path
 
 import pytest
-
-from afmc_fm.execution.persistence import canonical_config_hash
-from afmc_fm.phase05.config import load_phase05_config
 from afmc_fm.phase06.config import load_phase06_config
 from afmc_fm.phase06.protocol import (
     build_phase06_protocol_lock,
     validate_development_seed_triplet,
 )
+
+from afmc_fm.execution.persistence import canonical_config_hash
+from afmc_fm.phase05.config import load_phase05_config
 
 _PHASE06_CONFIG = Path("configs/experiments/phase06.yaml")
 _PHASE06_SPEC = Path(
