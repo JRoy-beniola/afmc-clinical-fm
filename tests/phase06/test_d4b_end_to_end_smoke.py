@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+from pathlib import Path
 
 import pandas as pd
 import torch
@@ -30,7 +31,7 @@ def _parent_evidence() -> dict[str, object]:
         "d2b_next_required_stage": "D4_OPTIMIZATION",
         "phase06_config_sha256": canonical_config_hash(config),
         "phase06_spec_sha256": hashlib.sha256(
-            config.phase06_spec.read_bytes()
+            Path(config.phase06_spec).read_bytes()
         ).hexdigest(),
         "forbidden_seed_sets": {
             "cohort": list(config.forbidden_cohort_seeds),
