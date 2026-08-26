@@ -23,9 +23,29 @@ A negative, fragile, or ambiguous D4-B result is a valid stopping result.
 
 ## 2. Immutable parent evidence
 
-D4-B is a child diagnostic stage. It must never rewrite the completed D1/D2-A/D3 parent store or the completed D2-B child store.
+D4-B consumes two immutable evidence roots:
 
-The D4-B implementation must bind to the completed D2-B child execution whose protocol lock reports:
+1. the completed Phase 0.6 core parent containing D1, D2-A, and D3;
+2. the completed D2-B child containing the complementary-array execution and cross-array adjudication.
+
+D4-B must never rewrite either root.
+
+### 2.1 Core parent identity
+
+The core parent must retain:
+
+```text
+execution SHA = 1718402df1d6ef344168677e6d26ea664708e1bc
+protocol-lock SHA-256 = c001bc278cc0c41793ef21d972f851b1ccd7a6d1b2adc8d2f45060660f709a51
+D3 artifact SHA-256 = 6b9fffed7503fae6beeac2314238ae3d10ffdebfd27ea71ad952ab1f87916460
+D3 next_required_stage = D2B
+```
+
+The implementation must re-use the existing deep D1/D2-A/D3 validation path rather than trusting completion markers alone.
+
+### 2.2 D2-B child identity
+
+The D2-B parent-of-D4-B protocol lock must semantically report:
 
 ```text
 execution_commit = 516c9e3c0e965582fa5cce976e9d8ebf32ea8404
@@ -36,7 +56,13 @@ parent_d3_next_required_stage = D2B
 d2b_mapping = model_index=(cohort_index+2*subset_index)%5
 ```
 
-The completed D2-B cross-array adjudication must semantically match all of the following:
+Using canonical JSON serialization (`sort_keys=True`, separators `(',', ':')`, `allow_nan=False`), that D2-B protocol payload has SHA-256:
+
+```text
+33f7cb1f6e71560f547a746cb7f5eb41130f794ab1e3a6fb1928c40e05b29f12
+```
+
+The completed D2-B cross-array adjudication must semantically match:
 
 ```text
 complementary_array_evidence = sufficient
@@ -48,20 +74,25 @@ next_required_stage = D4_OPTIMIZATION
 remaining_parent_escalations = [D4_OPTIMIZATION, D4_CAPACITY_TIME]
 ```
 
-Using canonical JSON serialization (`sort_keys=True`, separators `(',', ':')`, `allow_nan=False`), the completed D2-B adjudication has SHA-256:
+Using the same canonical JSON serialization, the completed D2-B adjudication has SHA-256:
 
 ```text
 ea28fd4d5f6490a10fad20d5d3f3e76a1de08bf6b1be3b9805c9cf6c519e845f
 ```
 
-Before any D4-B child store is created, the implementation must:
+### 2.3 Required pre-child validation
 
-1. open the D2-B parent as a hash-bound `Phase06Store`;
-2. validate its protocol identity and frozen D1/D2-A/D3 linkage;
-3. require exact completion of all 100 D2-B cells and validate their persisted bundles;
-4. recompute/load the D2-B analysis required for cross-array adjudication;
-5. verify the persisted D2-B adjudication against the frozen canonical hash and semantic decision above;
-6. reject any parent evidence whose bytes, hashes, stage completeness, or decision no longer match the frozen chain.
+Before any D4-B child store is created, implementation must:
+
+1. open and deeply validate the core D1/D2-A/D3 parent;
+2. open the D2-B child as a hash-bound `Phase06Store`;
+3. verify the D2-B child protocol canonical hash and its linkage to the exact core parent;
+4. require exact completion of all 100 D2-B cells and validate their persisted bundles;
+5. recompute/load D2-A and D2-B analysis from the two immutable roots;
+6. recompute the cross-array adjudication using the frozen implementation logic;
+7. require the recomputed adjudication to equal the persisted D2-B adjudication;
+8. verify the persisted adjudication canonical SHA-256 and frozen `D4_OPTIMIZATION` decision;
+9. reject any mismatch before creating or writing a D4-B child root.
 
 ## 3. Scientific scope
 
@@ -155,21 +186,11 @@ Positive values favor `time_scaled`.
 
 There are exactly 50 paired effects.
 
-Define the model-seed mean effect:
+Define:
 
 ```text
 Delta_model(m) = mean_c Delta_MAE(c,m)
-```
-
-and context mean effect:
-
-```text
 Delta_context(c) = mean_m Delta_MAE(c,m)
-```
-
-The overall effect is:
-
-```text
 Delta_overall = mean_(c,m) Delta_MAE(c,m)
 ```
 
@@ -210,7 +231,7 @@ bootstrap_ci_lower = lower endpoint of the locked 95% cluster-bootstrap interval
 
 ### `stable`
 
-D4-B is classified `stable` only if all four conditions hold:
+D4-B is `stable` only if all four conditions hold:
 
 ```text
 Delta_overall > 0
@@ -221,7 +242,7 @@ bootstrap_ci_lower > 0
 
 ### `fragile`
 
-D4-B is classified `fragile` if any of the following holds:
+D4-B is `fragile` if any of the following holds:
 
 ```text
 Delta_overall <= 0
@@ -237,7 +258,7 @@ The thresholds are frozen before D4-B implementation and may not be tuned after 
 
 ## 8. Descriptive optimization diagnostics
 
-The primary scientific gate is Section 7. The following diagnostics are descriptive and may explain instability but may not alter the classification threshold.
+The primary scientific gate is Section 7. These diagnostics are descriptive and may explain instability but may not alter the classification threshold.
 
 For each D4-B cell, persist the existing Phase 0.6 training trace and summary, including:
 
@@ -299,7 +320,7 @@ Execution itself must not write the final D4-B adjudication artifact.
 
 ## 10. Explicit adjudication and next state
 
-Cross-stage continuation is a separate explicit command after D4-B execution artifacts are audited.
+Continuation is a separate explicit command after D4-B execution artifacts are audited.
 
 The canonical adjudication artifact is:
 
@@ -335,7 +356,7 @@ ambiguous -> STOP
 
 ## 11. Child provenance boundary
 
-D4-B must execute in a new child output root distinct from and non-nested with every parent evidence root.
+D4-B must execute in a new child output root distinct from and non-nested with both immutable parent roots.
 
 The D4-B child protocol lock must bind at least:
 
@@ -344,8 +365,11 @@ child execution SHA
 Phase 0.6 config/spec identities
 this D4-B addendum SHA-256
 Phase 0.5 config/protocol identity
-D2-B parent execution SHA
-D2-B parent protocol identity
+core parent execution SHA
+core parent protocol SHA-256
+core parent D3 SHA-256
+D2-B child execution SHA
+canonical D2-B protocol SHA-256
 canonical D2-B adjudication SHA-256
 D2-B next_required_stage = D4_OPTIMIZATION
 fixed cohort/subset contexts
@@ -357,26 +381,44 @@ bootstrap_seed = 20260827
 forbidden seed sets
 ```
 
-A resume must revalidate the entire parent chain and reuse only a child store whose protocol identity exactly matches the current D4-B execution SHA and frozen addendum.
+A resume must revalidate both immutable parent roots and reuse only a child store whose protocol identity exactly matches the current D4-B execution SHA and frozen addendum.
 
 ## 12. CLI and tooling boundary
 
-The D4-B implementation may expose only the following new Phase 0.6 actions:
+The only new Phase 0.6 actions authorized are:
 
 ```text
 d4b
 adjudicate-d4b
 ```
 
-`d4b` is CUDA-only in the public CLI.
-
-The execution launcher must support fresh/resume D4-B execution with:
+The public interfaces are conceptually:
 
 ```text
-separate child output
-immutable parent binding
-clean tracked worktree check
+afmc-phase06 d4b \
+  --config <phase06-config> \
+  --core-parent-output <D1/D2-A/D3-root> \
+  --d2b-parent-output <D2-B-root> \
+  --output <D4-B-child-root> \
+  --device cuda \
+  [--resume]
+
+afmc-phase06 adjudicate-d4b \
+  --core-parent-output <D1/D2-A/D3-root> \
+  --d2b-parent-output <D2-B-root> \
+  --output <D4-B-child-root>
+```
+
+`d4b` is CUDA-only in the public CLI.
+
+The shell launcher must require explicit immutable bindings for both parent roots and must support fresh/resume D4-B execution with:
+
+```text
+separate default child output: phase06_d4b_<HEAD>
+clean tracked working tree check
 validated implementation SHA check
+both parent roots distinct/non-nested from child
+both parent roots mutually distinct/non-nested
 CUDA preflight
 tmux runner/monitor support
 100-cell completion accounting
@@ -411,14 +453,15 @@ Before D4-B CUDA execution may be authorized, implementation validation must dem
 1. the planner produces exactly 100 unique D4-B cells and no other stage/matrix;
 2. only the five frozen cohort/subset contexts and model seeds `1001..1010` are reachable;
 3. all reserved confirmatory seeds remain rejected;
-4. parent D2-B completion and adjudication are cryptographically and structurally validated before child creation;
-5. parent and child roots reject equality and nesting in either direction;
-6. the public D4-B CLI is CUDA-only;
-7. fresh/resume semantics preserve hash-bound child-store integrity;
-8. the primary analysis reproduces the frozen 50 paired effects, summaries, bootstrap, and stability thresholds exactly;
-9. execution and adjudication remain separate;
-10. no D4-D, full-factorial, Phase 0.5 continuation, or confirmatory execution path is exposed;
-11. Ruff and the full pytest suite pass;
-12. an independent execution-readiness review reports no remaining Critical or Important blocker before the implementation SHA is frozen.
+4. both immutable parent roots are deeply validated before child creation;
+5. the recomputed D2-B cross-array adjudication exactly matches the frozen persisted decision;
+6. all three roots reject equality or nesting in any direction;
+7. the public D4-B CLI is CUDA-only;
+8. fresh/resume semantics preserve hash-bound child-store integrity;
+9. the primary analysis reproduces the frozen 50 paired effects, summaries, cluster bootstrap, and stability thresholds exactly;
+10. execution and adjudication remain separate;
+11. no D4-D, full-factorial, Phase 0.5 continuation, or confirmatory execution path is exposed;
+12. Ruff and the full pytest suite pass;
+13. an independent execution-readiness review reports no remaining Critical or Important blocker before the implementation SHA is frozen.
 
 Only after those gates pass may a separate D4-B readiness record authorize local CUDA execution.
