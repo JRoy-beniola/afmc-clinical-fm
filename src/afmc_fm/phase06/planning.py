@@ -20,7 +20,7 @@ _D2_MODELS = (601, 602, 603, 604, 605)
 
 @dataclass(frozen=True, slots=True)
 class Phase06CellSpec:
-    stage: Literal["d1", "d2a"]
+    stage: Literal["d1", "d2a", "d2b"]
     world: Literal["smooth"]
     cohort_seed: int
     subset_seed: int
@@ -31,8 +31,8 @@ class Phase06CellSpec:
     uncertainty_mode: Literal["deterministic"] = "deterministic"
 
     def __post_init__(self) -> None:
-        if self.stage not in {"d1", "d2a"}:
-            raise ValueError("stage must be d1 or d2a")
+        if self.stage not in {"d1", "d2a", "d2b"}:
+            raise ValueError("stage must be d1, d2a, or d2b")
         if self.world != "smooth":
             raise ValueError("world must be smooth")
         validate_development_seed_triplet(
@@ -123,4 +123,25 @@ def plan_d2a_cells(config: Phase06Config) -> tuple[Phase06CellSpec, ...]:
     return _require_unique_cells(cells, 100, "D2-A")
 
 
-__all__ = ["Phase06CellSpec", "plan_d1_cells", "plan_d2a_cells"]
+def plan_d2b_cells(config: Phase06Config) -> tuple[Phase06CellSpec, ...]:
+    cells = tuple(
+        Phase06CellSpec(
+            stage="d2b",
+            world=config.world,
+            cohort_seed=cohort_seed,
+            subset_seed=subset_seed,
+            model_seed=_D2_MODELS[(cohort_index + 2 * subset_index) % 5],
+            n_train=n_train,
+            flow_mode=flow_mode,
+            jump_mode=config.jump_mode,
+            uncertainty_mode=config.uncertainty_mode,
+        )
+        for cohort_index, cohort_seed in enumerate(_D2_COHORTS)
+        for subset_index, subset_seed in enumerate(_D2_SUBSETS)
+        for n_train in config.d2_train_sizes
+        for flow_mode in config.d2_flow_modes
+    )
+    return _require_unique_cells(cells, 100, "D2-B")
+
+
+__all__ = ["Phase06CellSpec", "plan_d1_cells", "plan_d2a_cells", "plan_d2b_cells"]
