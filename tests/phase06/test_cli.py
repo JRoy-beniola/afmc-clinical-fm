@@ -1,6 +1,7 @@
 import importlib
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -142,14 +143,119 @@ def test_adjudicate_requires_completed_hash_valid_stages(tmp_path):
     assert not (tmp_path / "analysis" / "phase06_d3_adjudication.json").exists()
 
 
-def test_parser_exposes_only_d1_d2a_and_adjudicate_scientific_commands(tmp_path):
+def test_parser_exposes_d2b_and_adjudicate_d2b_without_d4_commands(tmp_path):
     parser = phase06_cli.build_parser()
     adjudicate = parser.parse_args(["adjudicate", "--output", str(tmp_path)])
     assert adjudicate.command == "adjudicate"
 
-    for forbidden in ("confirmation", "robustness", "d4"):
+    d2b = parser.parse_args(
+        [
+            "d2b",
+            "--config",
+            "configs/experiments/phase06.yaml",
+            "--parent-output",
+            str(tmp_path / "parent"),
+            "--output",
+            str(tmp_path / "child"),
+        ]
+    )
+    assert d2b.command == "d2b"
+    assert Path(d2b.parent_output) == tmp_path / "parent"
+
+    d2b_adjudicate = parser.parse_args(
+        [
+            "adjudicate-d2b",
+            "--parent-output",
+            str(tmp_path / "parent"),
+            "--output",
+            str(tmp_path / "child"),
+        ]
+    )
+    assert d2b_adjudicate.command == "adjudicate-d2b"
+
+    for forbidden in (
+        "confirmation",
+        "robustness",
+        "d4",
+        "full-factorial",
+        "full-factorial-addendum",
+    ):
         with pytest.raises(SystemExit):
             parser.parse_args([forbidden])
+
+
+def test_d2b_passes_exact_child_plan_only_after_parent_binding(tmp_path, monkeypatch):
+    config = phase06_cli.load_phase06_config("configs/experiments/phase06.yaml")
+    phase05_config = phase06_cli.load_phase05_config(config.phase05_config)
+    parent = tmp_path / "parent"
+    child = tmp_path / "child"
+    store = SimpleNamespace(output=child)
+    observed: dict[str, object] = {}
+
+    def fake_load(args):
+        assert Path(args.parent_output) == parent
+        assert Path(args.output) == child
+        observed["bound_before_plan"] = True
+        return config, phase05_config, store
+
+    def capture_run(cells, received_store, *_args, device, resume, **_kwargs):
+        assert observed.get("bound_before_plan") is True
+        observed.update(cells=tuple(cells), store=received_store, device=device, resume=resume)
+        return {"stage": "d2b"}
+
+    def capture_analysis(received_store, cells, received_config):
+        observed.update(analysis_store=received_store, analysis_cells=tuple(cells))
+        assert received_config is config
+        return object()
+
+    monkeypatch.setattr(phase06_cli, "_load_d2b_inputs", fake_load)
+    monkeypatch.setattr(phase06_cli, "run_phase06_stage", capture_run)
+    monkeypatch.setattr(phase06_cli, "_persist_d2b_analysis", capture_analysis)
+
+    assert (
+        phase06_cli.main(
+            [
+                "d2b",
+                "--config",
+                "configs/experiments/phase06.yaml",
+                "--parent-output",
+                str(parent),
+                "--output",
+                str(child),
+                "--device",
+                "cpu",
+                "--resume",
+            ]
+        )
+        == 0
+    )
+
+    cells = observed["cells"]
+    assert len(cells) == 100
+    assert len({cell.cell_id for cell in cells}) == 100
+    assert {cell.stage for cell in cells} == {"d2b"}
+    assert observed["store"] is store
+    assert observed["analysis_store"] is store
+    assert observed["analysis_cells"] == cells
+    assert observed["device"] == "cpu"
+    assert observed["resume"] is True
+
+
+def test_d2b_refuses_same_parent_and_child_output(tmp_path):
+    with pytest.raises(ValueError, match="parent.*child.*distinct"):
+        phase06_cli.main(
+            [
+                "d2b",
+                "--config",
+                "configs/experiments/phase06.yaml",
+                "--parent-output",
+                str(tmp_path),
+                "--output",
+                str(tmp_path),
+                "--device",
+                "cpu",
+            ]
+        )
 
 
 def test_pyproject_registers_dedicated_phase06_console_script():
