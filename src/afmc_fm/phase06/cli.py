@@ -13,9 +13,11 @@ from afmc_fm.phase05.config import Phase05Config, load_phase05_config
 from afmc_fm.phase06.analysis import adjudicate_phase06, analyze_d1, analyze_d2a
 from afmc_fm.phase06.config import Phase06Config, load_phase06_config
 from afmc_fm.phase06.d2b import adjudicate_d2b, analyze_d2b
+from afmc_fm.phase06.d4b import adjudicate_d4b, analyze_d4b
 from afmc_fm.phase06.execution import run_phase06_stage
 from afmc_fm.phase06.pipeline import (
     load_phase06_d2b_parent_evidence,
+    load_phase06_d4b_parent_evidence,
     load_stage_summaries,
     load_stage_traces,
     open_bound_store,
@@ -23,9 +25,15 @@ from afmc_fm.phase06.pipeline import (
     write_analysis_csv,
     write_analysis_json,
 )
-from afmc_fm.phase06.planning import plan_d1_cells, plan_d2a_cells, plan_d2b_cells
+from afmc_fm.phase06.planning import (
+    plan_d1_cells,
+    plan_d2a_cells,
+    plan_d2b_cells,
+    plan_d4b_cells,
+)
 from afmc_fm.phase06.protocol import (
     build_phase06_d2b_protocol_lock,
+    build_phase06_d4b_protocol_lock,
     build_phase06_protocol_lock,
 )
 from afmc_fm.phase06.store import Phase06Store
@@ -37,6 +45,9 @@ _PHASE05_PROTOCOL_PATH = Path(
 )
 _D2B_ADDENDUM_PATH = Path(
     "docs/superpowers/specs/2026-08-26-phase0-6-d2b-execution-addendum.md"
+)
+_D4B_ADDENDUM_PATH = Path(
+    "docs/superpowers/specs/2026-08-27-phase0-6-d4b-execution-addendum.md"
 )
 
 
@@ -63,6 +74,14 @@ def _require_distinct_outputs(parent_output: str | Path, child_output: str | Pat
     child = Path(child_output).expanduser().resolve()
     if parent == child or parent in child.parents or child in parent.parents:
         raise ValueError("parent and child output roots must be distinct and non-nested")
+
+
+def _require_distinct_non_nested_roots(*outputs: str | Path) -> None:
+    resolved = [Path(output).expanduser().resolve() for output in outputs]
+    for index, left in enumerate(resolved):
+        for right in resolved[index + 1 :]:
+            if left == right or left in right.parents or right in left.parents:
+                raise ValueError("output roots must be distinct and non-nested")
 
 
 def _bind_store(
@@ -123,6 +142,42 @@ def _bind_d2b_store(
     return store
 
 
+def _bind_d4b_store(
+    config: Phase06Config,
+    phase05_config: Phase05Config,
+    *,
+    core_parent_output: str | Path,
+    d2b_parent_output: str | Path,
+    output: str | Path,
+) -> Phase06Store:
+    _require_distinct_non_nested_roots(core_parent_output, d2b_parent_output, output)
+    parent_evidence = load_phase06_d4b_parent_evidence(
+        core_parent_output,
+        d2b_parent_output,
+        config=config,
+        phase05_config=phase05_config,
+    )
+    execution_commit = execution_commit_sha()
+    lock = build_phase06_d4b_protocol_lock(
+        config,
+        phase05_config,
+        execution_commit=execution_commit,
+        phase06_spec_path=config.phase06_spec,
+        d4b_addendum_path=_D4B_ADDENDUM_PATH,
+        phase05_protocol_path=_PHASE05_PROTOCOL_PATH,
+        parent_evidence=parent_evidence,
+    )
+    protocol_hash = hashlib.sha256(_canonical_json_bytes(lock)).hexdigest()
+    store = Phase06Store(
+        Path(output),
+        protocol_hash=protocol_hash,
+        config_hash=canonical_config_hash(config),
+        execution_commit=execution_commit,
+    )
+    store.write_protocol_lock(lock)
+    return store
+
+
 def _load_bound_inputs(args: argparse.Namespace) -> tuple[
     Phase06Config,
     Phase05Config,
@@ -146,6 +201,28 @@ def _load_d2b_inputs(args: argparse.Namespace) -> tuple[
         config,
         phase05_config,
         parent_output=args.parent_output,
+        output=args.output,
+    )
+    return config, phase05_config, store
+
+
+def _load_d4b_inputs(args: argparse.Namespace) -> tuple[
+    Phase06Config,
+    Phase05Config,
+    Phase06Store,
+]:
+    _require_distinct_non_nested_roots(
+        args.core_parent_output,
+        args.d2b_parent_output,
+        args.output,
+    )
+    config = load_phase06_config(args.config)
+    phase05_config = load_phase05_config(config.phase05_config)
+    store = _bind_d4b_store(
+        config,
+        phase05_config,
+        core_parent_output=args.core_parent_output,
+        d2b_parent_output=args.d2b_parent_output,
         output=args.output,
     )
     return config, phase05_config, store
@@ -228,6 +305,40 @@ def _persist_d2b_analysis(
     return result
 
 
+def _persist_d4b_analysis(
+    store: Phase06Store,
+    cells,
+):
+    require_completed_stage(store, cells)
+    result = analyze_d4b(
+        store.load_stage_metrics("d4b"),
+        load_stage_summaries(store, cells),
+        load_stage_traces(store, cells),
+    )
+    write_analysis_csv(store, "phase06_d4b_effects.csv", result.effect_rows)
+    write_analysis_csv(
+        store,
+        "phase06_d4b_model_seed_summary.csv",
+        result.model_seed_summary,
+    )
+    write_analysis_csv(
+        store,
+        "phase06_d4b_context_summary.csv",
+        result.context_summary,
+    )
+    write_analysis_json(
+        store,
+        "phase06_d4b_bootstrap_diagnostics.json",
+        result.bootstrap_diagnostics,
+    )
+    write_analysis_csv(
+        store,
+        "phase06_d4b_optimization_dispersion.csv",
+        result.optimization_dispersion,
+    )
+    return result
+
+
 def _run_d1(args: argparse.Namespace) -> int:
     config, phase05_config, store = _load_bound_inputs(args)
     cells = plan_d1_cells(config, phase05_config)
@@ -274,6 +385,27 @@ def _run_d2b(args: argparse.Namespace) -> int:
         resume=args.resume,
     )
     _persist_d2b_analysis(store, cells, config)
+    return 0
+
+
+def _run_d4b(args: argparse.Namespace) -> int:
+    _require_distinct_non_nested_roots(
+        args.core_parent_output,
+        args.d2b_parent_output,
+        args.output,
+    )
+    config, phase05_config, store = _load_d4b_inputs(args)
+    cells = plan_d4b_cells(config)
+    simulator_config = _load_simulator_config(config.simulator_config)
+    run_phase06_stage(
+        cells,
+        store,
+        phase05_config,
+        simulator_config,
+        device=args.device,
+        resume=args.resume,
+    )
+    _persist_d4b_analysis(store, cells)
     return 0
 
 
@@ -379,6 +511,52 @@ def _adjudicate_d2b(args: argparse.Namespace) -> int:
     return 0
 
 
+def _adjudicate_d4b(args: argparse.Namespace) -> int:
+    _require_distinct_non_nested_roots(
+        args.core_parent_output,
+        args.d2b_parent_output,
+        args.output,
+    )
+    config = load_phase06_config(_PHASE06_CONFIG_PATH)
+    phase05_config = load_phase05_config(config.phase05_config)
+    parent_evidence = load_phase06_d4b_parent_evidence(
+        args.core_parent_output,
+        args.d2b_parent_output,
+        config=config,
+        phase05_config=phase05_config,
+    )
+
+    child_store = open_bound_store(args.output)
+    if execution_commit_sha() != child_store.execution_commit:
+        raise ValueError("D4-B adjudication checkout does not match child store identity")
+    if canonical_config_hash(config) != child_store.config_hash:
+        raise ValueError("D4-B adjudication config does not match child store identity")
+
+    expected_child_lock = build_phase06_d4b_protocol_lock(
+        config,
+        phase05_config,
+        execution_commit=child_store.execution_commit,
+        phase06_spec_path=config.phase06_spec,
+        d4b_addendum_path=_D4B_ADDENDUM_PATH,
+        phase05_protocol_path=_PHASE05_PROTOCOL_PATH,
+        parent_evidence=parent_evidence,
+    )
+    if _load_adjudication_protocol(child_store) != expected_child_lock:
+        raise ValueError("D4-B child protocol does not match frozen parent linkage")
+
+    cells = plan_d4b_cells(config)
+    require_completed_stage(child_store, cells)
+    result = analyze_d4b(
+        child_store.load_stage_metrics("d4b"),
+        load_stage_summaries(child_store, cells),
+        load_stage_traces(child_store, cells),
+    )
+    decision = adjudicate_d4b(result)
+    write_analysis_json(child_store, "phase06_d4b_adjudication.json", decision)
+    print(decision["next_required_stage"])
+    return 0
+
+
 def _add_stage_arguments(
     parser: argparse.ArgumentParser,
     *,
@@ -411,6 +589,12 @@ def build_parser() -> argparse.ArgumentParser:
     d2b.add_argument("--parent-output", required=True)
     d2b.set_defaults(handler=_run_d2b)
 
+    d4b = subparsers.add_parser("d4b")
+    _add_stage_arguments(d4b, cuda_only=True)
+    d4b.add_argument("--core-parent-output", required=True)
+    d4b.add_argument("--d2b-parent-output", required=True)
+    d4b.set_defaults(handler=_run_d4b)
+
     adjudicate = subparsers.add_parser("adjudicate")
     adjudicate.add_argument("--output", required=True)
     adjudicate.set_defaults(handler=_adjudicate)
@@ -419,6 +603,12 @@ def build_parser() -> argparse.ArgumentParser:
     adjudicate_d2b_parser.add_argument("--parent-output", required=True)
     adjudicate_d2b_parser.add_argument("--output", required=True)
     adjudicate_d2b_parser.set_defaults(handler=_adjudicate_d2b)
+
+    adjudicate_d4b_parser = subparsers.add_parser("adjudicate-d4b")
+    adjudicate_d4b_parser.add_argument("--core-parent-output", required=True)
+    adjudicate_d4b_parser.add_argument("--d2b-parent-output", required=True)
+    adjudicate_d4b_parser.add_argument("--output", required=True)
+    adjudicate_d4b_parser.set_defaults(handler=_adjudicate_d4b)
     return parser
 
 
