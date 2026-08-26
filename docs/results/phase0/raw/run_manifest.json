@@ -1,0 +1,149 @@
+{
+  "backend_ids": {
+    "engineered_linear": "torch_ridge",
+    "flow_jump": "torch",
+    "flow_jump_observation": "torch",
+    "gradient_boosting": "sklearn_hist_gradient_boosting",
+    "gru_from_scratch": "torch",
+    "representation_linear": "torch_ridge",
+    "representation_mlp": "torch_lbfgs"
+  },
+  "cancelled_cell_count": 0,
+  "cancelled_shard_count": 0,
+  "cancelled_shard_ids": [],
+  "cell_schema_version": 1,
+  "completed_cell_count": 2730,
+  "completed_shard_count": 25,
+  "cpu_logical_count": 12,
+  "cuda_available": true,
+  "cuda_runtime": "13.0",
+  "cumulative_wall_time_seconds": 13202.486606275008,
+  "ended_at": "2026-08-23T17:48:39.567324+00:00",
+  "execution_commit_history": [
+    {
+      "execution_commit_sha": "d6f105eee73fcb8e9cc5987d292b1bb98a687382",
+      "invocation_number": 1
+    }
+  ],
+  "execution_commit_sha": "d6f105eee73fcb8e9cc5987d292b1bb98a687382",
+  "expected_cell_count": 2730,
+  "expected_shard_count": 25,
+  "experiment_config": {
+    "ablations": [
+      "none",
+      "no_representation",
+      "no_flow",
+      "no_jump",
+      "no_observation_head",
+      "no_prob_scale"
+    ],
+    "cohort_seeds": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "lambda_event": 1.0,
+    "lambda_obs": 0.2,
+    "learning_rate": 0.001,
+    "max_epochs": 100,
+    "model_seeds": [
+      301,
+      302,
+      303,
+      304,
+      305
+    ],
+    "models": [
+      "engineered_linear",
+      "gradient_boosting",
+      "gru_from_scratch",
+      "representation_linear",
+      "representation_mlp",
+      "flow_jump",
+      "flow_jump_observation"
+    ],
+    "patience": 12,
+    "subset_seeds": [
+      201,
+      202,
+      203,
+      204,
+      205
+    ],
+    "test_sites": [
+      0,
+      1
+    ],
+    "train_site": 0,
+    "train_sizes": [
+      5,
+      10,
+      20,
+      40,
+      80,
+      100
+    ],
+    "weight_decay": 0.0001,
+    "worlds": [
+      "smooth",
+      "jumps",
+      "informative_observation",
+      "site_shift",
+      "misspecified"
+    ]
+  },
+  "experiment_config_hash": "36750615c642581ac7af76a400fa5cbe9b6ca81be5da401c029b240981d73115",
+  "failed_cell_count": 0,
+  "failed_shard_count": 0,
+  "failures": [],
+  "generated_at": "2026-08-23T17:48:39.567324+00:00",
+  "gpu_compute_capability": "8.9",
+  "gpu_name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "incomplete_cell_count": 0,
+  "incomplete_shard_count": 0,
+  "incomplete_shard_ids": [],
+  "invocation_ended_at": "2026-08-23T17:48:39.567324+00:00",
+  "invocation_execution_commit_sha": "d6f105eee73fcb8e9cc5987d292b1bb98a687382",
+  "invocation_number": 1,
+  "invocation_started_at": "2026-08-23T14:08:38.268573+00:00",
+  "invocation_wall_time_seconds": 13202.486606275008,
+  "library_versions": {
+    "matplotlib": "3.11.1",
+    "numpy": "2.5.2",
+    "pandas": "3.0.5",
+    "scikit_learn": "1.9.0",
+    "scipy": "1.18.1",
+    "torch": "2.13.0+cu130"
+  },
+  "original_started_at": "2026-08-23T14:08:38.268573+00:00",
+  "os": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+  "output_schema_version": 1,
+  "protocol_anchor": "be5a66b2e45362f60c90844e4e25673fb7bb3e21",
+  "python_version": "3.14.4",
+  "resolved_device": "cuda",
+  "schema_version": 1,
+  "simulator_config": {
+    "cohort_size": 5000,
+    "delayed_intervention_effect": false,
+    "followup_days": 365.0,
+    "heterogeneity_scale": 1.0,
+    "hidden_regime_switch": false,
+    "intervention_rate": 0.06,
+    "latent_dim": 4,
+    "mean_event_interval_days": 14.0,
+    "measurement_noise": 0.1,
+    "n_sites": 3,
+    "observation_regime": "site_shift",
+    "process_noise": 0.03,
+    "world_name": "custom"
+  },
+  "simulator_config_hash": "f093115ae47274680e8b7cf1c7fea440a739079881099227e5b8c4abc0320aa8",
+  "started_at": "2026-08-23T14:08:38.268573+00:00",
+  "synthetic": true,
+  "template_seed": 42,
+  "wall_time_seconds": 13202.486606275008,
+  "worker_count": 2,
+  "wsl": true
+}

@@ -1,0 +1,8 @@
+model,minimum_parameters,maximum_parameters,median_parameters,n_rows,constant_parameter_count
+gradient_boosting,0,0,0.0,300,True
+engineered_linear,17,17,17.0,300,True
+representation_linear,20,20,20.0,300,True
+representation_mlp,673,673,673.0,300,True
+gru_from_scratch,4455,4455,4455.0,1200,True
+flow_jump,6967,6967,6967.0,1920,True
+flow_jump_observation,7642,7642,7642.0,1920,True
