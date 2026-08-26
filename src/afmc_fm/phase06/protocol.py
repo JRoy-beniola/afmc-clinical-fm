@@ -27,6 +27,23 @@ _PARENT_PHASE06_PROTOCOL_SHA256 = (
 _PARENT_PHASE06_D3_SHA256 = (
     "6b9fffed7503fae6beeac2314238ae3d10ffdebfd27ea71ad952ab1f87916460"
 )
+_D2B_PHASE06_EXECUTION_SHA = "516c9e3c0e965582fa5cce976e9d8ebf32ea8404"
+_D2B_PROTOCOL_CANONICAL_SHA256 = (
+    "33f7cb1f6e71560f547a746cb7f5eb41130f794ab1e3a6fb1928c40e05b29f12"
+)
+_D2B_ADJUDICATION_CANONICAL_SHA256 = (
+    "ea28fd4d5f6490a10fad20d5d3f3e76a1de08bf6b1be3b9805c9cf6c519e845f"
+)
+_D4B_CONTEXTS = (
+    (401, 501),
+    (402, 502),
+    (403, 503),
+    (404, 504),
+    (405, 505),
+)
+_D4B_MODEL_SEEDS = tuple(range(1001, 1011))
+_D4B_BOOTSTRAP_RESAMPLES = 10_000
+_D4B_BOOTSTRAP_SEED = 20260827
 _DEVELOPMENT_BUNDLES = tuple(
     (400 + index, 500 + index, 600 + index) for index in range(1, 6)
 )
@@ -203,8 +220,85 @@ def build_phase06_d2b_protocol_lock(
     return lock
 
 
+def build_phase06_d4b_protocol_lock(
+    config: Phase06Config,
+    phase05_config: Phase05Config,
+    *,
+    execution_commit: str,
+    phase06_spec_path: str | Path,
+    d4b_addendum_path: str | Path,
+    phase05_protocol_path: str | Path,
+    parent_evidence: Mapping[str, object],
+) -> dict[str, object]:
+    if not isinstance(parent_evidence, Mapping):
+        raise TypeError("parent_evidence must be a mapping")
+    if execution_commit == _D2B_PHASE06_EXECUTION_SHA:
+        raise ValueError("D4-B child execution commit must differ from D2-B parent")
+
+    phase06_spec_path = Path(phase06_spec_path)
+    expected_config_hash = canonical_config_hash(config)
+    expected_spec_hash = _sha256_bytes(phase06_spec_path, "Phase 0.6 design spec")
+    expected_forbidden = {
+        "cohort": list(config.forbidden_cohort_seeds),
+        "subset": list(config.forbidden_subset_seeds),
+        "model": list(config.forbidden_model_seeds),
+    }
+
+    frozen = {
+        "core_parent_execution_sha": _PARENT_PHASE06_EXECUTION_SHA,
+        "core_parent_protocol_lock_sha256": _PARENT_PHASE06_PROTOCOL_SHA256,
+        "core_parent_d3_sha256": _PARENT_PHASE06_D3_SHA256,
+        "d2b_parent_execution_sha": _D2B_PHASE06_EXECUTION_SHA,
+        "d2b_parent_protocol_canonical_sha256": _D2B_PROTOCOL_CANONICAL_SHA256,
+        "d2b_parent_adjudication_canonical_sha256": _D2B_ADJUDICATION_CANONICAL_SHA256,
+        "d2b_next_required_stage": "D4_OPTIMIZATION",
+        "phase06_config_sha256": expected_config_hash,
+        "phase06_spec_sha256": expected_spec_hash,
+        "forbidden_seed_sets": expected_forbidden,
+    }
+    for key, expected in frozen.items():
+        observed = parent_evidence.get(key)
+        if observed != expected:
+            if key == "d2b_parent_adjudication_canonical_sha256":
+                raise ValueError("D2-B adjudication identity drift")
+            if key == "d2b_next_required_stage":
+                raise ValueError("D2-B next_required_stage must be D4_OPTIMIZATION")
+            raise ValueError(f"D4-B parent evidence drift: {key}")
+
+    lock = build_phase06_protocol_lock(
+        config,
+        phase05_config,
+        execution_commit=execution_commit,
+        phase06_spec_path=phase06_spec_path,
+        phase05_protocol_path=phase05_protocol_path,
+    )
+    lock.update(
+        {
+            "schema_version": 3,
+            "d4b_addendum_sha256": _sha256_bytes(
+                Path(d4b_addendum_path), "Phase 0.6 D4-B execution addendum"
+            ),
+            "core_parent_execution_sha": _PARENT_PHASE06_EXECUTION_SHA,
+            "core_parent_protocol_lock_sha256": _PARENT_PHASE06_PROTOCOL_SHA256,
+            "core_parent_d3_sha256": _PARENT_PHASE06_D3_SHA256,
+            "d2b_parent_execution_sha": _D2B_PHASE06_EXECUTION_SHA,
+            "d2b_parent_protocol_canonical_sha256": _D2B_PROTOCOL_CANONICAL_SHA256,
+            "d2b_parent_adjudication_canonical_sha256": _D2B_ADJUDICATION_CANONICAL_SHA256,
+            "d2b_next_required_stage": "D4_OPTIMIZATION",
+            "d4b_contexts": [list(context) for context in _D4B_CONTEXTS],
+            "d4b_model_seeds": list(_D4B_MODEL_SEEDS),
+            "d4b_n_train": 40,
+            "d4b_flow_modes": ["none", "time_scaled"],
+            "d4b_bootstrap_resamples": _D4B_BOOTSTRAP_RESAMPLES,
+            "d4b_bootstrap_seed": _D4B_BOOTSTRAP_SEED,
+        }
+    )
+    return lock
+
+
 __all__ = [
     "build_phase06_d2b_protocol_lock",
+    "build_phase06_d4b_protocol_lock",
     "build_phase06_protocol_lock",
     "validate_development_seed_triplet",
 ]
