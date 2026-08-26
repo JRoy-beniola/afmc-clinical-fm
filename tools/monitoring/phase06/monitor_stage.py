@@ -25,7 +25,7 @@ RED = "\033[31m"
 def expected_cells(stage: str) -> int:
     if stage == "d1":
         return 40
-    if stage == "d2a":
+    if stage in {"d2a", "d2b"}:
         return 100
     raise ValueError(f"unsupported Phase 0.6 stage: {stage}")
 
@@ -33,7 +33,7 @@ def expected_cells(stage: str) -> int:
 def expected_n_counts(stage: str) -> dict[int, int]:
     if stage == "d1":
         return {5: 10, 10: 10, 20: 10, 40: 10}
-    if stage == "d2a":
+    if stage in {"d2a", "d2b"}:
         return {5: 50, 40: 50}
     raise ValueError(f"unsupported Phase 0.6 stage: {stage}")
 
@@ -41,7 +41,7 @@ def expected_n_counts(stage: str) -> dict[int, int]:
 def expected_flow_counts(stage: str) -> dict[str, int]:
     if stage == "d1":
         return {"none": 20, "time_scaled": 20}
-    if stage == "d2a":
+    if stage in {"d2a", "d2b"}:
         return {"none": 50, "time_scaled": 50}
     raise ValueError(f"unsupported Phase 0.6 stage: {stage}")
 
@@ -76,7 +76,14 @@ def collect_progress(output: Path, stage: str) -> dict[str, Any]:
                     raise ValueError("unexpected N")
                 if flow_mode not in expected_flow_counts(stage):
                     raise ValueError("unexpected flow mode")
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            except (
+                OSError,
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
                 invalid += 1
                 continue
             done += 1
@@ -180,13 +187,18 @@ def _analysis_state(output: Path, stage: str) -> str:
         classification = payload.get("classification", payload.get("phenomenon_reproduction"))
         return str(classification) if classification is not None else "written"
 
-    path = analysis / "phase06_d2_n_shift_summary.json"
+    if stage == "d2b":
+        path = analysis / "phase06_d2b_n_shift_summary.json"
+        invalid_label = "INVALID D2-B summary"
+    else:
+        path = analysis / "phase06_d2_n_shift_summary.json"
+        invalid_label = "INVALID D2-A summary"
     if not path.is_file():
         return "not yet written"
     try:
         json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return "INVALID D2-A summary"
+        return invalid_label
     return "written"
 
 
@@ -298,8 +310,10 @@ def run_dashboard(stage: str, repo: Path, control: Path, output: Path) -> None:
                 print(f"{RED}{BOLD}RUN FAILED — preserve outputs and diagnose before resume.{RESET}")
             elif complete and stage == "d1":
                 print(f"{GREEN}{BOLD}D1 COMPLETE — HARD STOP BEFORE D2-A.{RESET}")
-            elif complete:
+            elif complete and stage == "d2a":
                 print(f"{GREEN}{BOLD}D2-A COMPLETE — HARD STOP BEFORE ADJUDICATION.{RESET}")
+            elif complete:
+                print(f"{GREEN}{BOLD}D2-B COMPLETE — HARD STOP BEFORE CROSS-ARRAY ADJUDICATION.{RESET}")
             else:
                 print(f"{DIM}Ctrl+C exits this monitor only. The tmux runner continues.{RESET}")
 
@@ -311,7 +325,7 @@ def run_dashboard(stage: str, repo: Path, control: Path, output: Path) -> None:
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Monitor a Phase 0.6 diagnostic stage")
-    parser.add_argument("stage", choices=("d1", "d2a"))
+    parser.add_argument("stage", choices=("d1", "d2a", "d2b"))
     return parser.parse_args(argv)
 
 
@@ -321,12 +335,12 @@ def main(argv: list[str] | None = None) -> int:
     repo = Path(os.environ.get("REPO", home / "afmc-clinical-fm"))
     control = Path(os.environ.get("CONTROL", home / "phase06-control"))
     head = _git_head(repo)
-    output = Path(
-        os.environ.get(
-            "PHASE06_OUTPUT",
-            repo / f"outputs/phase06_{head}",
-        )
+    default_output = (
+        repo / f"outputs/phase06_d2b_{head}"
+        if args.stage == "d2b"
+        else repo / f"outputs/phase06_{head}"
     )
+    output = Path(os.environ.get("PHASE06_OUTPUT", default_output))
     run_dashboard(args.stage, repo, control, output)
     return 0
 

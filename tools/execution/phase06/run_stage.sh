@@ -4,23 +4,31 @@ set -Eeuo pipefail
 STAGE="${1:-}"
 MODE="${2:-fresh}"
 
-if [[ "$STAGE" != "d1" && "$STAGE" != "d2a" ]]; then
-  echo "Usage: $0 {d1|d2a} [fresh|resume]" >&2
+if [[ "$STAGE" != "d1" && "$STAGE" != "d2a" && "$STAGE" != "d2b" ]]; then
+  echo "Usage: $0 {d1|d2a|d2b} [fresh|resume]" >&2
   exit 2
 fi
 if [[ "$MODE" != "fresh" && "$MODE" != "resume" ]]; then
-  echo "Usage: $0 {d1|d2a} [fresh|resume]" >&2
+  echo "Usage: $0 {d1|d2a|d2b} [fresh|resume]" >&2
   exit 2
 fi
 
 REPO="${REPO:-$HOME/afmc-clinical-fm}"
 CONTROL="${CONTROL:-$HOME/phase06-control}"
-VALIDATION_RECORD="$REPO/docs/superpowers/validation/2026-08-26-phase0-6-core-validation.md"
+CORE_VALIDATION_RECORD="$REPO/docs/superpowers/validation/2026-08-26-phase0-6-core-validation.md"
+D2B_VALIDATION_RECORD="$REPO/docs/superpowers/validation/2026-08-26-phase0-6-d2b-validation.md"
 PHASE06_CONFIG="$REPO/configs/experiments/phase06.yaml"
 PHASE06_SPEC="$REPO/docs/superpowers/specs/2026-08-26-phase0-6-diagnostics-design.md"
+D2B_ADDENDUM="$REPO/docs/superpowers/specs/2026-08-26-phase0-6-d2b-execution-addendum.md"
 PHASE05_CONFIG="$REPO/configs/experiments/phase05.yaml"
 PHASE05_PROTOCOL="$REPO/docs/results/phase05/raw/official_output/protocol_lock.json"
 PY="$REPO/.venv/bin/python"
+
+if [[ "$STAGE" == "d2b" ]]; then
+  VALIDATION_RECORD="$D2B_VALIDATION_RECORD"
+else
+  VALIDATION_RECORD="$CORE_VALIDATION_RECORD"
+fi
 
 LOG_DIR="$CONTROL/logs"
 LOG="$LOG_DIR/phase06_${STAGE}.log"
@@ -80,11 +88,20 @@ echo
 [[ -f "$PHASE05_CONFIG" ]] || { echo "ERROR: missing $PHASE05_CONFIG"; exit 1; }
 [[ -f "$PHASE05_PROTOCOL" ]] || { echo "ERROR: missing $PHASE05_PROTOCOL"; exit 1; }
 
-grep -Eqi 'implementation status:.*READY FOR D1 EXECUTION' "$VALIDATION_RECORD" || {
-  echo "ERROR: validation record does not authorize D1 execution."
-  echo "Expected an implementation-status line containing: READY FOR D1 EXECUTION"
-  exit 1
-}
+if [[ "$STAGE" == "d2b" ]]; then
+  [[ -f "$D2B_ADDENDUM" ]] || { echo "ERROR: missing $D2B_ADDENDUM"; exit 1; }
+  grep -Eqi 'implementation status:.*READY FOR D2-B EXECUTION' "$VALIDATION_RECORD" || {
+    echo "ERROR: D2-B validation record does not authorize D2-B execution."
+    echo "Expected an implementation-status line containing: READY FOR D2-B EXECUTION"
+    exit 1
+  }
+else
+  grep -Eqi 'implementation status:.*READY FOR D1 EXECUTION' "$VALIDATION_RECORD" || {
+    echo "ERROR: validation record does not authorize D1 execution."
+    echo "Expected an implementation-status line containing: READY FOR D1 EXECUTION"
+    exit 1
+  }
+fi
 
 VALIDATED_SHA="$(
   grep -Ei 'Validated implementation SHA|branch/head SHA' "$VALIDATION_RECORD" \
@@ -100,20 +117,41 @@ VALIDATED_SHA="$(
 }
 
 HEAD="$(git rev-parse HEAD | tr 'A-F' 'a-f')"
-OUTPUT="${PHASE06_OUTPUT:-$REPO/outputs/phase06_${HEAD}}"
+if [[ "$STAGE" == "d2b" ]]; then
+  OUTPUT="${PHASE06_OUTPUT:-$REPO/outputs/phase06_d2b_${HEAD}}"
+else
+  OUTPUT="${PHASE06_OUTPUT:-$REPO/outputs/phase06_${HEAD}}"
+fi
 
 echo "Current HEAD:   $HEAD"
 echo "Validated SHA:  $VALIDATED_SHA"
 echo "Output:         $OUTPUT"
 echo
 
-# Task 12 validates execution-critical code at VALIDATED_SHA. A later
-# validation-document or monitoring-only commit may move HEAD, but scientific
-# source/config must remain byte-identical across that boundary.
-if ! git diff --quiet "$VALIDATED_SHA" "$HEAD" -- src configs pyproject.toml; then
-  echo "ERROR: execution-critical source/config differs from the Task-12 validated SHA."
-  git diff --stat "$VALIDATED_SHA" "$HEAD" -- src configs pyproject.toml
-  exit 1
+# The core D1/D2-A path retains its Task-12 source/config identity boundary.
+if [[ "$STAGE" != "d2b" ]]; then
+  if ! git diff --quiet "$VALIDATED_SHA" "$HEAD" -- src configs pyproject.toml; then
+    echo "ERROR: execution-critical source/config differs from the Task-12 validated SHA."
+    git diff --stat "$VALIDATED_SHA" "$HEAD" -- src configs pyproject.toml
+    exit 1
+  fi
+else
+  # D2-B may have a later validation-document commit, but its implementation,
+  # launch tooling, frozen addendum, and scientific config must remain unchanged.
+  D2B_CRITICAL_PATHS=(
+    src
+    configs
+    pyproject.toml
+    tools/execution/phase06/run_stage.sh
+    tools/execution/phase06/start_stage.sh
+    tools/monitoring/phase06/monitor_stage.py
+    docs/superpowers/specs/2026-08-26-phase0-6-d2b-execution-addendum.md
+  )
+  if ! git diff --quiet "$VALIDATED_SHA" "$HEAD" -- "${D2B_CRITICAL_PATHS[@]}"; then
+    echo "ERROR: D2-B execution-critical code/tooling differs from the validated SHA."
+    git diff --stat "$VALIDATED_SHA" "$HEAD" -- "${D2B_CRITICAL_PATHS[@]}"
+    exit 1
+  fi
 fi
 
 git diff --quiet || {
@@ -131,6 +169,38 @@ UNTRACKED="$(git ls-files --others --exclude-standard || true)"
 if [[ -n "$UNTRACKED" ]]; then
   echo "Note: untracked files exist; they are outside the execution identity:"
   printf '%s\n' "$UNTRACKED"
+fi
+
+PARENT_OUTPUT=""
+if [[ "$STAGE" == "d2b" ]]; then
+  [[ -n "${PHASE06_PARENT_OUTPUT:-}" ]] || {
+    echo "ERROR: D2-B requires PHASE06_PARENT_OUTPUT to point at the frozen D1/D2-A/D3 parent output."
+    exit 1
+  }
+  PARENT_OUTPUT="$(realpath -e "$PHASE06_PARENT_OUTPUT")"
+  CHILD_CANONICAL="$(realpath -m "$OUTPUT")"
+  if [[ "$PARENT_OUTPUT" == "$CHILD_CANONICAL" ]]; then
+    echo "ERROR: D2-B parent and child output roots must be distinct."
+    exit 1
+  fi
+  [[ -f "$PARENT_OUTPUT/protocol_lock.json" ]] || {
+    echo "ERROR: D2-B parent protocol lock is missing: $PARENT_OUTPUT/protocol_lock.json"
+    exit 1
+  }
+  [[ -f "$PARENT_OUTPUT/stages/d1/COMPLETE" ]] || {
+    echo "ERROR: D2-B parent D1 COMPLETE marker is missing."
+    exit 1
+  }
+  [[ -f "$PARENT_OUTPUT/stages/d2a/COMPLETE" ]] || {
+    echo "ERROR: D2-B parent D2-A COMPLETE marker is missing."
+    exit 1
+  }
+  [[ -f "$PARENT_OUTPUT/analysis/phase06_d3_adjudication.json" ]] || {
+    echo "ERROR: D2-B parent D3 adjudication is missing."
+    exit 1
+  }
+  echo "Parent output:  $PARENT_OUTPUT"
+  echo
 fi
 
 command -v nvidia-smi >/dev/null 2>&1 || {
@@ -165,7 +235,7 @@ if [[ "$STAGE" == "d1" ]]; then
       exit 1
     }
   fi
-else
+elif [[ "$STAGE" == "d2a" ]]; then
   [[ -f "$OUTPUT/protocol_lock.json" ]] || {
     echo "ERROR: D2-A requires an existing D1-bound Phase 0.6 output root."
     exit 1
@@ -185,9 +255,22 @@ else
     echo "Use resume only after diagnosing a genuine interruption."
     exit 1
   fi
+else
+  if [[ "$MODE" == "fresh" ]]; then
+    if [[ -e "$OUTPUT" ]] && [[ -n "$(find "$OUTPUT" -mindepth 1 -print -quit 2>/dev/null)" ]]; then
+      echo "ERROR: D2-B fresh child output already contains data: $OUTPUT"
+      echo "Use resume only for the intended interrupted child run."
+      exit 1
+    fi
+  else
+    [[ -f "$OUTPUT/protocol_lock.json" ]] || {
+      echo "ERROR: D2-B resume requires the existing child protocol lock: $OUTPUT/protocol_lock.json"
+      exit 1
+    }
+  fi
 fi
 
-# Any pre-existing protocol lock must be bound to this exact execution HEAD.
+# Any pre-existing writable output lock must be bound to this exact execution HEAD.
 if [[ -f "$OUTPUT/protocol_lock.json" ]]; then
   "$PY" - "$OUTPUT/protocol_lock.json" "$HEAD" <<'PY'
 import json
@@ -225,6 +308,13 @@ fi
   echo "phase05_config_sha256=$(sha256sum "$PHASE05_CONFIG" | awk '{print $1}')"
   echo "phase05_protocol=$PHASE05_PROTOCOL"
   echo "phase05_protocol_sha256=$(sha256sum "$PHASE05_PROTOCOL" | awk '{print $1}')"
+  if [[ "$STAGE" == "d2b" ]]; then
+    echo "d2b_addendum=$D2B_ADDENDUM"
+    echo "d2b_addendum_sha256=$(sha256sum "$D2B_ADDENDUM" | awk '{print $1}')"
+    echo "parent_output=$PARENT_OUTPUT"
+    echo "parent_protocol_sha256=$(sha256sum "$PARENT_OUTPUT/protocol_lock.json" | awk '{print $1}')"
+    echo "parent_d3_sha256=$(sha256sum "$PARENT_OUTPUT/analysis/phase06_d3_adjudication.json" | awk '{print $1}')"
+  fi
   echo "output=$OUTPUT"
   "$PY" --version 2>&1
   "$PY" - <<'PY'
@@ -243,18 +333,32 @@ echo
 echo "Preflight passed."
 write_status "RUNNING"
 
-ARGS=(
-  --config "$PHASE06_CONFIG"
-  --output "$OUTPUT"
-  --device cuda
-)
-if [[ "$MODE" == "resume" ]]; then
-  ARGS+=(--resume)
-fi
-
-echo
+if [[ "$STAGE" == "d2b" ]]; then
+  D2B_ARGS=(
+    --config "$PHASE06_CONFIG"
+    --parent-output "$PARENT_OUTPUT"
+    --output "$OUTPUT"
+    --device cuda
+  )
+  if [[ "$MODE" == "resume" ]]; then
+    D2B_ARGS+=(--resume)
+  fi
+  echo
+echo ">>> PHASE 0.6 D2B: starting one-worker CUDA complementary diagnostic stage"
+  "$PY" -m afmc_fm.phase06.cli d2b "${D2B_ARGS[@]}"
+else
+  ARGS=(
+    --config "$PHASE06_CONFIG"
+    --output "$OUTPUT"
+    --device cuda
+  )
+  if [[ "$MODE" == "resume" ]]; then
+    ARGS+=(--resume)
+  fi
+  echo
 echo ">>> PHASE 0.6 ${STAGE^^}: starting one-worker CUDA diagnostic stage"
-"$PY" -m afmc_fm.phase06.cli "$STAGE" "${ARGS[@]}"
+  "$PY" -m afmc_fm.phase06.cli "$STAGE" "${ARGS[@]}"
+fi
 
 [[ -f "$OUTPUT/stages/$STAGE/COMPLETE" ]] || {
   echo "ERROR: stage command returned successfully but COMPLETE marker is missing."
@@ -266,9 +370,14 @@ if [[ "$STAGE" == "d1" ]]; then
     echo "ERROR: D1 command returned successfully but D1 classification is missing."
     exit 1
   }
-else
+elif [[ "$STAGE" == "d2a" ]]; then
   [[ -f "$OUTPUT/analysis/phase06_d2_n_shift_summary.json" ]] || {
     echo "ERROR: D2-A command returned successfully but D2-A analysis is missing."
+    exit 1
+  }
+else
+  [[ -f "$OUTPUT/analysis/phase06_d2b_n_shift_summary.json" ]] || {
+    echo "ERROR: D2-B command returned successfully but D2-B analysis is missing."
     exit 1
   }
 fi
@@ -281,7 +390,10 @@ echo "============================================================"
 echo "Output: $OUTPUT"
 if [[ "$STAGE" == "d1" ]]; then
   echo "HARD STOP: inspect and audit D1 before starting D2-A."
-else
+elif [[ "$STAGE" == "d2a" ]]; then
   echo "HARD STOP: adjudication has NOT been run automatically."
-  echo "Return D1/D2-A artifacts for audit before any D2-B or D4 addendum."
+  echo "Return D1/D2-A artifacts for audit before any later diagnostic stage."
+else
+  echo "HARD STOP: D2-B cross-array adjudication has NOT been run automatically."
+  echo "Return the child artifacts for audit before any later intervention."
 fi

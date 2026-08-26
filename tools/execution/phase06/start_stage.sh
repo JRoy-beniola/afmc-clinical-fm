@@ -4,17 +4,22 @@ set -euo pipefail
 STAGE="${1:-}"
 MODE="${2:-fresh}"
 
-if [[ "$STAGE" != "d1" && "$STAGE" != "d2a" ]]; then
-  echo "Usage: $0 {d1|d2a} [fresh|resume]" >&2
+if [[ "$STAGE" != "d1" && "$STAGE" != "d2a" && "$STAGE" != "d2b" ]]; then
+  echo "Usage: $0 {d1|d2a|d2b} [fresh|resume]" >&2
   exit 2
 fi
 if [[ "$MODE" != "fresh" && "$MODE" != "resume" ]]; then
-  echo "Usage: $0 {d1|d2a} [fresh|resume]" >&2
+  echo "Usage: $0 {d1|d2a|d2b} [fresh|resume]" >&2
   exit 2
 fi
 
 CONTROL="${CONTROL:-$HOME/phase06-control}"
 SESSION="${PHASE06_TMUX_SESSION:-phase06-$STAGE}"
+
+if [[ "$STAGE" == "d2b" && -z "${PHASE06_PARENT_OUTPUT:-}" ]]; then
+  echo "D2-B requires PHASE06_PARENT_OUTPUT to identify the frozen parent output." >&2
+  exit 2
+fi
 
 command -v tmux >/dev/null 2>&1 || {
   echo "tmux is required. Install it with: sudo apt install tmux"
@@ -36,11 +41,24 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
   exit 1
 fi
 
+ENV_PREFIX=""
+append_env() {
+  local name="$1"
+  local quoted
+  if [[ -v "$name" ]]; then
+    printf -v quoted '%q' "${!name}"
+    ENV_PREFIX+=" $name=$quoted"
+  fi
+}
+for name in REPO CONTROL PHASE06_OUTPUT PHASE06_PARENT_OUTPUT; do
+  append_env "$name"
+done
+
 tmux new-session -d -s "$SESSION" -n runner \
-  "bash '$CONTROL/run_stage.sh' '$STAGE' '$MODE'; rc=\$?; echo; echo 'Runner exited with code' \$rc; exec bash"
+  "env$ENV_PREFIX bash '$CONTROL/run_stage.sh' '$STAGE' '$MODE'; rc=\$?; echo; echo 'Runner exited with code' \$rc; exec bash"
 
 tmux new-window -t "$SESSION" -n monitor \
-  "python3 '$CONTROL/monitor_stage.py' '$STAGE'; exec bash"
+  "env$ENV_PREFIX python3 '$CONTROL/monitor_stage.py' '$STAGE'; exec bash"
 
 tmux select-window -t "$SESSION:monitor"
 
