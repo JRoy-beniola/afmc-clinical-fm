@@ -78,6 +78,7 @@ class Phase06Store:
     ) -> str:
         self._validate_protocol_identity()
         _validate_cell(cell)
+        metric_columns = _frame_columns(metrics, "metrics")
         metric_rows = _frame_records(metrics, "metrics")
         trace_frame = _validate_trace(trace)
         summary_payload = _validate_summary(summary)
@@ -91,6 +92,7 @@ class Phase06Store:
                 raise ValueError(f"conflicting persisted cell bundle: {cell.cell_id}")
             if self._existing_bundle_matches(
                 cell,
+                metric_columns=metric_columns,
                 metric_rows=metric_rows,
                 trace=trace_frame,
                 summary=summary_payload,
@@ -104,6 +106,7 @@ class Phase06Store:
             "schema_version": _CELL_SCHEMA_VERSION,
             "identity": self.identity,
             "cell": _cell_metadata(cell),
+            "metric_columns": metric_columns,
             "metric_rows": metric_rows,
         }
         cell_bytes = _canonical_json_bytes(cell_payload)
@@ -244,7 +247,8 @@ class Phase06Store:
             rows = payload.get("metric_rows")
             if not isinstance(rows, list) or not rows:
                 raise ValueError(f"invalid persisted metric rows: {cell_id}")
-            frames.append(pd.DataFrame(rows))
+            columns = _metric_columns_from_payload(payload, cell_id)
+            frames.append(pd.DataFrame(rows, columns=columns))
         if not frames:
             return pd.DataFrame()
         return pd.concat(frames, ignore_index=True, sort=False)
@@ -253,6 +257,7 @@ class Phase06Store:
         self,
         cell: Phase06CellSpec,
         *,
+        metric_columns: list[str],
         metric_rows: list[dict[str, object]],
         trace: pd.DataFrame,
         summary: dict[str, object],
@@ -267,6 +272,7 @@ class Phase06Store:
                 "schema_version": _CELL_SCHEMA_VERSION,
                 "identity": self.identity,
                 "cell": _cell_metadata(cell),
+                "metric_columns": metric_columns,
                 "metric_rows": metric_rows,
             }
             if cell_payload != expected_cell_payload:
@@ -303,9 +309,10 @@ class Phase06Store:
             raise ValueError(f"protocol identity mismatch in persisted cell: {cell.cell_id}")
         if cell_payload.get("cell") != _cell_metadata(cell):
             raise ValueError(f"persisted cell identity mismatch: {cell.cell_id}")
+        columns = _metric_columns_from_payload(cell_payload, cell.cell_id)
         rows = cell_payload.get("metric_rows")
         if not isinstance(rows, list) or not rows or not all(
-            isinstance(row, dict) for row in rows
+            isinstance(row, dict) and set(row) == set(columns) for row in rows
         ):
             raise ValueError(f"invalid persisted metric rows: {cell.cell_id}")
 
@@ -428,15 +435,36 @@ def _cell_from_payload(payload: dict[str, Any]) -> Phase06CellSpec:
     return result
 
 
-def _frame_records(frame: pd.DataFrame, label: str) -> list[dict[str, object]]:
+def _frame_columns(frame: pd.DataFrame, label: str) -> list[str]:
     if not isinstance(frame, pd.DataFrame):
         raise TypeError(f"{label} must be a pandas DataFrame")
+    columns = list(frame.columns)
+    if not columns or any(not isinstance(column, str) or not column for column in columns):
+        raise ValueError(f"{label} columns must be non-empty strings")
+    if len(columns) != len(set(columns)):
+        raise ValueError(f"{label} columns must be unique")
+    return columns
+
+
+def _frame_records(frame: pd.DataFrame, label: str) -> list[dict[str, object]]:
+    _frame_columns(frame, label)
     if frame.empty:
         raise ValueError(f"{label} must contain at least one row")
     normalized = _normalize_json(frame.to_dict(orient="records"))
     if not isinstance(normalized, list) or not all(isinstance(row, dict) for row in normalized):
         raise TypeError(f"{label} could not be normalized")
     return normalized
+
+
+def _metric_columns_from_payload(payload: dict[str, Any], cell_id: str) -> list[str]:
+    columns = payload.get("metric_columns")
+    if not isinstance(columns, list):
+        raise TypeError(f"invalid persisted metric columns: {cell_id}")
+    if not columns or any(not isinstance(column, str) or not column for column in columns):
+        raise ValueError(f"invalid persisted metric columns: {cell_id}")
+    if len(columns) != len(set(columns)):
+        raise ValueError(f"invalid persisted metric columns: {cell_id}")
+    return columns
 
 
 def _validate_trace(frame: pd.DataFrame) -> pd.DataFrame:
