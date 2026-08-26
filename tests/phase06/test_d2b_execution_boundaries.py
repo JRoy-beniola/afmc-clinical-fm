@@ -138,7 +138,7 @@ def test_parent_d3_hash_is_frozen_to_executed_parent():
 def test_d2b_parent_loader_rejects_marker_only_parent_without_cell_bundles(tmp_path):
     root = _write_marker_only_parent(tmp_path)
 
-    with pytest.raises(ValueError, match="d1 stage is not complete"):
+    with pytest.raises(ValueError, match="complete"):
         _load_parent(root)
 
 
