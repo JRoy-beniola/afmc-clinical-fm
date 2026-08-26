@@ -25,7 +25,7 @@ RED = "\033[31m"
 def expected_cells(stage: str) -> int:
     if stage == "d1":
         return 40
-    if stage in {"d2a", "d2b"}:
+    if stage in {"d2a", "d2b", "d4b"}:
         return 100
     raise ValueError(f"unsupported Phase 0.6 stage: {stage}")
 
@@ -35,13 +35,15 @@ def expected_n_counts(stage: str) -> dict[int, int]:
         return {5: 10, 10: 10, 20: 10, 40: 10}
     if stage in {"d2a", "d2b"}:
         return {5: 50, 40: 50}
+    if stage == "d4b":
+        return {40: 100}
     raise ValueError(f"unsupported Phase 0.6 stage: {stage}")
 
 
 def expected_flow_counts(stage: str) -> dict[str, int]:
     if stage == "d1":
         return {"none": 20, "time_scaled": 20}
-    if stage in {"d2a", "d2b"}:
+    if stage in {"d2a", "d2b", "d4b"}:
         return {"none": 50, "time_scaled": 50}
     raise ValueError(f"unsupported Phase 0.6 stage: {stage}")
 
@@ -190,6 +192,9 @@ def _analysis_state(output: Path, stage: str) -> str:
     if stage == "d2b":
         path = analysis / "phase06_d2b_n_shift_summary.json"
         invalid_label = "INVALID D2-B summary"
+    elif stage == "d4b":
+        path = analysis / "phase06_d4b_bootstrap_diagnostics.json"
+        invalid_label = "INVALID D4-B bootstrap diagnostics"
     else:
         path = analysis / "phase06_d2_n_shift_summary.json"
         invalid_label = "INVALID D2-A summary"
@@ -312,8 +317,10 @@ def run_dashboard(stage: str, repo: Path, control: Path, output: Path) -> None:
                 print(f"{GREEN}{BOLD}D1 COMPLETE — HARD STOP BEFORE D2-A.{RESET}")
             elif complete and stage == "d2a":
                 print(f"{GREEN}{BOLD}D2-A COMPLETE — HARD STOP BEFORE ADJUDICATION.{RESET}")
-            elif complete:
+            elif complete and stage == "d2b":
                 print(f"{GREEN}{BOLD}D2-B COMPLETE — HARD STOP BEFORE CROSS-ARRAY ADJUDICATION.{RESET}")
+            elif complete and stage == "d4b":
+                print(f"{GREEN}{BOLD}D4-B COMPLETE — HARD STOP BEFORE D4-B ADJUDICATION.{RESET}")
             else:
                 print(f"{DIM}Ctrl+C exits this monitor only. The tmux runner continues.{RESET}")
 
@@ -325,7 +332,7 @@ def run_dashboard(stage: str, repo: Path, control: Path, output: Path) -> None:
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Monitor a Phase 0.6 diagnostic stage")
-    parser.add_argument("stage", choices=("d1", "d2a", "d2b"))
+    parser.add_argument("stage", choices=("d1", "d2a", "d2b", "d4b"))
     return parser.parse_args(argv)
 
 
@@ -335,11 +342,12 @@ def main(argv: list[str] | None = None) -> int:
     repo = Path(os.environ.get("REPO", home / "afmc-clinical-fm"))
     control = Path(os.environ.get("CONTROL", home / "phase06-control"))
     head = _git_head(repo)
-    default_output = (
-        repo / f"outputs/phase06_d2b_{head}"
-        if args.stage == "d2b"
-        else repo / f"outputs/phase06_{head}"
-    )
+    if args.stage == "d2b":
+        default_output = repo / f"outputs/phase06_d2b_{head}"
+    elif args.stage == "d4b":
+        default_output = repo / f"outputs/phase06_d4b_{head}"
+    else:
+        default_output = repo / f"outputs/phase06_{head}"
     output = Path(os.environ.get("PHASE06_OUTPUT", default_output))
     run_dashboard(args.stage, repo, control, output)
     return 0
