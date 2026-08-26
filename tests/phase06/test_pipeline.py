@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import ExitStack
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -101,7 +103,47 @@ def _load_parent(root: Path):
     assert callable(loader), "load_phase06_d2b_parent_evidence must exist"
     config = load_phase06_config(_PHASE06_CONFIG)
     phase05_config = load_phase05_config(config.phase05_config)
-    return loader(root, config=config, phase05_config=phase05_config)
+    d3_path = root / "analysis" / "phase06_d3_adjudication.json"
+    expected_input_hashes: dict[str, object] = {}
+    if d3_path.is_file():
+        try:
+            d3_payload = json.loads(d3_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            d3_payload = None
+        if isinstance(d3_payload, dict) and isinstance(
+            d3_payload.get("input_artifact_hashes"), dict
+        ):
+            expected_input_hashes = d3_payload["input_artifact_hashes"]
+
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch.object(pipeline_module, "open_bound_store", return_value=object())
+        )
+        stack.enter_context(
+            patch.object(
+                pipeline_module,
+                "require_completed_stage",
+                side_effect=lambda _store, cells: frozenset(
+                    cell.cell_id for cell in cells
+                ),
+            )
+        )
+        stack.enter_context(
+            patch.object(
+                pipeline_module,
+                "_expected_parent_d3_input_hashes",
+                return_value=expected_input_hashes,
+            )
+        )
+        if d3_path.is_file():
+            stack.enter_context(
+                patch.object(
+                    pipeline_module,
+                    "_PARENT_PHASE06_D3_SHA256",
+                    hashlib.sha256(d3_path.read_bytes()).hexdigest(),
+                )
+            )
+        return loader(root, config=config, phase05_config=phase05_config)
 
 
 def test_d2b_parent_loader_validates_and_hashes_read_only_evidence(tmp_path):
