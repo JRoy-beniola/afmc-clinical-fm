@@ -7,6 +7,8 @@ import json
 import pandas as pd
 import torch
 
+import afmc_fm.phase06.pipeline as pipeline_module
+import afmc_fm.phase06.protocol as protocol_module
 from afmc_fm.execution.persistence import canonical_config_hash
 from afmc_fm.phase06.planning import plan_d1_cells, plan_d2a_cells
 from afmc_fm.phase06.protocol import build_phase06_protocol_lock
@@ -103,7 +105,7 @@ def _fake_stage_run(cells, store, *_args, **_kwargs):
     }
 
 
-def _write_frozen_parent(root):
+def _write_frozen_parent(root) -> tuple[Phase06Store, str]:
     config = phase06_cli.load_phase06_config("configs/experiments/phase06.yaml")
     phase05_config = phase06_cli.load_phase05_config(config.phase05_config)
     lock = build_phase06_protocol_lock(
@@ -124,38 +126,31 @@ def _write_frozen_parent(root):
     store.write_protocol_lock(lock)
 
     d1_cells = plan_d1_cells(config, phase05_config)
-    d1_marker = root / "stages" / "d1" / "COMPLETE"
-    d1_marker.parent.mkdir(parents=True, exist_ok=True)
-    d1_marker.write_bytes(
-        _canonical_json_bytes(
-            {
-                "schema_version": 1,
-                "identity": store.identity,
-                "stage": "d1",
-                "cell_ids": sorted(cell.cell_id for cell in d1_cells),
-            }
-        )
-    )
-    _fake_stage_run(plan_d2a_cells(config), store)
+    _fake_stage_run(d1_cells, store)
+    phase06_cli._persist_d1_analysis(store, d1_cells)
 
+    d2a_cells = plan_d2a_cells(config)
+    _fake_stage_run(d2a_cells, store)
+    phase06_cli._persist_d2_analysis(store, d2a_cells, config)
+
+    d3_payload = {
+        "phenomenon_reproduction": "reproduced",
+        "interaction_ambiguity": True,
+        "next_required_stage": "D2B",
+        "triggered_escalations": [
+            "D2B",
+            "D4_OPTIMIZATION",
+            "D4_CAPACITY_TIME",
+        ],
+        "input_artifact_hashes": pipeline_module._expected_parent_d3_input_hashes(
+            store, d1_cells
+        ),
+    }
+    d3_bytes = _canonical_json_bytes(d3_payload)
     analysis = root / "analysis"
     analysis.mkdir(parents=True, exist_ok=True)
-    (analysis / "phase06_d3_adjudication.json").write_bytes(
-        _canonical_json_bytes(
-            {
-                "phenomenon_reproduction": "reproduced",
-                "interaction_ambiguity": True,
-                "next_required_stage": "D2B",
-                "triggered_escalations": [
-                    "D2B",
-                    "D4_OPTIMIZATION",
-                    "D4_CAPACITY_TIME",
-                ],
-                "input_artifact_hashes": {},
-            }
-        )
-    )
-    return store
+    (analysis / "phase06_d3_adjudication.json").write_bytes(d3_bytes)
+    return store, hashlib.sha256(d3_bytes).hexdigest()
 
 
 def _snapshot(root):
@@ -217,7 +212,7 @@ def test_fake_d2b_child_pipeline_preserves_parent_and_adjudicates_explicitly(
 ):
     parent = tmp_path / "parent"
     child = tmp_path / "child"
-    _write_frozen_parent(parent)
+    _, parent_d3_hash = _write_frozen_parent(parent)
     parent_before = _snapshot(parent)
     calls: list[str] = []
 
@@ -227,6 +222,8 @@ def test_fake_d2b_child_pipeline_preserves_parent_and_adjudicates_explicitly(
 
     monkeypatch.setattr(phase06_cli, "execution_commit_sha", lambda: _CHILD_EXECUTION_SHA)
     monkeypatch.setattr(phase06_cli, "run_phase06_stage", capture_stage_run)
+    monkeypatch.setattr(pipeline_module, "_PARENT_PHASE06_D3_SHA256", parent_d3_hash)
+    monkeypatch.setattr(protocol_module, "_PARENT_PHASE06_D3_SHA256", parent_d3_hash)
 
     config = "configs/experiments/phase06.yaml"
     assert (
@@ -240,7 +237,7 @@ def test_fake_d2b_child_pipeline_preserves_parent_and_adjudicates_explicitly(
                 "--output",
                 str(child),
                 "--device",
-                "cpu",
+                "cuda",
             ]
         )
         == 0
