@@ -2,6 +2,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+
 from afmc_fm.phase06.config import Phase06Config, load_phase06_config
 
 _CONFIG_PATH = Path("configs/experiments/phase06.yaml")
