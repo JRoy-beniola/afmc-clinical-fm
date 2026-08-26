@@ -10,8 +10,15 @@ import pandas as pd
 
 from afmc_fm.execution.persistence import canonical_config_hash
 from afmc_fm.phase05.config import Phase05Config
+from afmc_fm.phase06.analysis import analyze_d2a
 from afmc_fm.phase06.config import Phase06Config
-from afmc_fm.phase06.planning import Phase06CellSpec, plan_d1_cells, plan_d2a_cells
+from afmc_fm.phase06.d2b import adjudicate_d2b, analyze_d2b
+from afmc_fm.phase06.planning import (
+    Phase06CellSpec,
+    plan_d1_cells,
+    plan_d2a_cells,
+    plan_d2b_cells,
+)
 from afmc_fm.phase06.store import Phase06Store
 
 _RESERVED_SUMMARY_KEYS = frozenset({"artifact_sha256", "identity"})
@@ -22,6 +29,13 @@ _PARENT_PHASE06_PROTOCOL_SHA256 = (
 )
 _PARENT_PHASE06_D3_SHA256 = (
     "6b9fffed7503fae6beeac2314238ae3d10ffdebfd27ea71ad952ab1f87916460"
+)
+_D2B_PHASE06_EXECUTION_SHA = "516c9e3c0e965582fa5cce976e9d8ebf32ea8404"
+_D2B_PROTOCOL_CANONICAL_SHA256 = (
+    "33f7cb1f6e71560f547a746cb7f5eb41130f794ab1e3a6fb1928c40e05b29f12"
+)
+_D2B_ADJUDICATION_CANONICAL_SHA256 = (
+    "ea28fd4d5f6490a10fad20d5d3f3e76a1de08bf6b1be3b9805c9cf6c519e845f"
 )
 
 
@@ -53,6 +67,16 @@ def _load_json_object_bytes(data: bytes, label: str) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise TypeError(f"{label} must contain a JSON object")
     return payload
+
+
+def _canonical_payload_hash(payload: object) -> str:
+    data = json.dumps(
+        payload,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
 
 
 def _require_parent_complete_marker(
@@ -95,13 +119,7 @@ def _canonical_json_hash(path: Path, label: str) -> str:
         payload = _load_json_object_bytes(path.read_bytes(), label)
     except OSError as error:
         raise ValueError(f"parent D3 input evidence cannot be read: {label}") from error
-    data = json.dumps(
-        payload,
-        allow_nan=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(data).hexdigest()
+    return _canonical_payload_hash(payload)
 
 
 def _expected_parent_d3_input_hashes(
@@ -225,6 +243,121 @@ def load_phase06_d2b_parent_evidence(
         "parent_phase06_config_sha256": expected_config_hash,
         "parent_phase06_spec_sha256": expected_spec_hash,
         "parent_forbidden_seed_sets": expected_forbidden,
+    }
+
+
+def load_phase06_d4b_parent_evidence(
+    core_parent_output: str | Path,
+    d2b_parent_output: str | Path,
+    *,
+    config: Phase06Config,
+    phase05_config: Phase05Config,
+) -> dict[str, object]:
+    core_parent_output = Path(core_parent_output)
+    d2b_parent_output = Path(d2b_parent_output)
+    core_evidence = load_phase06_d2b_parent_evidence(
+        core_parent_output,
+        config=config,
+        phase05_config=phase05_config,
+    )
+
+    protocol_path = d2b_parent_output / "protocol_lock.json"
+    if not protocol_path.is_file():
+        raise ValueError("D2-B parent protocol lock is missing")
+    try:
+        protocol = _load_json_object_bytes(
+            protocol_path.read_bytes(), "D2-B parent protocol lock"
+        )
+    except OSError as error:
+        raise ValueError("D2-B parent protocol lock cannot be read") from error
+    protocol_canonical_hash = _canonical_payload_hash(protocol)
+    if protocol_canonical_hash != _D2B_PROTOCOL_CANONICAL_SHA256:
+        raise ValueError("D2-B parent protocol identity does not match frozen evidence")
+
+    expected_config_hash = canonical_config_hash(config)
+    expected_phase05_hash = canonical_config_hash(phase05_config)
+    phase06_spec_path = Path(config.phase06_spec)
+    if not phase06_spec_path.is_file():
+        raise ValueError("D2-B parent Phase 0.6 spec cannot be verified")
+    expected_spec_hash = hashlib.sha256(phase06_spec_path.read_bytes()).hexdigest()
+    expected_forbidden = {
+        "cohort": list(config.forbidden_cohort_seeds),
+        "subset": list(config.forbidden_subset_seeds),
+        "model": list(config.forbidden_model_seeds),
+    }
+    expected_protocol_fields = {
+        "schema_version": 2,
+        "execution_commit": _D2B_PHASE06_EXECUTION_SHA,
+        "phase06_config_sha256": expected_config_hash,
+        "phase05_config_sha256": expected_phase05_hash,
+        "phase06_spec_sha256": expected_spec_hash,
+        "forbidden_seed_sets": expected_forbidden,
+        "parent_execution_sha": core_evidence["parent_execution_sha"],
+        "parent_protocol_lock_sha256": core_evidence["parent_protocol_lock_sha256"],
+        "parent_d3_sha256": core_evidence["parent_d3_sha256"],
+        "parent_d3_next_required_stage": "D2B",
+        "d2b_mapping": "model_index=(cohort_index+2*subset_index)%5",
+    }
+    for key, expected in expected_protocol_fields.items():
+        if protocol.get(key) != expected:
+            raise ValueError(f"D2-B parent protocol linkage drift: {key}")
+
+    d2b_store = open_bound_store(d2b_parent_output)
+    d2b_cells = plan_d2b_cells(config)
+    require_completed_stage(d2b_store, d2b_cells)
+
+    adjudication_path = d2b_parent_output / "analysis" / "phase06_d2b_adjudication.json"
+    if not adjudication_path.is_file():
+        raise ValueError("D2-B parent adjudication is missing")
+    try:
+        persisted_adjudication = _load_json_object_bytes(
+            adjudication_path.read_bytes(), "D2-B parent adjudication"
+        )
+    except OSError as error:
+        raise ValueError("D2-B parent adjudication cannot be read") from error
+    adjudication_hash = _canonical_payload_hash(persisted_adjudication)
+    if adjudication_hash != _D2B_ADJUDICATION_CANONICAL_SHA256:
+        raise ValueError("D2-B adjudication identity does not match frozen evidence")
+
+    expected_decision = {
+        "complementary_array_evidence": "sufficient",
+        "dominant_factors": {
+            "d2a": {"40": "model", "5": "none"},
+            "d2b": {"40": "model", "5": "none"},
+        },
+        "next_required_stage": "D4_OPTIMIZATION",
+        "remaining_parent_escalations": ["D4_OPTIMIZATION", "D4_CAPACITY_TIME"],
+    }
+    for key, expected in expected_decision.items():
+        if persisted_adjudication.get(key) != expected:
+            raise ValueError(f"D2-B adjudication decision drift: {key}")
+
+    core_store = open_bound_store(core_parent_output)
+    d3_path = core_parent_output / "analysis" / "phase06_d3_adjudication.json"
+    if not d3_path.is_file():
+        raise ValueError("core parent D3 adjudication is missing")
+    try:
+        core_d3 = _load_json_object_bytes(d3_path.read_bytes(), "core parent D3 adjudication")
+    except OSError as error:
+        raise ValueError("core parent D3 adjudication cannot be read") from error
+
+    d2a_result = analyze_d2a(core_store.load_stage_metrics("d2a"), config)
+    d2b_result = analyze_d2b(d2b_store.load_stage_metrics("d2b"), config)
+    recomputed_adjudication = adjudicate_d2b(core_d3, d2a_result, d2b_result)
+    if recomputed_adjudication != persisted_adjudication:
+        raise ValueError("persisted D2-B adjudication does not match recomputed evidence")
+
+    return {
+        "core_parent_execution_sha": _PARENT_PHASE06_EXECUTION_SHA,
+        "core_parent_protocol_lock_sha256": _PARENT_PHASE06_PROTOCOL_SHA256,
+        "core_parent_d3_sha256": _PARENT_PHASE06_D3_SHA256,
+        "d2b_parent_execution_sha": _D2B_PHASE06_EXECUTION_SHA,
+        "d2b_parent_protocol_canonical_sha256": protocol_canonical_hash,
+        "d2b_parent_adjudication_canonical_sha256": adjudication_hash,
+        "d2b_next_required_stage": "D4_OPTIMIZATION",
+        "phase06_config_sha256": expected_config_hash,
+        "phase06_spec_sha256": expected_spec_hash,
+        "forbidden_seed_sets": expected_forbidden,
     }
 
 
@@ -388,6 +521,7 @@ def write_analysis_json(store: Phase06Store, name: str, payload: object) -> Path
 
 __all__ = [
     "load_phase06_d2b_parent_evidence",
+    "load_phase06_d4b_parent_evidence",
     "load_stage_summaries",
     "load_stage_traces",
     "open_bound_store",
