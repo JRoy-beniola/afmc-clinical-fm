@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from pathlib import Path
 
 from afmc_fm.execution.persistence import canonical_config_hash
@@ -19,6 +20,10 @@ _EXPECTED_PHASE05_PROTOCOL_SHA256 = (
 _EXPECTED_PHASE05_CONFIG_SHA256 = (
     "befd7140cbf68cb981418cdc0c8880bb0652c2a6db614d05f61ad267297d519b"
 )
+_PARENT_PHASE06_EXECUTION_SHA = "1718402df1d6ef344168677e6d26ea664708e1bc"
+_PARENT_PHASE06_PROTOCOL_SHA256 = (
+    "c001bc278cc0c41793ef21d972f851b1ccd7a6d1b2adc8d2f45060660f709a51"
+)
 _DEVELOPMENT_BUNDLES = tuple(
     (400 + index, 500 + index, 600 + index) for index in range(1, 6)
 )
@@ -26,6 +31,7 @@ _FORBIDDEN_COHORT_SEEDS = tuple(range(701, 711))
 _FORBIDDEN_SUBSET_SEEDS = tuple(range(801, 811))
 _FORBIDDEN_MODEL_SEEDS = tuple(range(901, 911))
 _COMMIT_RE = re.compile(r"^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$")
+_SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 def _sha256_bytes(path: Path, label: str) -> str:
@@ -126,7 +132,74 @@ def build_phase06_protocol_lock(
     }
 
 
+def build_phase06_d2b_protocol_lock(
+    config: Phase06Config,
+    phase05_config: Phase05Config,
+    *,
+    execution_commit: str,
+    phase06_spec_path: str | Path,
+    d2b_addendum_path: str | Path,
+    phase05_protocol_path: str | Path,
+    parent_evidence: Mapping[str, object],
+) -> dict[str, object]:
+    if not isinstance(parent_evidence, Mapping):
+        raise TypeError("parent_evidence must be a mapping")
+    if execution_commit == _PARENT_PHASE06_EXECUTION_SHA:
+        raise ValueError("D2-B child execution commit must differ from parent execution")
+
+    phase06_spec_path = Path(phase06_spec_path)
+    expected_config_hash = canonical_config_hash(config)
+    expected_spec_hash = _sha256_bytes(phase06_spec_path, "Phase 0.6 design spec")
+    expected_forbidden = {
+        "cohort": list(config.forbidden_cohort_seeds),
+        "subset": list(config.forbidden_subset_seeds),
+        "model": list(config.forbidden_model_seeds),
+    }
+
+    if parent_evidence.get("parent_execution_sha") != _PARENT_PHASE06_EXECUTION_SHA:
+        raise ValueError("parent Phase 0.6 execution identity drift")
+    if (
+        parent_evidence.get("parent_protocol_lock_sha256")
+        != _PARENT_PHASE06_PROTOCOL_SHA256
+    ):
+        raise ValueError("parent Phase 0.6 protocol identity drift")
+    parent_d3_hash = parent_evidence.get("parent_d3_sha256")
+    if not isinstance(parent_d3_hash, str) or _SHA256_RE.fullmatch(parent_d3_hash) is None:
+        raise ValueError("parent D3 SHA-256 is invalid")
+    if parent_evidence.get("parent_d3_next_required_stage") != "D2B":
+        raise ValueError("parent D3 next_required_stage must be D2B")
+    if parent_evidence.get("parent_phase06_config_sha256") != expected_config_hash:
+        raise ValueError("parent Phase 0.6 config identity drift")
+    if parent_evidence.get("parent_phase06_spec_sha256") != expected_spec_hash:
+        raise ValueError("parent Phase 0.6 spec identity drift")
+    if parent_evidence.get("parent_forbidden_seed_sets") != expected_forbidden:
+        raise ValueError("parent forbidden seed sets do not match D2-B child protocol")
+
+    lock = build_phase06_protocol_lock(
+        config,
+        phase05_config,
+        execution_commit=execution_commit,
+        phase06_spec_path=phase06_spec_path,
+        phase05_protocol_path=phase05_protocol_path,
+    )
+    lock.update(
+        {
+            "schema_version": 2,
+            "d2b_addendum_sha256": _sha256_bytes(
+                Path(d2b_addendum_path), "Phase 0.6 D2-B execution addendum"
+            ),
+            "parent_execution_sha": _PARENT_PHASE06_EXECUTION_SHA,
+            "parent_protocol_lock_sha256": _PARENT_PHASE06_PROTOCOL_SHA256,
+            "parent_d3_sha256": parent_d3_hash,
+            "parent_d3_next_required_stage": "D2B",
+            "d2b_mapping": "model_index=(cohort_index+2*subset_index)%5",
+        }
+    )
+    return lock
+
+
 __all__ = [
+    "build_phase06_d2b_protocol_lock",
     "build_phase06_protocol_lock",
     "validate_development_seed_triplet",
 ]

@@ -8,11 +8,18 @@ from pathlib import Path
 
 import pandas as pd
 
-from afmc_fm.phase06.planning import Phase06CellSpec
+from afmc_fm.execution.persistence import canonical_config_hash
+from afmc_fm.phase05.config import Phase05Config
+from afmc_fm.phase06.config import Phase06Config
+from afmc_fm.phase06.planning import Phase06CellSpec, plan_d1_cells, plan_d2a_cells
 from afmc_fm.phase06.store import Phase06Store
 
 _RESERVED_SUMMARY_KEYS = frozenset({"artifact_sha256", "identity"})
 _ANALYSIS_SUFFIXES = frozenset({".csv", ".json"})
+_PARENT_PHASE06_EXECUTION_SHA = "1718402df1d6ef344168677e6d26ea664708e1bc"
+_PARENT_PHASE06_PROTOCOL_SHA256 = (
+    "c001bc278cc0c41793ef21d972f851b1ccd7a6d1b2adc8d2f45060660f709a51"
+)
 
 
 def open_bound_store(output: str | Path) -> Phase06Store:
@@ -33,6 +40,122 @@ def open_bound_store(output: str | Path) -> Phase06Store:
         config_hash=payload.get("phase06_config_sha256"),
         execution_commit=payload.get("execution_commit"),
     )
+
+
+def _load_json_object_bytes(data: bytes, label: str) -> dict[str, object]:
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"{label} is not valid JSON") from error
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} must contain a JSON object")
+    return payload
+
+
+def _require_parent_complete_marker(
+    output: Path,
+    *,
+    stage: str,
+    cells: Sequence[Phase06CellSpec],
+    identity: dict[str, str],
+) -> None:
+    marker = output / "stages" / stage / "COMPLETE"
+    if not marker.is_file():
+        raise ValueError(f"parent {stage} stage is not complete")
+    try:
+        payload = _load_json_object_bytes(marker.read_bytes(), f"parent {stage} completion marker")
+    except OSError as error:
+        raise ValueError(f"parent {stage} stage is not complete") from error
+    expected = {
+        "schema_version": 1,
+        "identity": identity,
+        "stage": stage,
+        "cell_ids": sorted(cell.cell_id for cell in cells),
+    }
+    if payload != expected:
+        raise ValueError(f"parent {stage} stage is not complete")
+
+
+def load_phase06_d2b_parent_evidence(
+    output: str | Path,
+    *,
+    config: Phase06Config,
+    phase05_config: Phase05Config,
+) -> dict[str, object]:
+    output = Path(output)
+    protocol_path = output / "protocol_lock.json"
+    if not protocol_path.is_file():
+        raise ValueError("parent protocol lock is missing")
+    try:
+        protocol_bytes = protocol_path.read_bytes()
+    except OSError as error:
+        raise ValueError("parent protocol lock cannot be read") from error
+    protocol_hash = hashlib.sha256(protocol_bytes).hexdigest()
+    if protocol_hash != _PARENT_PHASE06_PROTOCOL_SHA256:
+        raise ValueError("parent protocol bytes do not match the frozen Phase 0.6 parent")
+    protocol = _load_json_object_bytes(protocol_bytes, "parent protocol lock")
+
+    expected_config_hash = canonical_config_hash(config)
+    expected_phase05_hash = canonical_config_hash(phase05_config)
+    phase06_spec_path = Path(config.phase06_spec)
+    if not phase06_spec_path.is_file():
+        raise ValueError("parent Phase 0.6 spec cannot be verified")
+    expected_spec_hash = hashlib.sha256(phase06_spec_path.read_bytes()).hexdigest()
+    expected_forbidden = {
+        "cohort": list(config.forbidden_cohort_seeds),
+        "subset": list(config.forbidden_subset_seeds),
+        "model": list(config.forbidden_model_seeds),
+    }
+
+    if protocol.get("execution_commit") != _PARENT_PHASE06_EXECUTION_SHA:
+        raise ValueError("parent protocol execution identity does not match frozen parent")
+    if protocol.get("phase06_config_sha256") != expected_config_hash:
+        raise ValueError("parent protocol Phase 0.6 config identity mismatch")
+    if protocol.get("phase05_config_sha256") != expected_phase05_hash:
+        raise ValueError("parent protocol Phase 0.5 config identity mismatch")
+    if protocol.get("phase06_spec_sha256") != expected_spec_hash:
+        raise ValueError("parent protocol Phase 0.6 spec identity mismatch")
+    if protocol.get("forbidden_seed_sets") != expected_forbidden:
+        raise ValueError("parent protocol forbidden seed identity mismatch")
+
+    identity = {
+        "protocol_lock_sha256": protocol_hash,
+        "phase06_config_sha256": expected_config_hash,
+        "execution_commit": _PARENT_PHASE06_EXECUTION_SHA,
+    }
+    _require_parent_complete_marker(
+        output,
+        stage="d1",
+        cells=plan_d1_cells(config, phase05_config),
+        identity=identity,
+    )
+    _require_parent_complete_marker(
+        output,
+        stage="d2a",
+        cells=plan_d2a_cells(config),
+        identity=identity,
+    )
+
+    d3_path = output / "analysis" / "phase06_d3_adjudication.json"
+    if not d3_path.is_file():
+        raise ValueError("parent D3 adjudication is missing")
+    try:
+        d3_bytes = d3_path.read_bytes()
+        d3 = _load_json_object_bytes(d3_bytes, "parent D3 adjudication")
+    except OSError as error:
+        raise ValueError("parent D3 adjudication cannot be read") from error
+    if d3.get("next_required_stage") != "D2B":
+        raise ValueError("parent D3 next_required_stage must be D2B")
+
+    return {
+        "parent_execution_sha": _PARENT_PHASE06_EXECUTION_SHA,
+        "parent_protocol_lock_sha256": protocol_hash,
+        "parent_d3_sha256": hashlib.sha256(d3_bytes).hexdigest(),
+        "parent_d3_next_required_stage": "D2B",
+        "parent_phase06_config_sha256": expected_config_hash,
+        "parent_phase06_spec_sha256": expected_spec_hash,
+        "parent_forbidden_seed_sets": expected_forbidden,
+    }
 
 
 def require_completed_stage(
@@ -194,6 +317,7 @@ def write_analysis_json(store: Phase06Store, name: str, payload: object) -> Path
 
 
 __all__ = [
+    "load_phase06_d2b_parent_evidence",
     "load_stage_summaries",
     "load_stage_traces",
     "open_bound_store",
