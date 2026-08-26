@@ -11,8 +11,10 @@ phase06_cli = importlib.import_module("afmc_fm.phase06.cli")
 def _fake_metrics(cell) -> pd.DataFrame:
     if cell.stage == "d1":
         delta_mae = {5: -0.01, 10: -0.01, 20: -0.005, 40: 0.03}[cell.n_train]
+    elif cell.n_train == 5:
+        delta_mae = -0.01 + 0.005 * (cell.model_seed - 603)
     else:
-        delta_mae = -0.01 if cell.n_train == 5 else 0.03
+        delta_mae = 0.03 + 0.005 * (cell.cohort_seed - 403)
 
     control_mae = 0.50
     mae = control_mae if cell.flow_mode == "none" else control_mae - delta_mae
