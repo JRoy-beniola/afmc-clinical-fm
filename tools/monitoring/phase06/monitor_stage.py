@@ -99,7 +99,7 @@ def _bar(done: int, total: int, width: int = 42) -> str:
     if total <= 0:
         return " " * width
     ratio = max(0.0, min(1.0, done / total))
-    filled = int(round(width * ratio))
+    filled = round(width * ratio)
     return f"{GREEN}{'■' * filled}{DIM}{'□' * (width - filled)}{RESET}"
 
 
@@ -199,7 +199,7 @@ def _print_breakdown(
     for key, total in expected.items():
         done = observed.get(key, 0)
         pct = 100.0 * done / total if total else 0.0
-        print(f"  {str(key):12} {_bar(done, total, 22)} {done:3}/{total:<3} {pct:6.2f}%")
+        print(f"  {key!s:12} {_bar(done, total, 22)} {done:3}/{total:<3} {pct:6.2f}%")
     print()
 
 
