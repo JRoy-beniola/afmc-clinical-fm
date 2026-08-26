@@ -822,9 +822,12 @@ def _sample_complexity_hypothesis(
     )
     if strong:
         return "strong"
-    if d1_classification == "reproduced" and mean_t > 0:
-        if positive_count < 20 or lower <= 0:
-            return "partial"
+    if (
+        d1_classification == "reproduced"
+        and mean_t > 0
+        and (positive_count < 20 or lower <= 0)
+    ):
+        return "partial"
     return "unresolved"
 
 
