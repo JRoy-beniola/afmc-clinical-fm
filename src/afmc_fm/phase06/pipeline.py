@@ -20,6 +20,9 @@ _PARENT_PHASE06_EXECUTION_SHA = "1718402df1d6ef344168677e6d26ea664708e1bc"
 _PARENT_PHASE06_PROTOCOL_SHA256 = (
     "c001bc278cc0c41793ef21d972f851b1ccd7a6d1b2adc8d2f45060660f709a51"
 )
+_PARENT_PHASE06_D3_SHA256 = (
+    "6b9fffed7503fae6beeac2314238ae3d10ffdebfd27ea71ad952ab1f87916460"
+)
 
 
 def open_bound_store(output: str | Path) -> Phase06Store:
@@ -76,6 +79,61 @@ def _require_parent_complete_marker(
         raise ValueError(f"parent {stage} stage is not complete")
 
 
+def _sha256_file(path: Path, label: str) -> str:
+    if not path.is_file():
+        raise ValueError(f"parent D3 input evidence is missing: {label}")
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as error:
+        raise ValueError(f"parent D3 input evidence cannot be read: {label}") from error
+
+
+def _canonical_json_hash(path: Path, label: str) -> str:
+    if not path.is_file():
+        raise ValueError(f"parent D3 input evidence is missing: {label}")
+    try:
+        payload = _load_json_object_bytes(path.read_bytes(), label)
+    except OSError as error:
+        raise ValueError(f"parent D3 input evidence cannot be read: {label}") from error
+    data = json.dumps(
+        payload,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
+
+
+def _expected_parent_d3_input_hashes(
+    store: Phase06Store,
+    d1_cells: Sequence[Phase06CellSpec],
+) -> dict[str, str]:
+    analysis = store.output / "analysis"
+    traces = load_stage_traces(store, d1_cells)
+    trace_bytes = traces.to_csv(index=False, lineterminator="\n").encode("utf-8")
+    return {
+        "d1_table": _sha256_file(
+            analysis / "phase06_d1_reproduction.csv", "D1 reproduction table"
+        ),
+        "d1_decision": _canonical_json_hash(
+            analysis / "phase06_d1_classification.json", "D1 classification"
+        ),
+        "d2_variance_components": _sha256_file(
+            analysis / "phase06_d2_variance_components.csv", "D2 variance components"
+        ),
+        "d2_bootstrap_diagnostics": _sha256_file(
+            analysis / "phase06_d2_bootstrap_diagnostics.csv", "D2 bootstrap diagnostics"
+        ),
+        "d2_n_shift_rows": _sha256_file(
+            analysis / "phase06_d2_n_shift.csv", "D2 N-shift rows"
+        ),
+        "d2_n_shift_summary": _canonical_json_hash(
+            analysis / "phase06_d2_n_shift_summary.json", "D2 N-shift summary"
+        ),
+        "d1_traces": hashlib.sha256(trace_bytes).hexdigest(),
+    }
+
+
 def load_phase06_d2b_parent_evidence(
     output: str | Path,
     *,
@@ -123,18 +181,24 @@ def load_phase06_d2b_parent_evidence(
         "phase06_config_sha256": expected_config_hash,
         "execution_commit": _PARENT_PHASE06_EXECUTION_SHA,
     }
+    d1_cells = plan_d1_cells(config, phase05_config)
+    d2a_cells = plan_d2a_cells(config)
     _require_parent_complete_marker(
         output,
         stage="d1",
-        cells=plan_d1_cells(config, phase05_config),
+        cells=d1_cells,
         identity=identity,
     )
     _require_parent_complete_marker(
         output,
         stage="d2a",
-        cells=plan_d2a_cells(config),
+        cells=d2a_cells,
         identity=identity,
     )
+
+    parent_store = open_bound_store(output)
+    require_completed_stage(parent_store, d1_cells)
+    require_completed_stage(parent_store, d2a_cells)
 
     d3_path = output / "analysis" / "phase06_d3_adjudication.json"
     if not d3_path.is_file():
@@ -144,13 +208,19 @@ def load_phase06_d2b_parent_evidence(
         d3 = _load_json_object_bytes(d3_bytes, "parent D3 adjudication")
     except OSError as error:
         raise ValueError("parent D3 adjudication cannot be read") from error
+    d3_hash = hashlib.sha256(d3_bytes).hexdigest()
+    if d3_hash != _PARENT_PHASE06_D3_SHA256:
+        raise ValueError("parent D3 SHA-256 does not match frozen parent")
     if d3.get("next_required_stage") != "D2B":
         raise ValueError("parent D3 next_required_stage must be D2B")
+    expected_input_hashes = _expected_parent_d3_input_hashes(parent_store, d1_cells)
+    if d3.get("input_artifact_hashes") != expected_input_hashes:
+        raise ValueError("parent D3 input_artifact_hashes do not match parent evidence")
 
     return {
         "parent_execution_sha": _PARENT_PHASE06_EXECUTION_SHA,
         "parent_protocol_lock_sha256": protocol_hash,
-        "parent_d3_sha256": hashlib.sha256(d3_bytes).hexdigest(),
+        "parent_d3_sha256": d3_hash,
         "parent_d3_next_required_stage": "D2B",
         "parent_phase06_config_sha256": expected_config_hash,
         "parent_phase06_spec_sha256": expected_spec_hash,
