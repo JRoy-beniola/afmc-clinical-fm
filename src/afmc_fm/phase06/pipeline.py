@@ -48,7 +48,7 @@ def _load_json_object_bytes(data: bytes, label: str) -> dict[str, object]:
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError(f"{label} is not valid JSON") from error
     if not isinstance(payload, dict):
-        raise ValueError(f"{label} must contain a JSON object")
+        raise TypeError(f"{label} must contain a JSON object")
     return payload
 
 
