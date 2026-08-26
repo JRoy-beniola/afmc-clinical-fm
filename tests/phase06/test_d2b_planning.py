@@ -7,13 +7,11 @@ from collections import Counter
 from pathlib import Path
 
 from afmc_fm.phase06.config import load_phase06_config
+from afmc_fm.phase06.d2b_store import Phase06D2BStore
 from afmc_fm.phase06.planning import Phase06CellSpec
-from afmc_fm.phase06.store import Phase06Store
 
 planning = importlib.import_module("afmc_fm.phase06.planning")
 _PHASE06_CONFIG = Path("configs/experiments/phase06.yaml")
-
-# RED contract: production support is intentionally absent at this commit.
 
 
 def _canonical_json_bytes(payload: object) -> bytes:
@@ -61,7 +59,7 @@ def test_d2b_plan_is_exact_complementary_strength_two_array():
     assert len(subset_model) == 25 and set(subset_model.values()) == {1}
 
 
-def test_d2b_cell_spec_and_store_accept_only_locked_d2_scope(tmp_path):
+def test_d2b_cell_spec_and_child_store_accept_locked_scope(tmp_path):
     cell = Phase06CellSpec(
         stage="d2b",
         world="smooth",
@@ -74,12 +72,12 @@ def test_d2b_cell_spec_and_store_accept_only_locked_d2_scope(tmp_path):
     assert cell.cell_id.startswith("d2b__smooth__")
 
     lock = {
-        "schema_version": 1,
+        "schema_version": 2,
         "phase06_config_sha256": "b" * 64,
         "execution_commit": "a" * 40,
     }
     protocol_hash = hashlib.sha256(_canonical_json_bytes(lock)).hexdigest()
-    store = Phase06Store(
+    store = Phase06D2BStore(
         tmp_path,
         protocol_hash=protocol_hash,
         config_hash="b" * 64,
