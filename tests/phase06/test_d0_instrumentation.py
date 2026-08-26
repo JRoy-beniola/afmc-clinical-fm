@@ -1,5 +1,5 @@
-from copy import deepcopy
 import math
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
