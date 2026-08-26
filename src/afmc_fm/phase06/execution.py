@@ -205,7 +205,7 @@ def run_phase06_stage(
                 production_state_dict=result.production_state_dict,
                 shadow_state_dict=result.shadow_state_dict,
             )
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - cell boundary records callback failures
             failures.append(
                 {
                     "cell_id": cell.cell_id,
