@@ -1,0 +1,3 @@
+candidate,official_passed,recomputed_passed,official_wins,recomputed_wins,official_mean_improvement,recomputed_mean_improvement,official_mean_relative_improvement,recomputed_mean_relative_improvement,official_candidate_mean_aulc,recomputed_candidate_mean_aulc,official_control_mean_aulc,recomputed_control_mean_aulc,verification_passed
+gated,False,False,2,2,-0.010545138021310152,-0.010545138021310152,-0.03619679985105899,-0.03619679985105899,0.3373018120725949,0.3373018120725949,0.3267566740512847,0.3267566740512847,True
+time_scaled,False,False,2,2,0.0009784132242202537,0.0009784132242202537,0.0005612233885657708,0.0005612233885657708,0.32577826082706446,0.32577826082706446,0.3267566740512847,0.3267566740512847,True

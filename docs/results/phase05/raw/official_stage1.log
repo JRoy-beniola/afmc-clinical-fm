@@ -1,0 +1,48 @@
+============================================================
+ AFMC PHASE-0.5 OFFICIAL STAGE-I + STAGE-II FREEZE
+============================================================
+Mode:              fresh
+Repository:        /home/royja/afmc-clinical-fm
+Required HEAD:     50a94c06bc1c419ca55738f15f074cc06ccc3f36
+Phase-0 metrics:   /home/royja/afmc-clinical-fm/outputs/phase0_full_cuda_d6f105eee73fcb8e9cc5987d292b1bb98a687382/metrics.csv
+Simulator config:  /home/royja/afmc-clinical-fm/configs/simulator/full.yaml
+Phase-0.5 config:  /home/royja/afmc-clinical-fm/configs/experiments/phase05.yaml
+Output:            /home/royja/afmc-clinical-fm/outputs/phase05_official_50a94c06bc1c419ca55738f15f074cc06ccc3f36
+
+
+Runtime diagnostics:
+{
+  "cpu_count": 12,
+  "cuda_available": true,
+  "cuda_runtime": "13.0",
+  "gpu_name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+  "python_executable": "/home/royja/afmc-clinical-fm/.venv/bin/python",
+  "selected_device": "cuda",
+  "torch_version": "2.13.0+cu130",
+  "workers": 1,
+  "wsl": true
+}
+
+NVIDIA GeForce RTX 4060 Laptop GPU, 610.74, 8188 MiB
+
+Preflight passed.
+
+>>> CALIBRATE: creating immutable protocol lock
+
+>>> STAGE I: flow -> jump -> uncertainty -> timing audit
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/royja/afmc-clinical-fm/src/afmc_fm/cli.py", line 825, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/royja/afmc-clinical-fm/src/afmc_fm/cli.py", line 821, in main
+    return int(args.handler(args))
+               ~~~~~~~~~~~~^^^^^^
+  File "/home/royja/afmc-clinical-fm/src/afmc_fm/cli.py", line 605, in _phase05_develop
+    raise RuntimeError("flow development gate failed; development stopped")
+RuntimeError: flow development gate failed; development stopped
+
+PHASE-0.5 STAGE-I launcher failed with exit code 1.
+Do NOT delete the output directory. Inspect the log and resume only after the cause is understood.

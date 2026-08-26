@@ -37,3 +37,8 @@ addopts = "-ra"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint.per-file-ignores]
+# Historical operational monitor preserved byte-for-byte from the official
+# Phase 0.5 execution. Do not rewrite it merely to satisfy current lint style.
+"tools/monitoring/phase05/monitor_stage1.py" = ["BLE001", "RUF046"]
