@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -282,7 +283,7 @@ def test_phase05_develop_requires_existing_protocol_lock(tmp_path: Path):
     assert not (output / "protocol_lock.json").exists()
 
 
-def test_phase05_develop_runs_sequential_stages_and_finalizes_artifacts(
+def test_phase05_lifecycle_calibrates_develops_sequentially_and_freezes(
     tmp_path: Path,
     monkeypatch,
 ):
@@ -327,6 +328,24 @@ def test_phase05_develop_runs_sequential_stages_and_finalizes_artifacts(
 
     for stage in ("flow", "jump", "uncertainty", "timing_audit"):
         assert (output / "stages" / stage / "COMPLETE").is_file()
+
+    assert cli.main(
+        [
+            "phase05",
+            "freeze",
+            "--exp-config",
+            "configs/experiments/phase05.yaml",
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    frozen = json.loads(
+        (output / "frozen_candidate.json").read_text(encoding="utf-8")
+    )
+    assert frozen["flow_mode"] == "time_scaled"
+    assert frozen["jump_mode"] == "residual"
+    assert frozen["uncertainty_mode"] == "decoupled"
+    assert frozen["strict_history"] is True
 
 
 def test_phase05_develop_resume_skips_finalized_flow_without_rewriting_it(
