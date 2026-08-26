@@ -110,12 +110,11 @@ def test_d4b_analysis_builds_exact_frozen_surfaces_and_cluster_bootstrap() -> No
     assert bootstrap["bootstrap_ci_lower"] > 0
     assert bootstrap["bootstrap_ci_upper"] > bootstrap["bootstrap_ci_lower"]
 
-    # Deterministic fixed-seed bootstrap.
     repeated = analyze_d4b(metrics, summaries, traces)
     assert repeated.bootstrap_diagnostics == bootstrap
 
     dispersion = result.optimization_dispersion
-    assert len(dispersion) == 10  # five contexts x two flow modes
+    assert len(dispersion) == 10
     assert {
         "selected_checkpoint_epoch_mean",
         "selected_checkpoint_epoch_std",
@@ -156,12 +155,33 @@ def test_d4b_adjudication_stable_routes_only_to_capacity_time() -> None:
 
 def _decision_fixture(
     *,
-    overall: float,
     model_values: list[float],
     context_values: list[float],
     ci_lower: float,
 ) -> D4BAnalysisResult:
     base = analyze_d4b(*_inputs())
+    model_array = np.asarray(model_values, dtype=float)
+    context_array = np.asarray(context_values, dtype=float)
+    model_grand = float(model_array.mean())
+    context_grand = float(context_array.mean())
+    assert np.isclose(model_grand, context_grand)
+
+    effect_rows = base.effect_rows.copy()
+    for context_index, (cohort, subset) in enumerate(_CONTEXTS):
+        for model_index, model in enumerate(_MODELS):
+            effect = (
+                model_array[model_index]
+                + context_array[context_index]
+                - model_grand
+            )
+            selected = (
+                (effect_rows["cohort_seed"] == cohort)
+                & (effect_rows["subset_seed"] == subset)
+                & (effect_rows["model_seed"] == model)
+            )
+            assert int(selected.sum()) == 1
+            effect_rows.loc[selected, "Delta_MAE"] = effect
+
     model_summary = pd.DataFrame(
         {
             "model_seed": list(_MODELS),
@@ -178,13 +198,14 @@ def _decision_fixture(
     bootstrap = dict(base.bootstrap_diagnostics)
     bootstrap.update(
         {
-            "mean_Delta_MAE": overall,
+            "mean_Delta_MAE": model_grand,
             "bootstrap_ci_lower": ci_lower,
             "bootstrap_ci_upper": max(ci_lower + 0.01, 0.01),
         }
     )
     return replace(
         base,
+        effect_rows=effect_rows,
         model_seed_summary=model_summary,
         context_summary=context_summary,
         bootstrap_diagnostics=bootstrap,
@@ -192,20 +213,27 @@ def _decision_fixture(
 
 
 @pytest.mark.parametrize(
-    ("overall", "models", "contexts"),
+    ("models", "contexts"),
     [
-        (0.0, [0.1] * 10, [0.1] * 5),
-        (0.1, [0.1] * 5 + [-0.1] * 5, [0.1] * 5),
-        (0.1, [0.1] * 10, [0.1] * 2 + [-0.1] * 3),
+        (
+            [0.025] * 8 + [-0.1] * 2,
+            [0.04, 0.03, 0.02, 0.01, -0.1],
+        ),
+        (
+            [0.2] * 5 + [-0.1] * 5,
+            [0.05] * 5,
+        ),
+        (
+            [0.05] * 10,
+            [0.2, 0.2, -0.05, -0.05, -0.05],
+        ),
     ],
 )
 def test_d4b_adjudication_fragile_thresholds_stop(
-    overall: float,
     models: list[float],
     contexts: list[float],
 ) -> None:
     result = _decision_fixture(
-        overall=overall,
         model_values=models,
         context_values=contexts,
         ci_lower=0.01,
@@ -219,9 +247,8 @@ def test_d4b_adjudication_fragile_thresholds_stop(
 
 def test_d4b_adjudication_ambiguous_stops_without_expansion() -> None:
     result = _decision_fixture(
-        overall=0.1,
-        model_values=[0.1] * 7 + [-0.1] * 3,
-        context_values=[0.1] * 4 + [-0.1],
+        model_values=[0.1] * 7 + [-0.05] * 3,
+        context_values=[0.075] * 4 + [-0.025],
         ci_lower=0.01,
     )
 
