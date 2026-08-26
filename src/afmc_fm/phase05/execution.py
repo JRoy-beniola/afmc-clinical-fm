@@ -1,0 +1,680 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import multiprocessing
+import os
+import re
+from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from functools import partial
+from pathlib import Path
+from time import perf_counter
+from typing import Any
+
+import pandas as pd
+import torch
+from threadpoolctl import threadpool_limits
+
+from afmc_fm.execution.device import resolve_device
+from afmc_fm.execution.manifest import collect_runtime_metadata, execution_commit_sha
+from afmc_fm.execution.persistence import canonical_config_hash
+from afmc_fm.phase05.config import Phase05Config, SeedBundle
+from afmc_fm.phase05.provenance import failure_payload, record_execution_invocation
+from afmc_fm.phase05.store import Phase05CellResult, Phase05Store
+
+THREAD_ENVIRONMENT_VARIABLES = (
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+)
+_CONFIRMATORY_STAGES = frozenset({"confirmation", "robustness"})
+_DEVELOPMENT_STAGES = frozenset({"flow", "jump", "uncertainty", "timing_audit"})
+_DEVELOPMENT_FINAL_ARTIFACTS = {
+    "flow": "flow_gate.csv",
+    "jump": "jump_gate.csv",
+    "uncertainty": "uncertainty_gate.csv",
+    "timing_audit": "representation_timing_audit.csv",
+}
+_SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+@dataclass(frozen=True, slots=True)
+class Phase05ShardSpec:
+    stage: str
+    world: str
+    seed_bundle: SeedBundle
+
+    @property
+    def shard_id(self) -> str:
+        return (
+            f"{self.stage}__{self.world}__cohort{self.seed_bundle.cohort_seed}__"
+            f"subset{self.seed_bundle.subset_seed}__model{self.seed_bundle.model_seed}"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Phase05Job:
+    shard: Phase05ShardSpec
+    n_train: int
+    model: str
+    variant: str
+    frozen_candidate_hash: str | None = None
+
+    def __post_init__(self) -> None:
+        if type(self.n_train) is not int or self.n_train <= 0:
+            raise ValueError("n_train must be a positive integer")
+        if not self.model or not self.variant:
+            raise ValueError("model and variant must be non-empty")
+
+    @property
+    def cell_id(self) -> str:
+        return phase05_cell_id(
+            self.shard,
+            n_train=self.n_train,
+            model=self.model,
+            variant=self.variant,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Phase05ExecutionOptions:
+    device: str = "auto"
+    workers: int = 1
+    resume: bool = False
+    fail_fast: bool = False
+    simulator_config_hash: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.workers < 1:
+            raise ValueError("workers must be at least 1")
+        if self.device not in {"auto", "cpu", "cuda"}:
+            raise ValueError("device must be auto, cpu, or cuda")
+        if (
+            self.simulator_config_hash is not None
+            and _SHA256_RE.fullmatch(self.simulator_config_hash) is None
+        ):
+            raise ValueError(
+                "simulator_config_hash must be a 64-character hexadecimal SHA-256"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class _ShardExecutionResult:
+    results: tuple[tuple[Phase05Job, pd.DataFrame], ...]
+    failures: tuple[str, ...]
+
+
+def phase05_cell_id(
+    shard: Phase05ShardSpec,
+    *,
+    n_train: int,
+    model: str,
+    variant: str,
+) -> str:
+    return f"{shard.shard_id}__n{n_train}__{model}__{variant}"
+
+
+def spawn_context():
+    return multiprocessing.get_context("spawn")
+
+
+def limit_worker_threads() -> dict[str, str]:
+    for variable in THREAD_ENVIRONMENT_VARIABLES:
+        os.environ[variable] = "1"
+    torch.set_num_threads(1)
+    return {variable: os.environ[variable] for variable in THREAD_ENVIRONMENT_VARIABLES}
+
+
+@contextmanager
+def worker_thread_limits() -> Iterator[dict[str, str]]:
+    previous_environment = {
+        variable: os.environ.get(variable) for variable in THREAD_ENVIRONMENT_VARIABLES
+    }
+    previous_torch_threads = torch.get_num_threads()
+    try:
+        environment = limit_worker_threads()
+        with threadpool_limits(limits=1):
+            yield environment
+    finally:
+        torch.set_num_threads(previous_torch_threads)
+        for variable, value in previous_environment.items():
+            if value is None:
+                os.environ.pop(variable, None)
+            else:
+                os.environ[variable] = value
+
+
+@contextmanager
+def _inherited_thread_environment() -> Iterator[None]:
+    previous = {
+        variable: os.environ.get(variable) for variable in THREAD_ENVIRONMENT_VARIABLES
+    }
+    try:
+        for variable in THREAD_ENVIRONMENT_VARIABLES:
+            os.environ[variable] = "1"
+        yield
+    finally:
+        for variable, value in previous.items():
+            if value is None:
+                os.environ.pop(variable, None)
+            else:
+                os.environ[variable] = value
+
+
+def resolve_phase05_device(requested: str) -> torch.device:
+    return resolve_device(requested)
+
+
+def plan_phase05_shards(
+    config: Phase05Config,
+    stage: str,
+) -> tuple[Phase05ShardSpec, ...]:
+    if stage == "flow":
+        worlds = ("smooth",)
+        bundles = config.development_bundles
+    elif stage == "jump":
+        worlds = ("jumps",)
+        bundles = config.development_bundles
+    elif stage in {"uncertainty", "timing_audit"}:
+        worlds = config.target_worlds
+        bundles = config.development_bundles
+    elif stage == "confirmation":
+        worlds = config.target_worlds
+        bundles = config.confirmatory_bundles
+    elif stage == "robustness":
+        worlds = config.robustness_worlds
+        bundles = config.confirmatory_bundles
+    else:
+        raise ValueError(f"unknown Phase-0.5 execution stage: {stage}")
+    return tuple(
+        Phase05ShardSpec(stage=stage, world=world, seed_bundle=bundle)
+        for world in worlds
+        for bundle in bundles
+    )
+
+
+def aggregate_phase05_frames(frames: Sequence[pd.DataFrame]) -> pd.DataFrame:
+    nonempty = [frame.copy() for frame in frames if not frame.empty]
+    if not nonempty:
+        return pd.DataFrame()
+    combined = pd.concat(nonempty, ignore_index=True, sort=False)
+    preferred_order = (
+        "stage",
+        "world",
+        "cohort_seed",
+        "subset_seed",
+        "model_seed",
+        "n_train",
+        "model",
+        "variant",
+        "split",
+        "site_or_shift",
+        "metric",
+    )
+    sort_columns = [column for column in preferred_order if column in combined.columns]
+    if sort_columns:
+        combined = combined.sort_values(sort_columns, kind="mergesort")
+    return combined.reset_index(drop=True)
+
+
+def _validate_job_scope(jobs: tuple[Phase05Job, ...], config: Phase05Config) -> str:
+    if not jobs:
+        raise ValueError("Phase-0.5 job plan must not be empty")
+    stages = {job.shard.stage for job in jobs}
+    if len(stages) != 1:
+        raise ValueError("one run_phase05_jobs call may execute only one stage")
+    stage = next(iter(stages))
+    allowed = {shard.shard_id for shard in plan_phase05_shards(config, stage)}
+    unexpected = {job.shard.shard_id for job in jobs} - allowed
+    if unexpected:
+        raise ValueError("jobs fall outside the locked stage seed/world scope")
+    cell_ids = [job.cell_id for job in jobs]
+    if len(cell_ids) != len(set(cell_ids)):
+        raise ValueError("Phase-0.5 job cell IDs must be unique")
+    return stage
+
+
+def _development_artifact_path(store: Phase05Store, filename: str) -> Path:
+    return store.output / "development" / filename
+
+
+def _gate_passed(path: Path, gate_name: str) -> bool:
+    try:
+        frame = pd.read_csv(path)
+    except Exception as error:
+        raise RuntimeError(f"{gate_name} gate artifact is unreadable") from error
+    if frame.empty or "passed" not in frame.columns:
+        raise RuntimeError(f"{gate_name} gate artifact is invalid")
+    normalized = {str(value).strip().lower() for value in frame["passed"].dropna()}
+    if not normalized or not normalized.issubset({"true", "false", "1", "0"}):
+        raise RuntimeError(f"{gate_name} gate artifact is invalid")
+    return bool(normalized & {"true", "1"})
+
+
+def _validate_primary_gate_artifact(path: Path) -> None:
+    try:
+        frame = pd.read_csv(path)
+    except Exception as error:
+        raise RuntimeError("primary confirmatory gate artifact is invalid") from error
+    if frame.empty or not {"world", "headline_passed"}.issubset(frame.columns):
+        raise RuntimeError("primary confirmatory gate artifact is invalid")
+    normalized = {
+        str(value).strip().lower() for value in frame["headline_passed"].dropna()
+    }
+    if (
+        len(normalized) != 1
+        or not normalized.issubset({"true", "false", "1", "0"})
+    ):
+        raise RuntimeError("primary confirmatory gate artifact is invalid")
+
+
+def _require_development_stage_open(store: Phase05Store, stage: str) -> None:
+    artifact = _DEVELOPMENT_FINAL_ARTIFACTS.get(stage)
+    if artifact is None:
+        return
+    if _development_artifact_path(store, artifact).exists():
+        raise RuntimeError(f"{stage} stage is already finalized")
+
+
+def _require_stage_unlocked(store: Phase05Store, stage: str) -> None:
+    if stage == "jump":
+        path = _development_artifact_path(store, "flow_gate.csv")
+        if not path.is_file():
+            raise RuntimeError("flow stage must be complete before jump")
+        if not _gate_passed(path, "flow"):
+            raise RuntimeError("flow gate must pass before jump")
+        return
+    if stage == "uncertainty":
+        path = _development_artifact_path(store, "jump_gate.csv")
+        if not path.is_file():
+            raise RuntimeError("jump stage must be complete before uncertainty")
+        if not _gate_passed(path, "jump"):
+            raise RuntimeError("jump gate must pass before uncertainty")
+        return
+    if stage == "timing_audit":
+        path = _development_artifact_path(store, "uncertainty_gate.csv")
+        if not path.is_file():
+            raise RuntimeError("uncertainty stage must be complete before timing_audit")
+        return
+    if stage == "robustness":
+        marker = store.output / "stages" / "confirmation" / "COMPLETE"
+        if not marker.is_file():
+            raise RuntimeError("confirmation stage must be complete before robustness")
+        gate = store.output / "confirmation" / "primary_gate_summary.csv"
+        if not gate.is_file():
+            raise RuntimeError(
+                "primary confirmatory gate must be finalized before robustness"
+            )
+        _validate_primary_gate_artifact(gate)
+
+
+def _persist_result(store: Phase05Store, job: Phase05Job, frame: pd.DataFrame) -> None:
+    if not isinstance(frame, pd.DataFrame):
+        raise TypeError("Phase-0.5 job runner must return a pandas DataFrame")
+    if frame.empty:
+        raise ValueError("Phase-0.5 job runner returned no metric rows")
+    bundle = job.shard.seed_bundle
+    store.write_cell(
+        Phase05CellResult(
+            stage=job.shard.stage,
+            world=job.shard.world,
+            cohort_seed=bundle.cohort_seed,
+            subset_seed=bundle.subset_seed,
+            model_seed=bundle.model_seed,
+            n_train=job.n_train,
+            model=job.model,
+            variant=job.variant,
+            metrics=frame,
+            frozen_candidate_hash=job.frozen_candidate_hash,
+        )
+    )
+
+
+def _load_persisted_frame(store: Phase05Store, job: Phase05Job) -> pd.DataFrame:
+    path = (
+        store.output
+        / "stages"
+        / job.shard.stage
+        / "cells"
+        / f"{job.cell_id}.json"
+    )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    rows = payload.get("metric_rows")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError(f"persisted Phase-0.5 cell has no metric rows: {job.cell_id}")
+    return pd.DataFrame(rows)
+
+
+def _candidate_hash(store: Phase05Store) -> str:
+    path = store.output / "frozen_candidate.json"
+    if not path.is_file():
+        raise ValueError("frozen candidate hash unavailable: frozen_candidate.json missing")
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _require_confirmation_binding(
+    store: Phase05Store,
+    jobs: tuple[Phase05Job, ...],
+    config: Phase05Config,
+) -> str:
+    runtime_config_hash = canonical_config_hash(config)
+    if runtime_config_hash != store.config_hash:
+        raise ValueError("runtime config hash does not match persisted protocol identity")
+    marker = store.output / "confirmation" / "STARTED"
+    if not marker.is_file():
+        raise RuntimeError("confirmation must be started before confirmatory execution")
+    candidate_hash = _candidate_hash(store)
+    if any(job.frozen_candidate_hash != candidate_hash for job in jobs):
+        raise ValueError("frozen candidate hash does not match persisted candidate")
+    return candidate_hash
+
+
+def _execute_shard_worker(
+    shard: Phase05ShardSpec,
+    jobs: tuple[Phase05Job, ...],
+    requested_device: str,
+    prepare_shard: Callable[[Phase05ShardSpec], Any],
+    run_job: Callable[[Phase05Job, Any, torch.device], pd.DataFrame],
+    fail_fast: bool,
+) -> _ShardExecutionResult:
+    results: list[tuple[Phase05Job, pd.DataFrame]] = []
+    failures: list[str] = []
+    with worker_thread_limits():
+        device = resolve_phase05_device(requested_device)
+        prepared = prepare_shard(shard)
+        for job in jobs:
+            try:
+                frame = run_job(job, prepared, device)
+                if not isinstance(frame, pd.DataFrame):
+                    raise TypeError(
+                        "Phase-0.5 job runner must return a pandas DataFrame"
+                    )
+                if frame.empty:
+                    raise ValueError("Phase-0.5 job runner returned no metric rows")
+                results.append((job, frame))
+            except Exception as error:  # noqa: BLE001 - worker boundary captures callbacks
+                failures.append(f"{type(error).__name__}: {error}")
+                if fail_fast:
+                    break
+    return _ShardExecutionResult(tuple(results), tuple(failures))
+
+
+def _run_single_worker_shards(
+    by_shard: dict[str, list[Phase05Job]],
+    shard_specs: dict[str, Phase05ShardSpec],
+    *,
+    store: Phase05Store,
+    completed: frozenset[str],
+    device: torch.device,
+    prepare_shard: Callable[[Phase05ShardSpec], Any],
+    run_job: Callable[[Phase05Job, Any, torch.device], pd.DataFrame],
+    fail_fast: bool,
+) -> list[BaseException]:
+    failures: list[BaseException] = []
+    for shard_id, shard_jobs in by_shard.items():
+        pending = [job for job in shard_jobs if job.cell_id not in completed]
+        if not pending:
+            continue
+        with worker_thread_limits():
+            prepared = prepare_shard(shard_specs[shard_id])
+            for job in pending:
+                try:
+                    frame = run_job(job, prepared, device)
+                    _persist_result(store, job, frame)
+                except Exception as error:
+                    failures.append(error)
+                    if fail_fast:
+                        raise
+    return failures
+
+
+def _run_parallel_shards(
+    by_shard: dict[str, list[Phase05Job]],
+    shard_specs: dict[str, Phase05ShardSpec],
+    *,
+    store: Phase05Store,
+    completed: frozenset[str],
+    options: Phase05ExecutionOptions,
+    prepare_shard: Callable[[Phase05ShardSpec], Any],
+    run_job: Callable[[Phase05Job, Any, torch.device], pd.DataFrame],
+) -> list[BaseException]:
+    work = [
+        (shard_specs[shard_id], tuple(job for job in shard_jobs if job.cell_id not in completed))
+        for shard_id, shard_jobs in by_shard.items()
+    ]
+    work = [(shard, jobs) for shard, jobs in work if jobs]
+    if not work:
+        return []
+
+    failures: list[BaseException] = []
+    with _inherited_thread_environment(), ProcessPoolExecutor(
+        max_workers=options.workers,
+        mp_context=spawn_context(),
+    ) as executor:
+        futures = {
+            executor.submit(
+                _execute_shard_worker,
+                shard,
+                shard_jobs,
+                options.device,
+                prepare_shard,
+                run_job,
+                options.fail_fast,
+            ): shard.shard_id
+            for shard, shard_jobs in work
+        }
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+            except Exception as error:
+                failures.append(error)
+                if options.fail_fast:
+                    for pending_future in futures:
+                        pending_future.cancel()
+                    raise
+                continue
+
+            for job, frame in result.results:
+                _persist_result(store, job, frame)
+            for failure in result.failures:
+                failures.append(RuntimeError(failure))
+            if result.failures and options.fail_fast:
+                for pending_future in futures:
+                    pending_future.cancel()
+                raise RuntimeError(result.failures[0])
+    return failures
+
+
+def _persisted_expected_count(
+    store: Phase05Store,
+    stage: str,
+    expected_cell_ids: frozenset[str],
+) -> int:
+    cells = store.output / "stages" / stage / "cells"
+    return sum((cells / f"{cell_id}.json").is_file() for cell_id in expected_cell_ids)
+
+
+def _resolve_simulator_config_hash(
+    options: Phase05ExecutionOptions,
+    prepare_shard: Callable[[Phase05ShardSpec], Any],
+) -> str | None:
+    if options.simulator_config_hash is not None:
+        return options.simulator_config_hash.lower()
+    if isinstance(prepare_shard, partial):
+        simulator_config = (prepare_shard.keywords or {}).get("simulator_config")
+        if simulator_config is not None:
+            return canonical_config_hash(simulator_config)
+    return None
+
+
+def _record_execution(
+    store: Phase05Store,
+    *,
+    stage: str,
+    options: Phase05ExecutionOptions,
+    device: torch.device,
+    simulator_config_hash: str | None,
+    expected_cell_ids: frozenset[str],
+    shard_count: int,
+    completed_before: int,
+    completed_after: int,
+    failures: Sequence[BaseException],
+    started_at: datetime,
+    started_clock: float,
+    runtime_metadata: dict[str, object],
+) -> None:
+    ended_at = datetime.now(UTC)
+    record_execution_invocation(
+        store,
+        implementation_sha=execution_commit_sha(),
+        simulator_config_sha256=simulator_config_hash,
+        invocation={
+            "stage": stage,
+            "started_at": started_at.isoformat(),
+            "ended_at": ended_at.isoformat(),
+            "wall_time_seconds": max(0.0, perf_counter() - started_clock),
+            "requested_device": options.device,
+            "resolved_device": device.type,
+            "workers": options.workers,
+            "resume": options.resume,
+            "fail_fast": options.fail_fast,
+            "expected_cell_count": len(expected_cell_ids),
+            "completed_before": completed_before,
+            "completed_after": completed_after,
+            "shard_count": shard_count,
+            "failures": [failure_payload(error) for error in failures],
+            "runtime_metadata": runtime_metadata,
+        },
+    )
+
+
+def run_phase05_jobs(
+    jobs: Sequence[Phase05Job],
+    *,
+    store: Phase05Store,
+    config: Phase05Config,
+    options: Phase05ExecutionOptions,
+    prepare_shard: Callable[[Phase05ShardSpec], Any],
+    run_job: Callable[[Phase05Job, Any, torch.device], pd.DataFrame],
+) -> pd.DataFrame:
+    planned = tuple(jobs)
+    stage = _validate_job_scope(planned, config)
+    _require_development_stage_open(store, stage)
+    _require_stage_unlocked(store, stage)
+
+    device = resolve_phase05_device(options.device)
+    simulator_config_hash = _resolve_simulator_config_hash(options, prepare_shard)
+    expected_cell_ids = frozenset(job.cell_id for job in planned)
+    expected_seed_bundles = frozenset(job.shard.seed_bundle.as_tuple() for job in planned)
+    candidate_hash = (
+        _require_confirmation_binding(store, planned, config)
+        if stage in _CONFIRMATORY_STAGES
+        else None
+    )
+    completed = store.validate_resume(
+        stage,
+        expected_cell_ids=expected_cell_ids,
+        expected_seed_bundles=expected_seed_bundles,
+        frozen_candidate_hash=candidate_hash,
+    )
+    if completed and not options.resume:
+        raise ValueError("persisted Phase-0.5 cells exist; enable resume to reuse them")
+
+    by_shard: dict[str, list[Phase05Job]] = {}
+    shard_specs: dict[str, Phase05ShardSpec] = {}
+    for job in planned:
+        by_shard.setdefault(job.shard.shard_id, []).append(job)
+        shard_specs[job.shard.shard_id] = job.shard
+
+    started_at = datetime.now(UTC)
+    started_clock = perf_counter()
+    runtime_metadata = collect_runtime_metadata(device.type)
+    failures: list[BaseException] = []
+    try:
+        if options.workers == 1:
+            failures = _run_single_worker_shards(
+                by_shard,
+                shard_specs,
+                store=store,
+                completed=completed,
+                device=device,
+                prepare_shard=prepare_shard,
+                run_job=run_job,
+                fail_fast=options.fail_fast,
+            )
+        else:
+            failures = _run_parallel_shards(
+                by_shard,
+                shard_specs,
+                store=store,
+                completed=completed,
+                options=options,
+                prepare_shard=prepare_shard,
+                run_job=run_job,
+            )
+    except Exception as error:
+        failures.append(error)
+        _record_execution(
+            store,
+            stage=stage,
+            options=options,
+            device=device,
+            simulator_config_hash=simulator_config_hash,
+            expected_cell_ids=expected_cell_ids,
+            shard_count=len(by_shard),
+            completed_before=len(completed),
+            completed_after=_persisted_expected_count(
+                store, stage, expected_cell_ids
+            ),
+            failures=failures,
+            started_at=started_at,
+            started_clock=started_clock,
+            runtime_metadata=runtime_metadata,
+        )
+        raise
+
+    persisted = store.validate_resume(
+        stage,
+        expected_cell_ids=expected_cell_ids,
+        expected_seed_bundles=expected_seed_bundles,
+        frozen_candidate_hash=candidate_hash,
+    )
+    _record_execution(
+        store,
+        stage=stage,
+        options=options,
+        device=device,
+        simulator_config_hash=simulator_config_hash,
+        expected_cell_ids=expected_cell_ids,
+        shard_count=len(by_shard),
+        completed_before=len(completed),
+        completed_after=len(persisted),
+        failures=failures,
+        started_at=started_at,
+        started_clock=started_clock,
+        runtime_metadata=runtime_metadata,
+    )
+    available_jobs = [job for job in planned if job.cell_id in persisted]
+    frames = [_load_persisted_frame(store, job) for job in available_jobs]
+    return aggregate_phase05_frames(frames)
+
+
+__all__ = [
+    "THREAD_ENVIRONMENT_VARIABLES",
+    "Phase05ExecutionOptions",
+    "Phase05Job",
+    "Phase05ShardSpec",
+    "aggregate_phase05_frames",
+    "limit_worker_threads",
+    "phase05_cell_id",
+    "plan_phase05_shards",
+    "resolve_phase05_device",
+    "run_phase05_jobs",
+    "spawn_context",
+    "worker_thread_limits",
+]

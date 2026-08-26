@@ -1,0 +1,35 @@
+train_sizes: [5, 10, 20, 40, 80, 100]
+primary_train_sizes: [5, 10, 20, 40]
+development_bundles:
+  - [401, 501, 601]
+  - [402, 502, 602]
+  - [403, 503, 603]
+  - [404, 504, 604]
+  - [405, 505, 605]
+confirmatory_bundles:
+  - [701, 801, 901]
+  - [702, 802, 902]
+  - [703, 803, 903]
+  - [704, 804, 904]
+  - [705, 805, 905]
+  - [706, 806, 906]
+  - [707, 807, 907]
+  - [708, 808, 908]
+  - [709, 809, 909]
+  - [710, 810, 910]
+target_worlds: [smooth, jumps, informative_observation]
+robustness_worlds: [site_shift, misspecified]
+max_epochs: 100
+patience: 12
+learning_rate: 0.001
+weight_decay: 0.0001
+lambda_event: 1.0
+time_scale_days: 30.0
+provisional_relative_effect: 0.02
+development_win_requirement: 4
+confirmatory_win_requirement: 8
+bootstrap_resamples: 10000
+bootstrap_seed: 20260824
+misspecification_tolerance: 0.05
+train_site: 0
+test_sites: [0, 1]

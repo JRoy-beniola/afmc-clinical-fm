@@ -83,6 +83,25 @@ Evaluation splits patients—not events. Fit and validation selection share the 
 
 Executed comparisons include an engineered-history linear model, an engineered-history gradient-boosted tree, a genuinely representation-free temporal GRU, a representation-only linear probe, a representation-only MLP probe, flow-jump adaptation, and observation-aware flow-jump adaptation. Runnable ablations remove the representation, flow, jump, observation head, or probabilistic scale. Where applicable, rows report MAE/RMSE, Gaussian NLL, 90% interval coverage, horizon-risk classification with event ROC-AUC/Brier/log loss, aligned latent-state recovery, and complete-target observation-shift degradation.
 
+## Phase 0.5 preregistered mechanistic protocol
+
+Phase 0.5 is a new protocol layer on top of the historical Phase 0 harness. It does not rewrite the original Phase 0 benchmark or its results. Stage I uses five development bundles to select and audit the flow, jump, and uncertainty mechanisms before a candidate is frozen. Confirmation then uses ten unseen confirmatory bundles across the locked target worlds; those confirmatory bundles are not reused for mechanism selection.
+
+The staged CLI is:
+
+```text
+afmc-phase0 phase05 calibrate
+afmc-phase0 phase05 develop
+afmc-phase0 phase05 freeze
+afmc-phase0 phase05 confirm
+afmc-phase0 phase05 robustness
+afmc-phase0 phase05 report
+```
+
+`calibrate` binds the Phase 0.5 configuration and historical Phase 0 calibration evidence into the immutable protocol lock. `develop` runs the preregistered Stage-I sequence and persists `development/mechanism_metrics.csv` together with the flow, jump, uncertainty, and representation-timing gate artifacts. `freeze` writes the selected candidate and its capacity audit. `confirm` runs the frozen candidate and locked comparators on the unseen confirmatory bundles. `robustness` evaluates site shift and misspecification only after confirmation is finalized. `report` is read-only and derives deterministic scientific tables, figures, `protocol_manifest.json`, and `run_manifest.json` from persisted artifacts.
+
+Ordinary CI and smoke runs do not produce official Phase 0.5 scientific results. CI uses reduced synthetic fixtures to verify code paths, invariants, resume behavior, immutability, reporting, and device compatibility. Official Stage-I development must be started explicitly only after the Phase 0.5 validation record declares it ready; the same non-claim boundary applies to confirmation and robustness.
+
 ## Privacy and non-claims
 
 Never commit real clinical data, identifiers, derived patient exports, model checkpoints, or private environment files. The repository ignore policy blocks common private-data and output paths. Synthetic patients do not create independent clinical evidence, and intervention-conditioned predictions are not causal estimates.

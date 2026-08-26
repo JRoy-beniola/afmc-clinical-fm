@@ -1,0 +1,17 @@
+date_utc=2026-08-26T01:55:34Z
+repo=/home/royja/afmc-clinical-fm
+implementation_sha=50a94c06bc1c419ca55738f15f074cc06ccc3f36
+validated_code_sha=3fb62ff71e3d9f9750b6dbc1ebf5525db3f71e71
+phase0_execution_sha=d6f105eee73fcb8e9cc5987d292b1bb98a687382
+phase0_metrics=/home/royja/afmc-clinical-fm/outputs/phase0_full_cuda_d6f105eee73fcb8e9cc5987d292b1bb98a687382/metrics.csv
+phase0_metrics_sha256=f829502bc3489b3608c1ba06c9b4ca0c0910872c88ee628325339232c6816dcf
+phase05_config=/home/royja/afmc-clinical-fm/configs/experiments/phase05.yaml
+phase05_config_sha256=508d6703f6d7b3ae2b92068510b58f16cffa985a233a340e9228d96f476d4693
+simulator_config=/home/royja/afmc-clinical-fm/configs/simulator/full.yaml
+simulator_config_sha256=4530995b005034ba69c22fa7c4193dec6e3b5406396a2f79c04a7355245b7782
+output=/home/royja/afmc-clinical-fm/outputs/phase05_official_50a94c06bc1c419ca55738f15f074cc06ccc3f36
+Python 3.14.4
+torch=2.13.0+cu130
+torch_cuda=13.0
+cuda_available=True
+gpu=NVIDIA GeForce RTX 4060 Laptop GPU
