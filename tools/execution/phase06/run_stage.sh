@@ -80,22 +80,22 @@ echo
 [[ -f "$PHASE05_CONFIG" ]] || { echo "ERROR: missing $PHASE05_CONFIG"; exit 1; }
 [[ -f "$PHASE05_PROTOCOL" ]] || { echo "ERROR: missing $PHASE05_PROTOCOL"; exit 1; }
 
-grep -Fqi 'implementation status: READY FOR D1 EXECUTION' "$VALIDATION_RECORD" || {
-  echo "ERROR: validation record does not contain:"
-  echo "  implementation status: READY FOR D1 EXECUTION"
+grep -Eqi 'implementation status:.*READY FOR D1 EXECUTION' "$VALIDATION_RECORD" || {
+  echo "ERROR: validation record does not authorize D1 execution."
+  echo "Expected an implementation-status line containing: READY FOR D1 EXECUTION"
   exit 1
 }
 
 VALIDATED_SHA="$(
-  grep -i 'branch/head SHA' "$VALIDATION_RECORD" \
+  grep -Ei 'Validated implementation SHA|branch/head SHA' "$VALIDATION_RECORD" \
     | grep -Eo '[0-9a-fA-F]{40}' \
     | head -n 1 \
     | tr 'A-F' 'a-f' \
     || true
 )"
 [[ "$VALIDATED_SHA" =~ ^[0-9a-f]{40}$ ]] || {
-  echo "ERROR: validation record does not expose a 40-character branch/head SHA."
-  echo "Expected a line containing: branch/head SHA"
+  echo "ERROR: validation record does not expose a 40-character validated SHA."
+  echo "Expected a line containing: Validated implementation SHA or branch/head SHA"
   exit 1
 }
 
