@@ -360,10 +360,17 @@ echo ">>> PHASE 0.6 ${STAGE^^}: starting one-worker CUDA diagnostic stage"
   "$PY" -m afmc_fm.phase06.cli "$STAGE" "${ARGS[@]}"
 fi
 
-[[ -f "$OUTPUT/stages/$STAGE/COMPLETE" ]] || {
-  echo "ERROR: stage command returned successfully but COMPLETE marker is missing."
-  exit 1
-}
+if [[ "$STAGE" == "d2b" ]]; then
+  [[ -f "$OUTPUT/stages/d2b/COMPLETE" ]] || {
+    echo "ERROR: D2-B command returned successfully but D2-B COMPLETE marker is missing."
+    exit 1
+  }
+else
+  [[ -f "$OUTPUT/stages/$STAGE/COMPLETE" ]] || {
+    echo "ERROR: stage command returned successfully but COMPLETE marker is missing."
+    exit 1
+  }
+fi
 
 if [[ "$STAGE" == "d1" ]]; then
   [[ -f "$OUTPUT/analysis/phase06_d1_classification.json" ]] || {
