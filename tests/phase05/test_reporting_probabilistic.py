@@ -23,17 +23,13 @@ def test_probabilistic_report_writes_deterministic_calibration_figure(tmp_path: 
         json.dumps(frozen, sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8",
     )
-    (output / "confirmation" / "STARTED").write_text(
-        json.dumps(
-            {
-                "frozen_candidate_sha256": hashlib.sha256(
-                    frozen_path.read_bytes()
-                ).hexdigest()
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        + "\n",
+    marker_path = output / "confirmation" / "STARTED"
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    marker["frozen_candidate_sha256"] = hashlib.sha256(
+        frozen_path.read_bytes()
+    ).hexdigest()
+    marker_path.write_text(
+        json.dumps(marker, sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8",
     )
 
