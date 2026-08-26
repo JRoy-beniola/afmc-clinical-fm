@@ -24,6 +24,9 @@ _PARENT_PHASE06_EXECUTION_SHA = "1718402df1d6ef344168677e6d26ea664708e1bc"
 _PARENT_PHASE06_PROTOCOL_SHA256 = (
     "c001bc278cc0c41793ef21d972f851b1ccd7a6d1b2adc8d2f45060660f709a51"
 )
+_PARENT_PHASE06_D3_SHA256 = (
+    "6b9fffed7503fae6beeac2314238ae3d10ffdebfd27ea71ad952ab1f87916460"
+)
 _DEVELOPMENT_BUNDLES = tuple(
     (400 + index, 500 + index, 600 + index) for index in range(1, 6)
 )
@@ -166,6 +169,8 @@ def build_phase06_d2b_protocol_lock(
     parent_d3_hash = parent_evidence.get("parent_d3_sha256")
     if not isinstance(parent_d3_hash, str) or _SHA256_RE.fullmatch(parent_d3_hash) is None:
         raise ValueError("parent D3 SHA-256 is invalid")
+    if parent_d3_hash != _PARENT_PHASE06_D3_SHA256:
+        raise ValueError("parent D3 SHA-256 does not match frozen parent")
     if parent_evidence.get("parent_d3_next_required_stage") != "D2B":
         raise ValueError("parent D3 next_required_stage must be D2B")
     if parent_evidence.get("parent_phase06_config_sha256") != expected_config_hash:
