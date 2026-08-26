@@ -4,12 +4,12 @@ set -euo pipefail
 STAGE="${1:-}"
 MODE="${2:-fresh}"
 
-if [[ "$STAGE" != "d1" && "$STAGE" != "d2a" && "$STAGE" != "d2b" ]]; then
-  echo "Usage: $0 {d1|d2a|d2b} [fresh|resume]" >&2
+if [[ "$STAGE" != "d1" && "$STAGE" != "d2a" && "$STAGE" != "d2b" && "$STAGE" != "d4b" ]]; then
+  echo "Usage: $0 {d1|d2a|d2b|d4b} [fresh|resume]" >&2
   exit 2
 fi
 if [[ "$MODE" != "fresh" && "$MODE" != "resume" ]]; then
-  echo "Usage: $0 {d1|d2a|d2b} [fresh|resume]" >&2
+  echo "Usage: $0 {d1|d2a|d2b|d4b} [fresh|resume]" >&2
   exit 2
 fi
 
@@ -19,6 +19,12 @@ SESSION="${PHASE06_TMUX_SESSION:-phase06-$STAGE}"
 if [[ "$STAGE" == "d2b" && -z "${PHASE06_PARENT_OUTPUT:-}" ]]; then
   echo "D2-B requires PHASE06_PARENT_OUTPUT to identify the frozen parent output." >&2
   exit 2
+fi
+if [[ "$STAGE" == "d4b" ]]; then
+  if [[ -z "${PHASE06_CORE_PARENT_OUTPUT:-}" || -z "${PHASE06_D2B_PARENT_OUTPUT:-}" ]]; then
+    echo "D4-B requires PHASE06_CORE_PARENT_OUTPUT and PHASE06_D2B_PARENT_OUTPUT." >&2
+    exit 2
+  fi
 fi
 
 command -v tmux >/dev/null 2>&1 || {
@@ -50,7 +56,7 @@ append_env() {
     ENV_PREFIX+=" $name=$quoted"
   fi
 }
-for name in REPO CONTROL PHASE06_OUTPUT PHASE06_PARENT_OUTPUT; do
+for name in REPO CONTROL PHASE06_OUTPUT PHASE06_PARENT_OUTPUT PHASE06_CORE_PARENT_OUTPUT PHASE06_D2B_PARENT_OUTPUT; do
   append_env "$name"
 done
 
