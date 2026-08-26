@@ -314,7 +314,7 @@ class Phase06Store:
             raise ValueError(f"protocol identity mismatch in persisted summary: {cell.cell_id}")
         hashes = manifest.get("artifact_sha256")
         if not isinstance(hashes, dict):
-            raise ValueError(f"invalid artifact hash manifest: {cell.cell_id}")
+            raise TypeError(f"invalid artifact hash manifest: {cell.cell_id}")
         expected_hashes = {
             "cell_metrics": _sha256(paths["cell_metrics"].read_bytes()),
             "training_trace": _sha256(paths["training_trace"].read_bytes()),
@@ -356,7 +356,7 @@ class Phase06Store:
             payload = _load_json_object(path)
             cell = payload.get("cell")
             if not isinstance(cell, dict):
-                raise ValueError(f"invalid persisted cell structure: {path}")
+                raise TypeError(f"invalid persisted cell structure: {path}")
             cell_id = cell.get("cell_id")
             if not isinstance(cell_id, str) or not cell_id:
                 raise ValueError(f"invalid persisted cell ID: {path}")
@@ -408,7 +408,7 @@ def _cell_metadata(cell: Phase06CellSpec) -> dict[str, object]:
 def _cell_from_payload(payload: dict[str, Any]) -> Phase06CellSpec:
     cell = payload.get("cell")
     if not isinstance(cell, dict):
-        raise ValueError("invalid persisted cell structure")
+        raise TypeError("invalid persisted cell structure")
     try:
         result = Phase06CellSpec(
             stage=cell["stage"],
