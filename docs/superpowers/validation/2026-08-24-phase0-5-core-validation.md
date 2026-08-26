@@ -4,7 +4,7 @@ Date: 2026-08-26
 
 ## Scope and identity
 
-- Validated commit: `5aab5c05ccac05faa4006fb9ea18d527186a1378`
+- Validated commit: `3fb62ff71e3d9f9750b6dbc1ebf5525db3f71e71`
 - Branch: `phase0-5-implementation`
 - Pulled remote checkpoint: `e22138b96c67d48b81eb12686c27eb3150373947`
 - Phase-0 compatibility base: `18b96fec332c521af3474bbf7afcec21ebb9dc5b`
@@ -37,7 +37,7 @@ git diff --check
 Results:
 
 - Ruff: PASS, `All checks passed!`
-- pytest: PASS, `387 passed in 206.89s (0:03:26)`
+- pytest: PASS, `388 passed in 218.28s (0:03:38)`
 - Skips: none. CUDA was available, so all CUDA-marked tests executed.
 - `git diff --check`: PASS, exit 0 with no output.
 
@@ -65,7 +65,7 @@ calibrate
 -> freeze
 ```
 
-The fit-running boundary uses synthetic fixture gate rows, as allowed by the approved Task-16 plan, while calibration, sequential selection, stage completion, artifact persistence, and freeze are real. The frozen result selected `time_scaled` flow, `residual` jump, `decoupled` uncertainty, and strict pre-event history. No scientific threshold, seed, gate, comparator, or inference rule was changed to make a tiny stochastic run pass.
+The executed smoke plan is constrained to development bundle `(401, 501, 601)`, `N=5/10`, one epoch, and early-stopping patience of one epoch. It executes 6 flow cells, 6 jump cells, 18 uncertainty cells, and 12 representation-timing cells. The unchanged scientific selectors separately receive explicit synthetic fixture rows with the required five-bundle and N=5/10/20/40 gate shape, as allowed by the approved Task-16 plan; fixture rows are not persisted as executed smoke cells. Calibration, sequential selection, stage completion, artifact persistence, and freeze are real. The frozen result selected `time_scaled` flow, `residual` jump, `decoupled` uncertainty, and strict pre-event history. No scientific threshold, seed, gate, comparator, or inference rule was changed to make a tiny stochastic run pass.
 
 ## RTX 4060 CUDA smoke
 
@@ -76,7 +76,15 @@ The project interpreter reported CUDA available and identified the RTX 4060. Fou
 3. `time_scaled__residual__deterministic`; and
 4. `time_scaled__residual__decoupled`.
 
-At the training boundary, every fit received `cuda`; after each fit, every model parameter was resident on CUDA. Peak allocated CUDA memory was 17,371,136 bytes, proving CUDA execution rather than silent CPU fallback. All defined outputs were finite. The decoupled fit produced finite NLL (`1.1522973473616729`) and 90% coverage (`0.9411764705882353`). No tensor/device-placement error occurred.
+The reproducible focused command is:
+
+```bash
+TMPDIR=/tmp ./.venv/bin/pytest \
+  tests/phase05/test_validation_smoke.py::test_phase05_cuda_validation_smoke_four_real_fits_use_cuda \
+  -v
+```
+
+The committed test wraps the real training boundary and requires every fit to receive `cuda`, every fitted model parameter to remain resident on CUDA, and peak allocated CUDA memory to be nonzero. It requires all defined outputs to be finite and requires finite NLL and 90% coverage for the decoupled fit. The focused command passed, and the same test passed again in the full suite. An instrumented run allocated 17,371,136 peak CUDA bytes and produced finite decoupled NLL (`1.1522973473616729`) and 90% coverage (`0.9411764705882353`). No tensor/device-placement error occurred.
 
 The full suite additionally passed the historical CUDA one-epoch smoke, Torch ridge CPU/CUDA parity, repeatable CUDA MLP fitting, and the Phase-0.5 CUDA forward smoke.
 
