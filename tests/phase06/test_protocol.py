@@ -33,6 +33,9 @@ _PARENT_EXECUTION_SHA = "1718402df1d6ef344168677e6d26ea664708e1bc"
 _PARENT_PROTOCOL_SHA256 = (
     "c001bc278cc0c41793ef21d972f851b1ccd7a6d1b2adc8d2f45060660f709a51"
 )
+_PARENT_D3_SHA256 = (
+    "6b9fffed7503fae6beeac2314238ae3d10ffdebfd27ea71ad952ab1f87916460"
+)
 
 
 @pytest.mark.parametrize("seed", range(701, 711))
@@ -159,7 +162,7 @@ def test_d2b_child_protocol_lock_binds_exact_parent_evidence():
     parent_evidence = {
         "parent_execution_sha": _PARENT_EXECUTION_SHA,
         "parent_protocol_lock_sha256": _PARENT_PROTOCOL_SHA256,
-        "parent_d3_sha256": "d" * 64,
+        "parent_d3_sha256": _PARENT_D3_SHA256,
         "parent_d3_next_required_stage": "D2B",
         "parent_phase06_config_sha256": canonical_config_hash(config),
         "parent_phase06_spec_sha256": hashlib.sha256(
@@ -190,7 +193,7 @@ def test_d2b_child_protocol_lock_binds_exact_parent_evidence():
     ).hexdigest()
     assert lock["parent_execution_sha"] == _PARENT_EXECUTION_SHA
     assert lock["parent_protocol_lock_sha256"] == _PARENT_PROTOCOL_SHA256
-    assert lock["parent_d3_sha256"] == "d" * 64
+    assert lock["parent_d3_sha256"] == _PARENT_D3_SHA256
     assert lock["parent_d3_next_required_stage"] == "D2B"
     assert lock["d2b_mapping"] == "model_index=(cohort_index+2*subset_index)%5"
     assert lock["bootstrap_resamples"] == 10_000
@@ -207,7 +210,7 @@ def test_d2b_child_protocol_lock_rejects_parent_identity_drift():
     parent_evidence = {
         "parent_execution_sha": _PARENT_EXECUTION_SHA,
         "parent_protocol_lock_sha256": _PARENT_PROTOCOL_SHA256,
-        "parent_d3_sha256": "d" * 64,
+        "parent_d3_sha256": _PARENT_D3_SHA256,
         "parent_d3_next_required_stage": "D2B",
         "parent_phase06_config_sha256": "e" * 64,
         "parent_phase06_spec_sha256": hashlib.sha256(
