@@ -62,7 +62,7 @@ def _validate_phase05_protocol(
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError("Phase 0.5 protocol lock is not valid JSON") from error
     if not isinstance(payload, dict):
-        raise ValueError("Phase 0.5 protocol lock must be a JSON object")
+        raise TypeError("Phase 0.5 protocol lock must be a JSON object")
 
     phase05_config_sha256 = canonical_config_hash(phase05_config)
     if phase05_config_sha256 != _EXPECTED_PHASE05_CONFIG_SHA256:
