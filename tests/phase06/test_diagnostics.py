@@ -1,6 +1,7 @@
 import json
 import math
 from dataclasses import fields
+from importlib import import_module
 
 import pytest
 import torch
@@ -9,14 +10,17 @@ from afmc_fm.phase05.training import (
     TrainingDiagnosticEpochRecord,
     TrainingDiagnosticSummary,
 )
-from afmc_fm.phase06.diagnostics import Phase06DiagnosticRecorder
+
+Phase06DiagnosticRecorder = import_module(
+    "afmc_fm.phase06.diagnostics"
+).Phase06DiagnosticRecorder
 
 
 def _epoch_record(
     epoch: int = 1,
-    **overrides: float | int,
+    **overrides: float,
 ) -> TrainingDiagnosticEpochRecord:
-    values: dict[str, float | int] = {
+    values: dict[str, float] = {
         "epoch": epoch,
         "train_core_loss": 1.0,
         "validation_core_loss": 0.9,
