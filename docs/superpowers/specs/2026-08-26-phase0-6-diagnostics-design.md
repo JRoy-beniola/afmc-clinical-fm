@@ -58,8 +58,6 @@ Phase 0.6 will not:
 
 ## 4. Diagnostic hypotheses
 
-Phase 0.6 carries seven explicit hypotheses.
-
 | ID | Hypothesis | Primary diagnostic evidence |
 | --- | --- | --- |
 | H1 | Model initialization drives the observed instability | model-seed main effect; trajectory dispersion |
@@ -70,11 +68,9 @@ Phase 0.6 carries seven explicit hypotheses.
 | H6 | Extra trainable capacity, rather than temporal semantics, explains the crossover | capacity-matched and time-destroyed controls in D4 |
 | H7 | Predictive improvement is disconnected from latent-mechanism recovery | positive predictive effect with non-positive latent-R2 effect |
 
-No single Phase 0.6 stage is expected to resolve every hypothesis.
+No single stage is expected to resolve every hypothesis.
 
 ## 5. Program structure
-
-Phase 0.6 proceeds in order:
 
 ```text
 D0  non-invasive instrumentation
@@ -91,7 +87,7 @@ D4  targeted falsification only
     `-- justify a separate redesigned mechanism study
 ```
 
-D0-D3 are diagnostic. D4 is conditional and may not run if the earlier evidence provides a sufficient stopping conclusion.
+D0-D3 are diagnostic. D4 is conditional and may not run if earlier evidence provides a sufficient stopping conclusion.
 
 ---
 
@@ -109,13 +105,15 @@ Conceptually:
 fit_phase05_model(..., diagnostics=None)
 ```
 
-and diagnostic execution uses:
+Diagnostic execution uses:
 
 ```python
 fit_phase05_model(..., diagnostics=recorder)
 ```
 
 The observer MUST NOT own optimization, mutate the model, mutate tensors used by training, call `backward()`, call `optimizer.step()`, change early stopping, or choose the returned checkpoint.
+
+D0 instruments `_fit_core()` only. The decoupled scale-head phase is outside the D0 trace contract because D1/D2 are locked to deterministic uncertainty and therefore do not execute that phase.
 
 ## 6.2 Non-interference invariant
 
@@ -156,7 +154,7 @@ TrainingDiagnosticObserver
 
 The trainer emits immutable/plain records. Phase 0.6 code owns persistence.
 
-A later implementation may use a `Protocol`, callback interface, or equivalent typed abstraction, but the dependency direction MUST remain:
+The dependency direction MUST remain:
 
 ```text
 phase05 training -> generic observation contract
@@ -212,8 +210,6 @@ The parameter norm is the global L2 norm over that same core parameter set after
 
 ## 6.5 Flow displacement
 
-Flow displacement measures the actual magnitude of the pre-assimilation state transformation already present in the model output.
-
 For patient/time position `(i,t)`:
 
 ```text
@@ -224,7 +220,7 @@ flow_displacement(i,t) = ||pre_event_state(i,t) - previous_state(i,t)||_2
 
 Only valid sequence positions contribute to the aggregate. The observer records mean, median, and 95th percentile displacement.
 
-For `flow_mode="none"`, displacement is expected to be exactly zero up to floating-point identity. A non-zero result for `none` is treated as a diagnostic invariant failure.
+For `flow_mode="none"`, displacement is expected to be exactly zero up to floating-point identity. A non-zero result for `none` is a diagnostic invariant failure.
 
 No per-patient state trajectory is persisted during D0.
 
@@ -244,16 +240,16 @@ argmin epoch validation_mae
 
 The shadow checkpoint MUST NOT influence stale-epoch counting, early stopping, returned model state, D1 final metrics, or any Phase 0.5 decision.
 
-To make a later D4 checkpoint falsification possible without reconstructing a potentially different CUDA trajectory, diagnostic runs may retain exactly two compact checkpoint snapshots per cell:
+To make later D4 checkpoint falsification possible without reconstructing a potentially different CUDA trajectory, diagnostic runs may retain exactly two compact checkpoint snapshots per cell:
 
-- the production-best state;
-- the shadow-MAE-best state.
+- production-best state;
+- shadow-MAE-best state.
 
 This is a narrow exception to the no-tensor-logging rule. Phase 0.6 MUST NOT persist per-epoch parameter tensors, per-parameter gradients, activations, optimizer states, or full patient-state trajectories. The two snapshots are deferred diagnostic evidence and MUST NOT be evaluated comparatively during D1 unless D3 later selects D4-A.
 
 ## 6.7 Training summary
 
-At training end the recorder emits:
+At training end:
 
 ```text
 epochs_run
@@ -280,8 +276,6 @@ Any non-finite training/validation loss or norm is an execution failure, not a s
 
 ## 7.1 Scope
 
-D1 reproduces only the smooth-world comparison relevant to the Phase 0.5 postmortem.
-
 Locked matrix:
 
 ```text
@@ -304,9 +298,9 @@ Total:
 5 bundles x 4 N x 2 flow modes = 40 cells
 ```
 
-`gated` is excluded because D1 is specifically testing the `time_scaled` crossover diagnostic.
+`gated` is excluded because D1 specifically tests the `time_scaled` crossover diagnostic.
 
-D1 MUST reuse the Phase 0.5 training hyperparameters and data-generation semantics. Phase 0.6 MUST not silently duplicate and drift those values; the runtime must bind to the Phase 0.5 config/protocol identity and record the exact hashes used.
+D1 MUST reuse the Phase 0.5 training hyperparameters and data-generation semantics. Phase 0.6 MUST not silently duplicate and drift those values; runtime must bind to the Phase 0.5 config/protocol identity and record the exact hashes used.
 
 ## 7.2 D1-A — execution fidelity
 
@@ -314,15 +308,15 @@ Before interpreting the 40-cell result:
 
 - diagnostics-on/off CPU equivalence MUST pass;
 - all 40 planned cells MUST complete successfully;
-- each cell MUST have final metrics, trace, summary, and provenance binding;
-- no confirmatory seed MUST appear anywhere in the plan or output;
+- each cell MUST have final metrics, trace, summary, checkpoints, and provenance binding;
+- no confirmatory seed may appear anywhere in the plan or output;
 - no NaN/Inf may appear in required diagnostics or final metrics.
 
-The intended diagnostic reproduction environment is CUDA with one worker, matching the official Stage I-A execution topology as closely as practical. Runtime metadata MUST record device, CUDA/PyTorch/Python versions, OS/WSL context, execution SHA, config hashes, and wall time.
+The intended diagnostic reproduction environment is CUDA with one worker, matching official Stage I-A topology as closely as practical. Runtime metadata MUST record device, CUDA/PyTorch/Python versions, OS/WSL context, execution SHA, config hashes, and wall time.
 
 ## 7.3 Effect orientation
 
-For MAE, define the paired effect:
+For MAE:
 
 ```text
 Delta_MAE(b,N) = MAE_none(b,N) - MAE_time_scaled(b,N)
@@ -330,7 +324,7 @@ Delta_MAE(b,N) = MAE_none(b,N) - MAE_time_scaled(b,N)
 
 Positive favors `time_scaled`.
 
-For aligned latent R2, define:
+For aligned latent R2:
 
 ```text
 Delta_R2(b,N) = R2_time_scaled(b,N) - R2_none(b,N)
@@ -340,7 +334,7 @@ Positive favors `time_scaled`.
 
 ## 7.4 D1-B — phenomenon reproduction criterion
 
-The historical qualitative shape is called **reproduced** only if all of the following hold:
+The historical qualitative shape is called **reproduced** only if all conditions hold:
 
 ```text
 mean Delta_MAE(N=5)  <= 0
@@ -350,15 +344,13 @@ mean Delta_MAE(N=40) > 0
 N=40 time_scaled wins >= 4/5 bundles
 ```
 
-This is a diagnostic shape criterion, not a new efficacy gate and not a replacement for the Phase 0.5 nAULC gate.
-
 Classification:
 
-- `reproduced`: all five conditions above hold;
+- `reproduced`: all five conditions hold;
 - `not_reproduced`: mean N=40 effect is non-positive OR N=40 wins are <= 2/5;
 - `ambiguous`: every other outcome.
 
-The D1 rerun may report its own nAULC descriptively, but no D1 nAULC result may alter the archived Phase 0.5 decision.
+This is a diagnostic shape criterion, not a new efficacy gate and not a replacement for the Phase 0.5 nAULC gate. D1 may report its own nAULC descriptively, but it cannot alter the archived Phase 0.5 decision.
 
 ## 7.5 D1 artifacts
 
@@ -373,7 +365,7 @@ shadow-MAE checkpoint snapshot
 hash bindings for all of the above
 ```
 
-A consolidated table `phase06_d1_reproduction.csv` contains at minimum:
+`phase06_d1_reproduction.csv` contains at minimum:
 
 ```text
 bundle
@@ -390,19 +382,15 @@ control_stop_epoch
 time_scaled_stop_epoch
 ```
 
-Additional diagnostic columns may be added, but the locked fields may not be removed or redefined.
-
 D1 MUST NOT evaluate the shadow checkpoint on the test split for comparative inference. Shadow checkpoint evaluation is reserved for conditional D4-A.
 
 ---
 
 # 8. D2 — orthogonal seed variance decomposition
 
-## 8.1 Motivation
+## 8.1 Scope and seed levels
 
-The five Phase 0.5 development triples couple cohort, subset, and model seeds. A bundle-level win/loss cannot reveal which source of randomness drove the result.
-
-D2 recombines only the already exposed development seed levels:
+D2 recombines only already exposed development seed levels:
 
 ```text
 cohort: 401..405
@@ -414,7 +402,7 @@ Reserved confirmatory seed levels remain forbidden.
 
 ## 8.2 D2-A orthogonal array
 
-Let `i,j in {0,1,2,3,4}` index cohort and subset levels. Assign model level:
+Let `i,j in {0,1,2,3,4}` index cohort and subset levels and set:
 
 ```text
 k = (i + j) mod 5
@@ -432,9 +420,9 @@ cohort 401    601  602  603  604  605
        405    605  601  602  603  604
 ```
 
-This is an `OA(25,3,5,2)` design: every factor level occurs five times and every pair of factor levels occurs exactly once.
+This is an `OA(25,3,5,2)`: each factor level occurs five times and each factor pair occurs exactly once.
 
-D2-A runs only the two endpoints of the apparent regime change:
+D2-A runs:
 
 ```text
 N: 5, 40
@@ -456,51 +444,43 @@ For each N:
 
 ```text
 Delta_ijk = MAE_none_ijk - MAE_time_scaled_ijk
-```
-
-Fit the diagnostic additive model:
-
-```text
 Delta_ijk = mu + C_i + S_j + M_k + epsilon_ijk
 ```
 
-Report:
+Report factor-level effects, main-effect sums of squares, variance shares for cohort/subset/model/residual, and residual distribution.
 
-- factor-level mean effects;
-- main-effect sums of squares;
-- fraction of total variation assigned to cohort, subset, model, and residual;
-- residual distribution;
-- fixed-seed bootstrap uncertainty.
+Bootstrap settings are locked for D2-A:
 
-Use 10,000 bootstrap resamples with a Phase 0.6-fixed bootstrap seed. Each bootstrap resample refits the additive decomposition.
+```text
+bootstrap_resamples: 10000
+bootstrap_seed: 20260826
+```
 
-A factor is called **diagnostically dominant** only if:
+Each bootstrap resample samples the 25 paired OA effects with replacement and refits the additive model.
+
+A factor is **diagnostically dominant** only if:
 
 1. it has the largest main-effect variance share;
 2. its share is at least 2x the next-largest main-effect share; and
 3. it is the largest main-effect component in at least 80% of bootstrap resamples.
 
-A factor is called **diagnostically weak** only if it is the smallest main-effect component and is the largest component in no more than 20% of bootstrap resamples. Otherwise it remains unresolved.
+A factor is **diagnostically weak** only if it is the smallest main-effect component and is the largest component in no more than 20% of bootstrap resamples. Otherwise it remains unresolved.
 
 ## 8.4 Interaction limitation and D2-B escalation
 
 D2-A estimates main effects efficiently but does not separately identify arbitrary two-way or three-way interactions; those effects are aliased.
 
-If the residual dominates, factor rankings are unstable, or D3 cannot adjudicate because of interaction ambiguity, run the complementary 25-combination array:
+If residual variance dominates, factor rankings are unstable, or D3 cannot adjudicate because of interaction ambiguity, run the complementary 25-combination array:
 
 ```text
 k = (i + 2j) mod 5
 ```
 
-This is D2-B.
-
-Only if D2-A plus D2-B remain insufficient may Phase 0.6 escalate to the full 5x5x5 development-seed factorial. Such an escalation requires a separately frozen execution addendum before compute begins.
+Only if D2-A plus D2-B remain insufficient may Phase 0.6 escalate to the full 5x5x5 development-seed factorial. That escalation requires a separately frozen execution addendum before compute begins.
 
 ---
 
 # 9. D3 — predeclared hypothesis adjudication
-
-D3 maps diagnostic signatures to hypothesis states. It MUST NOT select a preferred narrative by visual inspection alone.
 
 The canonical output is:
 
@@ -508,9 +488,11 @@ The canonical output is:
 phase06_d3_adjudication.json
 ```
 
+D3 maps diagnostic signatures to hypothesis states and MUST NOT select a preferred narrative by visual inspection alone.
+
 ## 9.1 Gate 1 — phenomenon reproduction
 
-Use the D1 classification from Section 7.4:
+Use the D1 classification:
 
 ```text
 reproduced | not_reproduced | ambiguous
@@ -520,7 +502,7 @@ If D1 is `not_reproduced`, Phase 0.6 MUST NOT claim a genuine sample-complexity 
 
 ## 9.2 Gate 2 — checkpoint-objective mismatch
 
-For each cell define:
+For each cell:
 
 ```text
 e_core = production-selected epoch
@@ -528,9 +510,7 @@ e_MAE  = shadow best-validation-MAE epoch
 G_ckpt = validation_MAE(e_core) - validation_MAE(e_MAE)
 ```
 
-Positive `G_ckpt` is the predictive validation cost of the production checkpoint rule.
-
-For each original D1 bundle at N=40 define:
+For each original D1 bundle at N=40:
 
 ```text
 D_ckpt(bundle) = G_ckpt_time_scaled - G_ckpt_none
@@ -538,11 +518,11 @@ D_ckpt(bundle) = G_ckpt_time_scaled - G_ckpt_none
 
 H5 is:
 
-- `strengthened` if mean `D_ckpt > 0`, at least 4/5 bundles have `D_ckpt > 0`, and `time_scaled` itself has `G_ckpt > 0` in at least 4/5 bundles;
+- `strengthened` if mean `D_ckpt > 0`, at least 4/5 bundles have `D_ckpt > 0`, and `time_scaled` has `G_ckpt > 0` in at least 4/5 bundles;
 - `weakened` if mean `D_ckpt <= 0` and no more than 2/5 bundles have `D_ckpt > 0`;
 - `unresolved` otherwise.
 
-Epoch distance is reported descriptively but is not itself a mismatch criterion.
+Epoch distance is descriptive, not itself a mismatch criterion.
 
 ## 9.3 Gate 3 — seed-source dominance
 
@@ -556,7 +536,7 @@ Large unexplained residual variance is not assigned to a named factor. It trigge
 
 ## 9.4 Gate 4 — N-dependent regime change
 
-For each of the 25 D2-A combinations define:
+For each D2-A combination:
 
 ```text
 T_ij = Delta_MAE_ij,N40 - Delta_MAE_ij,N5
@@ -579,9 +559,7 @@ H4 is `unresolved` if D1 is ambiguous or D2 evidence is incomplete/interaction-a
 
 ## 9.5 Predictive/mechanistic disconnect
 
-At N=40 use the paired orientations from Section 7.3.
-
-H7 is `strengthened` if:
+At N=40 H7 is `strengthened` if:
 
 ```text
 mean Delta_MAE > 0
@@ -590,9 +568,7 @@ mean Delta_R2 <= 0
 latent-R2 time_scaled wins <= 2/5 D1 bundles
 ```
 
-H7 is `weakened` if both predictive MAE and latent R2 favor `time_scaled` on average and each wins at least 4/5 D1 bundles.
-
-Otherwise H7 is `unresolved`.
+H7 is `weakened` if both predictive MAE and latent R2 favor `time_scaled` on average and each wins at least 4/5 D1 bundles. Otherwise H7 is `unresolved`.
 
 A positive H4 result combined with strengthened H7 MUST be described as an N-dependent predictive effect, not mechanistic recovery.
 
@@ -636,32 +612,23 @@ STOP
 
 D4 is conditional. No D4 run matrix may execute merely because code exists for it.
 
-The rule is:
-
 > Perform only the smallest intervention needed to falsify the explanation selected by D3.
 
-Before any D4 compute begins, the exact conditional run matrix, diagnostic-only seed allocation, and artifact contract MUST be frozen in a short D4 execution addendum committed to the Phase 0.6 branch. This requirement is intentional rather than an unresolved design placeholder: D3 determines which D4 path is scientifically justified, so unused D4 experiments must not be preregistered as though they will all run.
+Before any D4 compute begins, the exact conditional run matrix, diagnostic-only seed allocation, and artifact contract MUST be frozen in a short D4 execution addendum committed to the Phase 0.6 branch. This is intentional: D3 determines which D4 path is scientifically justified, so unused D4 experiments are not preregistered as though all will run.
 
 ## 10.1 D4-A — checkpoint-policy falsification
 
 Run only if H5 is strengthened.
 
-For each selected diagnostic trajectory compare the two already-retained checkpoints:
+Compare the two already-retained checkpoints from the same trained trajectory:
 
 ```text
 A: production validation-core-loss checkpoint
 B: shadow validation-MAE checkpoint
-```
-
-No retraining difference is introduced. The estimand is:
-
-```text
 Delta_selection = test_MAE(core_checkpoint) - test_MAE(shadow_MAE_checkpoint)
 ```
 
-This is the first stage allowed to evaluate the shadow checkpoint comparatively on the test split.
-
-The production checkpoint policy remains unchanged regardless of the D4-A result unless a later, separately designed study chooses to change it.
+This is the first stage allowed to evaluate the shadow checkpoint comparatively on the test split. The production checkpoint policy remains unchanged unless a later separately designed study changes it.
 
 ## 10.2 D4-B — optimization/initialization stability
 
@@ -669,14 +636,7 @@ Run if H1 is strengthened or D1 trajectories show substantial optimization insta
 
 Hold cohort/subset conditions fixed and expand only diagnostic model seeds from a dedicated Phase 0.6 namespace that cannot collide with the confirmatory range. The D4 addendum fixes the exact seed bank before execution.
 
-Measure:
-
-- treatment-effect variance over model seeds;
-- selected-epoch dispersion;
-- gradient-norm trajectory dispersion;
-- flow-displacement trajectory dispersion;
-- early-stopping behavior;
-- sign consistency of the N=40 effect.
+Measure treatment-effect variance, selected-epoch dispersion, gradient-norm trajectory dispersion, flow-displacement trajectory dispersion, early-stopping behavior, and N=40 sign consistency.
 
 The first D4-B experiment MUST NOT simultaneously change optimizer, learning rate, weight decay, patience, architecture, or checkpoint objective.
 
@@ -684,13 +644,11 @@ The first D4-B experiment MUST NOT simultaneously change optimizer, learning rat
 
 Run if H2 or H3 is strengthened.
 
-If subset composition dominates, expand diagnostic subset resampling while cohort/model factors are controlled.
+If subset composition dominates, expand diagnostic subset resampling while cohort/model factors are controlled. If cohort realization dominates, expand diagnostic synthetic cohorts while subset/model factors are controlled.
 
-If cohort realization dominates, expand diagnostic synthetic cohorts while subset/model factors are controlled.
+The D4 addendum fixes exact diagnostic seed namespaces and sample counts before execution. Confirmatory seeds remain forbidden.
 
-The D4 addendum fixes the exact diagnostic seed namespaces and sample counts before execution. Confirmatory seeds remain forbidden.
-
-Report the effect distribution, not merely its mean:
+Report:
 
 ```text
 mean
@@ -706,39 +664,37 @@ sign consistency
 
 Run if H4 remains plausible while H6 is unresolved, or if H7 is strengthened.
 
-Two controls are required.
-
 ### Control 1: capacity-matched non-temporal residual
 
-Use the same learned state transformation parameter count as `time_scaled` but remove per-example elapsed-time information:
+Use the same learned transformation parameter count as `time_scaled` but remove per-example elapsed-time information:
 
 ```text
 h' = h + c_ref * tanh(W h + b)
 ```
 
-`W,b` match the `time_scaled` flow transform exactly in dimensionality and trainable parameter count. `c_ref` is a fixed, non-trainable scalar computed once from development-only D1 elapsed-time scales as the median of:
+`W,b` match the `time_scaled` flow transform exactly in dimensionality and trainable parameter count.
+
+`c_ref` is a fixed, non-trainable scalar computed once from **D1 fit and validation positions only**, excluding the test split, as the median of:
 
 ```text
 delta_t / (time_scale_days + delta_t)
 ```
 
-across valid D1 development positions. `c_ref` is frozen before D4-D execution and cannot use test outcomes.
-
-This control asks whether an equally sized learned residual transform is sufficient without patient-specific timing semantics.
+across valid positions. `c_ref` is frozen in the D4-D execution addendum before any D4-D run and cannot use test outcomes.
 
 ### Control 2: time-shuffled flow
 
-Keep the `time_scaled` architecture and parameter count but destroy the association between elapsed time and the patient/time position.
+Keep the `time_scaled` architecture and parameter count but destroy the association between elapsed time and patient/time position.
 
 Within each split and diagnostic seed bundle:
 
 1. derive non-negative inter-event `delta_t` values;
-2. permute valid `delta_t` values with a fixed Phase 0.6 permutation seed;
+2. permute valid `delta_t` values with the D4-D addendum's fixed permutation seed;
 3. reassign them while preserving sequence lengths;
 4. reconstruct monotone cumulative times;
 5. train/evaluate using those reconstructed times.
 
-This preserves the elapsed-time marginal distribution while breaking its semantic alignment.
+This preserves the elapsed-time marginal distribution while breaking semantic alignment.
 
 Evidence for temporal inductive bias is substantially stronger only if:
 
@@ -752,7 +708,7 @@ A predictive advantage without improved latent recovery MUST still not be called
 
 ## 10.5 D4-E — mechanism redesign boundary
 
-A new architecture study is justified only after simpler explanations have survived appropriate falsification.
+A new architecture study is justified only after simpler explanations survive appropriate falsification.
 
 A defensible escalation chain is:
 
@@ -765,15 +721,13 @@ D4-B/C not optimization/data instability
 D4-D not explained by capacity and requires meaningful time
 ```
 
-If that chain holds while latent recovery remains poor, the justified conclusion is that temporal dynamics appear predictively useful but the current mechanism formulation is inadequate. A redesigned mechanism must then be a new separately specified study (for example, Phase 0.7), not an unannounced Phase 0.6 architecture mutation.
+If that chain holds while latent recovery remains poor, the justified conclusion is that temporal dynamics appear predictively useful but the current formulation is inadequate. A redesigned mechanism must then be a new separately specified study, not an unannounced Phase 0.6 mutation.
 
 ---
 
 # 11. Confirmatory-seed firewall
 
-Phase 0.6 must enforce the confirmatory boundary in code, not only documentation.
-
-The reserved Phase 0.5 confirmatory levels are:
+Reserved Phase 0.5 confirmatory levels are:
 
 ```text
 cohort seeds: 701..710
@@ -787,14 +741,15 @@ Phase 0.6 execution interfaces MUST NOT expose `confirmation` or `robustness` as
 
 A Phase 0.6 protocol lock MUST persist:
 
-- the forbidden seed sets;
-- the exact D1 development bundles;
-- the D2 orthogonal mapping;
-- the base Phase 0.5 config/protocol hashes;
-- the Phase 0.6 execution commit;
-- the diagnostic classification thresholds.
+- forbidden seed sets;
+- exact D1 development bundles;
+- D2 orthogonal mapping;
+- Phase 0.5 config/protocol hashes;
+- Phase 0.6 execution commit;
+- diagnostic classification thresholds;
+- D2 bootstrap settings.
 
-Any mismatch between runtime configuration and the persisted protocol identity is a hard failure.
+Any mismatch between runtime configuration and persisted protocol identity is a hard failure.
 
 ---
 
@@ -802,7 +757,7 @@ Any mismatch between runtime configuration and the persisted protocol identity i
 
 Phase 0.6 runtime output MUST be separate from all Phase 0/0.5 official directories.
 
-A recommended structure is:
+Recommended structure:
 
 ```text
 outputs/phase06_<execution-sha>/
@@ -837,26 +792,13 @@ Every cell summary MUST bind by SHA-256 to:
 - config/protocol identity;
 - execution commit.
 
-The stage-level provenance MUST record:
-
-- planned cell count;
-- completed cell count;
-- failures;
-- start/end timestamps and wall time;
-- device and worker settings;
-- Python/PyTorch/CUDA/runtime metadata;
-- repository commit;
-- configuration hashes;
-- protocol-lock hash;
-- forbidden-seed validation result.
+Stage-level provenance MUST record planned/completed cell counts, failures, timestamps/wall time, device/workers, Python/PyTorch/CUDA/runtime metadata, repository commit, configuration hashes, protocol-lock hash, and forbidden-seed validation result.
 
 No stage may be labeled complete if its planned cell set is incomplete or contains duplicate cell IDs.
 
 ---
 
 # 13. Failure and error semantics
-
-Engineering failure and scientific failure remain distinct.
 
 Engineering failures include:
 
@@ -867,7 +809,7 @@ Engineering failures include:
 - malformed trace/summary artifacts;
 - diagnostics non-interference failure;
 - checksum mismatch;
-- callback/observer mutation of training state;
+- observer mutation of training state;
 - unexpected exception during a planned cell.
 
 Scientific negative outcomes include:
@@ -891,15 +833,15 @@ Implementation follows TDD.
 
 At minimum:
 
-1. diagnostics-on/off fixed-CPU training produces byte-identical final core parameters for deterministic mode;
+1. diagnostics-on/off fixed-CPU deterministic training produces byte-identical final core parameters;
 2. selected production checkpoint epoch is identical with diagnostics on/off;
-3. final evaluation metrics are identical within exact/deterministic tolerance;
+3. final evaluation metrics are identical within deterministic tolerance;
 4. observer receives one epoch record per completed epoch;
 5. `flow_mode="none"` reports zero flow displacement;
 6. gradient/parameter norms are finite and non-negative;
 7. shadow checkpoint never changes the returned production checkpoint;
 8. observer exceptions fail clearly rather than silently corrupt training;
-9. no Phase 0.6 persistence dependency is imported by the Phase 0.5 trainer.
+9. the Phase 0.5 trainer imports no Phase 0.6 persistence/execution code.
 
 ## 14.2 Protocol/firewall tests
 
@@ -931,7 +873,7 @@ Synthetic fixtures MUST test each D3 classification branch, including:
 Before Phase 0.6 experimental execution:
 
 - Ruff passes;
-- the full existing test suite passes;
+- full existing test suite passes;
 - all new Phase 0.6 tests pass;
 - no existing Phase 0.5 test expectation is weakened merely to accommodate diagnostics.
 
@@ -939,7 +881,7 @@ Before Phase 0.6 experimental execution:
 
 # 15. Implementation boundaries
 
-The expected code responsibilities are:
+Expected responsibilities:
 
 ```text
 src/afmc_fm/phase05/training.py
@@ -964,7 +906,7 @@ tests/phase06/
     adjudication
 ```
 
-The implementation plan may refine file names to follow existing repository conventions, but it MUST preserve these responsibility boundaries.
+The implementation plan may refine file names to follow existing repository conventions, but MUST preserve these responsibility boundaries.
 
 No production model interface change is justified merely for diagnostics unless required to expose already-computed observational state. Prefer deriving diagnostics from existing `Phase05FlowJumpOutput` fields and no-grad observer computations.
 
@@ -990,15 +932,13 @@ D3 is complete only when the canonical adjudication JSON is produced from hash-b
 
 ## D4 complete
 
-A D4 path is complete only against its separately frozen conditional execution addendum. Unselected D4 paths are not considered incomplete work.
+A D4 path is complete only against its separately frozen conditional execution addendum. Unselected D4 paths are not incomplete work.
 
 ---
 
 # 17. Stopping rules
 
-Phase 0.6 MUST be allowed to stop without proposing a new model.
-
-Examples of valid stopping conclusions:
+Valid stopping conclusions include:
 
 ```text
 D1 crossover does not reproduce
@@ -1026,8 +966,6 @@ A diagnostic program that cannot conclude `STOP` would be architecture search ra
 
 # 18. Interpretation language
 
-Phase 0.6 reports MUST preserve evidence class explicitly.
-
 Allowed examples:
 
 - "The N=40 predictive crossover reproduced across the development bundles."
@@ -1035,7 +973,7 @@ Allowed examples:
 - "Checkpoint-objective mismatch was strengthened by the diagnostic trace."
 - "Time-scaled flow improved predictive MAE without demonstrating improved latent-state recovery."
 
-Disallowed examples without later evidence:
+Disallowed without later evidence:
 
 - "Phase 0.5 succeeded at N=40."
 - "The flow mechanism was recovered."
@@ -1048,6 +986,6 @@ Disallowed examples without later evidence:
 
 Phase 0.6 is a staged diagnostic and falsification program, not a rescue attempt for Phase 0.5.
 
-The central architectural decision is to instrument the exact existing Phase 0.5 trainer through an opt-in observer while preserving production semantics. D1 then attempts an exact development-seed reproduction of the apparent sample-size crossover. D2 breaks the coupled seed bundles with a balanced orthogonal design. D3 converts those observations into predefined hypothesis states. D4 runs only the smallest targeted intervention justified by D3.
+The central architectural decision is to instrument the exact existing Phase 0.5 trainer through an opt-in observer while preserving production semantics. D1 attempts the locked development-seed reproduction of the apparent sample-size crossover. D2 breaks the coupled seed bundles with a balanced orthogonal design. D3 converts those observations into predefined hypothesis states. D4 runs only the smallest targeted intervention justified by D3.
 
 The confirmatory seed bank remains untouched throughout. Any future redesigned mechanism is a new study with a new specification and evidence boundary.
