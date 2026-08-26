@@ -179,8 +179,10 @@ if [[ "$STAGE" == "d2b" ]]; then
   }
   PARENT_OUTPUT="$(realpath -e "$PHASE06_PARENT_OUTPUT")"
   CHILD_CANONICAL="$(realpath -m "$OUTPUT")"
-  if [[ "$PARENT_OUTPUT" == "$CHILD_CANONICAL" ]]; then
-    echo "ERROR: D2-B parent and child output roots must be distinct."
+  if [[ "$PARENT_OUTPUT" == "$CHILD_CANONICAL" ]] \
+      || [[ "$CHILD_CANONICAL" == "$PARENT_OUTPUT/"* ]] \
+      || [[ "$PARENT_OUTPUT" == "$CHILD_CANONICAL/"* ]]; then
+    echo "ERROR: D2-B parent and child output roots must be distinct and non-nested."
     exit 1
   fi
   [[ -f "$PARENT_OUTPUT/protocol_lock.json" ]] || {
