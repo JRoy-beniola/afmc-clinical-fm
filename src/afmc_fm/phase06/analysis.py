@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 
 import numpy as np
@@ -35,6 +37,13 @@ _SUMMARY_COLUMNS = (
     "selected_checkpoint_epoch",
     "shadow_mae_checkpoint_epoch",
     "stop_epoch",
+)
+_D3_ROUTES = (
+    "D2B",
+    "D4_CHECKPOINT",
+    "D4_OPTIMIZATION",
+    "D4_DATA_REGIME",
+    "D4_CAPACITY_TIME",
 )
 
 
@@ -564,4 +573,363 @@ def analyze_d2a(metrics: pd.DataFrame, config: Phase06Config) -> D2AnalysisResul
     )
 
 
-__all__ = ["D2AnalysisResult", "analyze_d1", "analyze_d2a"]
+def _canonical_json_hash(payload: object) -> str:
+    data = json.dumps(
+        payload,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
+
+
+def _frame_hash(frame: pd.DataFrame) -> str:
+    if not isinstance(frame, pd.DataFrame):
+        raise TypeError("hash input must be a pandas DataFrame")
+    data = frame.to_csv(index=False, lineterminator="\n").encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
+
+
+def _validate_d1_adjudication_input(
+    d1_result: tuple[pd.DataFrame, dict[str, object]],
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    if not isinstance(d1_result, tuple) or len(d1_result) != 2:
+        raise TypeError("d1_result must be the analyze_d1 result tuple")
+    table, decision = d1_result
+    if not isinstance(table, pd.DataFrame) or not isinstance(decision, dict):
+        raise TypeError("d1_result must contain a DataFrame and decision mapping")
+    required = {
+        "stage",
+        "world",
+        "cohort_seed",
+        "subset_seed",
+        "model_seed",
+        "n_train",
+        "Delta_MAE",
+        "Delta_R2",
+        "control_selected_epoch",
+        "control_shadow_mae_epoch",
+        "time_scaled_selected_epoch",
+        "time_scaled_shadow_mae_epoch",
+    }
+    _require_columns(table, required, "D1 adjudication table")
+    n40 = table[(table["stage"] == "d1") & (table["n_train"] == 40)].copy()
+    identities = ["cohort_seed", "subset_seed", "model_seed"]
+    if len(n40) != 5 or n40.duplicated(identities).any():
+        raise ValueError("D1 adjudication requires exactly five unique N40 bundles")
+    for column in ("Delta_MAE", "Delta_R2"):
+        values = pd.to_numeric(n40[column], errors="coerce").to_numpy(dtype=float)
+        if not np.isfinite(values).all():
+            raise ValueError("D1 adjudication effects must be finite")
+    classification = decision.get("classification")
+    if classification not in {"reproduced", "not_reproduced", "ambiguous"}:
+        raise ValueError("D1 decision has an invalid classification")
+    return table, decision
+
+
+def _validate_d2_adjudication_input(d2_result: D2AnalysisResult) -> None:
+    if not isinstance(d2_result, D2AnalysisResult):
+        raise TypeError("d2_result must be a D2AnalysisResult")
+    components = d2_result.variance_components
+    bootstrap = d2_result.bootstrap_diagnostics
+    _require_columns(
+        components,
+        {"n_train", "component", "variance_share", "factor_classification"},
+        "D2 variance components",
+    )
+    _require_columns(
+        bootstrap,
+        {"n_train", "factor", "largest_frequency"},
+        "D2 bootstrap diagnostics",
+    )
+    for n_train in _D2_TRAIN_SIZES:
+        component_rows = components[components["n_train"] == n_train]
+        bootstrap_rows = bootstrap[bootstrap["n_train"] == n_train]
+        if set(component_rows["component"]) != {*_D2_FACTORS, "residual"}:
+            raise ValueError("D2 component evidence is incomplete")
+        if set(bootstrap_rows["factor"]) != set(_D2_FACTORS):
+            raise ValueError("D2 bootstrap evidence is incomplete")
+    required_shift = {
+        "mean_T",
+        "positive_T_count",
+        "pair_count",
+        "mean_delta_mae_n5",
+        "mean_delta_mae_n40",
+        "bootstrap_ci_lower",
+        "bootstrap_ci_upper",
+    }
+    missing = required_shift - set(d2_result.n_shift_summary)
+    if missing:
+        raise ValueError("D2 N-shift summary is incomplete")
+
+
+def _d2_factor_hypothesis(
+    d2_result: D2AnalysisResult,
+    factor: str,
+) -> str:
+    selected = d2_result.variance_components[
+        d2_result.variance_components["component"] == factor
+    ]
+    statuses = set(selected["factor_classification"].astype(str))
+    if "dominant" in statuses and "weak" not in statuses:
+        return "strengthened"
+    if "weak" in statuses and "dominant" not in statuses:
+        return "weakened"
+    return "unresolved"
+
+
+def _interaction_ambiguity(d2_result: D2AnalysisResult) -> bool:
+    for n_train in _D2_TRAIN_SIZES:
+        components = d2_result.variance_components[
+            d2_result.variance_components["n_train"] == n_train
+        ].set_index("component")
+        residual_share = float(components.loc["residual", "variance_share"])
+        named_shares = [
+            float(components.loc[factor, "variance_share"])
+            for factor in _D2_FACTORS
+        ]
+        if residual_share > max(named_shares):
+            return True
+
+        bootstrap = d2_result.bootstrap_diagnostics[
+            d2_result.bootstrap_diagnostics["n_train"] == n_train
+        ]
+        largest_frequency = float(bootstrap["largest_frequency"].max())
+        if largest_frequency < 0.80:
+            return True
+    return False
+
+
+def _trace_validation_mae(
+    traces: pd.DataFrame,
+    identity: dict[str, object],
+    variant: str,
+    epoch: int,
+) -> float:
+    selected = traces[
+        (traces["stage"] == "d1")
+        & (traces["world"] == identity["world"])
+        & (traces["cohort_seed"] == identity["cohort_seed"])
+        & (traces["subset_seed"] == identity["subset_seed"])
+        & (traces["model_seed"] == identity["model_seed"])
+        & (traces["n_train"] == 40)
+        & (traces["variant"] == variant)
+        & (traces["epoch"] == epoch)
+    ]
+    if len(selected) != 1:
+        raise ValueError("D1 trace must contain exactly one requested validation epoch")
+    value = float(selected.iloc[0]["validation_mae"])
+    if not np.isfinite(value):
+        raise ValueError("D1 trace contains non-finite validation MAE")
+    return value
+
+
+def _checkpoint_hypothesis(
+    d1_table: pd.DataFrame,
+    traces: pd.DataFrame,
+) -> tuple[str, dict[str, object]]:
+    if not isinstance(traces, pd.DataFrame):
+        raise TypeError("traces must be a pandas DataFrame")
+    trace_columns = {
+        "stage",
+        "world",
+        "cohort_seed",
+        "subset_seed",
+        "model_seed",
+        "n_train",
+        "variant",
+        "epoch",
+        "validation_mae",
+    }
+    _require_columns(traces, trace_columns, "D1 adjudication traces")
+
+    n40 = d1_table[(d1_table["stage"] == "d1") & (d1_table["n_train"] == 40)]
+    rows: list[dict[str, object]] = []
+    for record in n40.to_dict(orient="records"):
+        identity = {
+            "world": record["world"],
+            "cohort_seed": record["cohort_seed"],
+            "subset_seed": record["subset_seed"],
+            "model_seed": record["model_seed"],
+        }
+        gaps: dict[str, float] = {}
+        for variant, prefix in (
+            (_CONTROL_VARIANT, "control"),
+            (_CANDIDATE_VARIANT, "time_scaled"),
+        ):
+            core_epoch = int(record[f"{prefix}_selected_epoch"])
+            shadow_epoch = int(record[f"{prefix}_shadow_mae_epoch"])
+            core_mae = _trace_validation_mae(traces, identity, variant, core_epoch)
+            shadow_mae = _trace_validation_mae(traces, identity, variant, shadow_epoch)
+            gaps[prefix] = core_mae - shadow_mae
+        rows.append(
+            {
+                **identity,
+                "G_ckpt_none": gaps["control"],
+                "G_ckpt_time_scaled": gaps["time_scaled"],
+                "D_ckpt": gaps["time_scaled"] - gaps["control"],
+            }
+        )
+
+    gap_frame = pd.DataFrame(rows)
+    d_values = gap_frame["D_ckpt"].to_numpy(dtype=float)
+    candidate_gaps = gap_frame["G_ckpt_time_scaled"].to_numpy(dtype=float)
+    positive_d = int((d_values > 0).sum())
+    positive_candidate_gap = int((candidate_gaps > 0).sum())
+    mean_d = float(d_values.mean())
+    if mean_d > 0 and positive_d >= 4 and positive_candidate_gap >= 4:
+        state = "strengthened"
+    elif mean_d <= 0 and positive_d <= 2:
+        state = "weakened"
+    else:
+        state = "unresolved"
+    evidence: dict[str, object] = {
+        "mean_D_ckpt": mean_d,
+        "positive_D_ckpt_count": positive_d,
+        "time_scaled_positive_G_ckpt_count": positive_candidate_gap,
+        "bundle_count": len(gap_frame),
+    }
+    return state, evidence
+
+
+def _sample_complexity_hypothesis(
+    d1_classification: str,
+    d2_result: D2AnalysisResult,
+    interaction_ambiguous: bool,
+) -> str:
+    if interaction_ambiguous or d1_classification == "ambiguous":
+        return "unresolved"
+
+    summary = d2_result.n_shift_summary
+    mean_t = float(summary["mean_T"])
+    if d1_classification == "not_reproduced" or mean_t <= 0:
+        return "absent"
+
+    mean_n5 = float(summary["mean_delta_mae_n5"])
+    mean_n40 = float(summary["mean_delta_mae_n40"])
+    positive_count = int(summary["positive_T_count"])
+    pair_count = int(summary["pair_count"])
+    lower = float(summary["bootstrap_ci_lower"])
+    if pair_count != 25:
+        return "unresolved"
+
+    strong = (
+        mean_n5 <= 0
+        and mean_n40 > 0
+        and mean_t > 0
+        and positive_count >= 20
+        and lower > 0
+    )
+    if strong:
+        return "strong"
+    if d1_classification == "reproduced" and mean_t > 0:
+        if positive_count < 20 or lower <= 0:
+            return "partial"
+    return "unresolved"
+
+
+def _predictive_mechanistic_hypothesis(d1_table: pd.DataFrame) -> str:
+    n40 = d1_table[(d1_table["stage"] == "d1") & (d1_table["n_train"] == 40)]
+    mae = n40["Delta_MAE"].to_numpy(dtype=float)
+    latent = n40["Delta_R2"].to_numpy(dtype=float)
+    mean_mae = float(mae.mean())
+    mean_latent = float(latent.mean())
+    mae_wins = int((mae > 0).sum())
+    latent_wins = int((latent > 0).sum())
+    if mean_mae > 0 and mae_wins >= 4 and mean_latent <= 0 and latent_wins <= 2:
+        return "strengthened"
+    if mean_mae > 0 and mae_wins >= 4 and mean_latent > 0 and latent_wins >= 4:
+        return "weakened"
+    return "unresolved"
+
+
+def _d3_input_hashes(
+    d1_table: pd.DataFrame,
+    d1_decision: dict[str, object],
+    d2_result: D2AnalysisResult,
+    traces: pd.DataFrame,
+) -> dict[str, str]:
+    return {
+        "d1_table": _frame_hash(d1_table),
+        "d1_decision": _canonical_json_hash(d1_decision),
+        "d2_variance_components": _frame_hash(d2_result.variance_components),
+        "d2_bootstrap_diagnostics": _frame_hash(d2_result.bootstrap_diagnostics),
+        "d2_n_shift_rows": _frame_hash(d2_result.n_shift_rows),
+        "d2_n_shift_summary": _canonical_json_hash(d2_result.n_shift_summary),
+        "d1_traces": _frame_hash(traces),
+    }
+
+
+def adjudicate_phase06(
+    d1_result: tuple[pd.DataFrame, dict[str, object]],
+    d2_result: D2AnalysisResult,
+    traces: pd.DataFrame,
+) -> dict[str, object]:
+    d1_table, d1_decision = _validate_d1_adjudication_input(d1_result)
+    _validate_d2_adjudication_input(d2_result)
+    h5, checkpoint_evidence = _checkpoint_hypothesis(d1_table, traces)
+    interaction_ambiguous = _interaction_ambiguity(d2_result)
+
+    h1 = _d2_factor_hypothesis(d2_result, "model")
+    h2 = _d2_factor_hypothesis(d2_result, "subset")
+    h3 = _d2_factor_hypothesis(d2_result, "cohort")
+    d1_classification = str(d1_decision["classification"])
+    h4 = _sample_complexity_hypothesis(
+        d1_classification,
+        d2_result,
+        interaction_ambiguous,
+    )
+    h7 = _predictive_mechanistic_hypothesis(d1_table)
+
+    triggered: list[str] = []
+    if interaction_ambiguous:
+        triggered.append("D2B")
+    if h5 == "strengthened":
+        triggered.append("D4_CHECKPOINT")
+    if h1 == "strengthened":
+        triggered.append("D4_OPTIMIZATION")
+    if h2 == "strengthened" or h3 == "strengthened":
+        triggered.append("D4_DATA_REGIME")
+    if h4 in {"strong", "partial"} or h7 == "strengthened":
+        triggered.append("D4_CAPACITY_TIME")
+
+    next_required_stage = triggered[0] if triggered else "STOP"
+    if next_required_stage not in {*_D3_ROUTES, "STOP"}:
+        raise RuntimeError("invalid Phase 0.6 adjudication route")
+
+    rationale = [
+        f"D1 phenomenon classification: {d1_classification}.",
+        f"D2 interaction ambiguity: {interaction_ambiguous}.",
+        f"H1/H2/H3: {h1}/{h2}/{h3}.",
+        f"H4/H5/H7: {h4}/{h5}/{h7}.",
+        f"Next required stage: {next_required_stage}.",
+    ]
+    return {
+        "phenomenon_reproduction": d1_classification,
+        "H1_initialization": h1,
+        "H2_subset_composition": h2,
+        "H3_cohort_heterogeneity": h3,
+        "H4_sample_complexity": h4,
+        "H5_checkpoint_objective": h5,
+        "H6_capacity": "not_yet_tested",
+        "H7_predictive_mechanistic_disconnect": h7,
+        "interaction_ambiguity": interaction_ambiguous,
+        "checkpoint_evidence": checkpoint_evidence,
+        "triggered_escalations": triggered,
+        "next_required_stage": next_required_stage,
+        "rationale": rationale,
+        "input_artifact_hashes": _d3_input_hashes(
+            d1_table,
+            d1_decision,
+            d2_result,
+            traces,
+        ),
+    }
+
+
+__all__ = [
+    "D2AnalysisResult",
+    "adjudicate_phase06",
+    "analyze_d1",
+    "analyze_d2a",
+]
