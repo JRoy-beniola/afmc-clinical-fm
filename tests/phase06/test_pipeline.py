@@ -47,7 +47,7 @@ def _write_parent_root(tmp_path: Path, *, next_stage: str = "D2B") -> Path:
     assert hashlib.sha256(lock_bytes).hexdigest() == _PARENT_PROTOCOL_SHA256
 
     root = tmp_path / "parent"
-    root.mkdir()
+    root.mkdir(parents=True)
     (root / "protocol_lock.json").write_bytes(lock_bytes)
     identity = {
         "protocol_lock_sha256": _PARENT_PROTOCOL_SHA256,
