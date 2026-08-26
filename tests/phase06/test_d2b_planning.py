@@ -13,6 +13,8 @@ from afmc_fm.phase06.store import Phase06Store
 planning = importlib.import_module("afmc_fm.phase06.planning")
 _PHASE06_CONFIG = Path("configs/experiments/phase06.yaml")
 
+# RED contract: production support is intentionally absent at this commit.
+
 
 def _canonical_json_bytes(payload: object) -> bytes:
     return (
