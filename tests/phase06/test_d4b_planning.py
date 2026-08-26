@@ -41,3 +41,9 @@ def test_d4b_planner_never_reaches_confirmatory_seed_namespaces() -> None:
     assert not ({cell.cohort_seed for cell in cells} & set(range(701, 711)))
     assert not ({cell.subset_seed for cell in cells} & set(range(801, 811)))
     assert not ({cell.model_seed for cell in cells} & set(range(901, 911)))
+
+
+def test_d4b_planner_does_not_reuse_d1_d2_model_seed_bank() -> None:
+    cells = plan_d4b_cells(Phase06Config())
+
+    assert not ({cell.model_seed for cell in cells} & set(range(601, 606)))
