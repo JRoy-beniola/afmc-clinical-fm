@@ -61,8 +61,8 @@ def _load_simulator_config(path: str | Path) -> SimulatorConfig:
 def _require_distinct_outputs(parent_output: str | Path, child_output: str | Path) -> None:
     parent = Path(parent_output).expanduser().resolve()
     child = Path(child_output).expanduser().resolve()
-    if parent == child:
-        raise ValueError("parent and child output roots must be distinct")
+    if parent == child or parent in child.parents or child in parent.parents:
+        raise ValueError("parent and child output roots must be distinct and non-nested")
 
 
 def _bind_store(
@@ -379,12 +379,16 @@ def _adjudicate_d2b(args: argparse.Namespace) -> int:
     return 0
 
 
-def _add_stage_arguments(parser: argparse.ArgumentParser) -> None:
+def _add_stage_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    cuda_only: bool = False,
+) -> None:
     parser.add_argument("--config", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument(
         "--device",
-        choices=("auto", "cpu", "cuda"),
+        choices=("cuda",) if cuda_only else ("auto", "cpu", "cuda"),
         default="cuda",
     )
     parser.add_argument("--resume", action="store_true")
@@ -403,7 +407,7 @@ def build_parser() -> argparse.ArgumentParser:
     d2a.set_defaults(handler=_run_d2a)
 
     d2b = subparsers.add_parser("d2b")
-    _add_stage_arguments(d2b)
+    _add_stage_arguments(d2b, cuda_only=True)
     d2b.add_argument("--parent-output", required=True)
     d2b.set_defaults(handler=_run_d2b)
 
