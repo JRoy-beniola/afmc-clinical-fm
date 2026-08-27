@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from afmc_fm.reproducibility.registry import PHASES, get_phase, iter_phases
 
 
