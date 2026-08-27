@@ -217,7 +217,13 @@ def _build_pair_table(
     summaries: pd.DataFrame,
     traces: pd.DataFrame,
 ) -> pd.DataFrame:
-    pair = effects.copy()
+    effect_columns = ["stage", *_PAIR_COLUMNS, "Delta_MAE"]
+    effect_columns.extend(
+        column
+        for column in ("control_mae", "time_scaled_mae")
+        if column in effects.columns
+    )
+    pair = effects[effect_columns].copy()
     control_summary = _summary_side(summaries, _CONTROL_VARIANT, "control")
     candidate_summary = _summary_side(summaries, _CANDIDATE_VARIANT, "candidate")
     pair = pair.merge(control_summary, on=list(_PAIR_COLUMNS), validate="one_to_one")
@@ -264,9 +270,6 @@ def _build_pair_table(
         pair["candidate_prefix10_parameter_l2_mean"]
         - pair["control_prefix10_parameter_l2_mean"]
     )
-    pair["candidate_prefix10_flow_displacement_mean"] = pair[
-        "candidate_prefix10_flow_displacement_mean"
-    ]
     return pair.sort_values(
         ["cohort_seed", "subset_seed", "model_seed"],
         kind="mergesort",
@@ -321,7 +324,6 @@ def _crossed_permutation_pvalue(
         raise ValueError("permutation_resamples must be positive")
     contexts = list(_CONTEXTS)
     models = list(_MODEL_SEEDS)
-    ordered = frame.set_index(["cohort_seed", "subset_seed", "model_seed"]).sort_index()
     x = _two_way_residual(frame, mechanism)
     y = _two_way_residual(frame, "Delta_MAE")
     residual_frame = frame[["cohort_seed", "subset_seed", "model_seed"]].copy()
@@ -344,7 +346,6 @@ def _crossed_permutation_pvalue(
         ],
         dtype=float,
     )
-    del ordered
     observed = _safe_pearson(x_matrix.ravel(), y_matrix.ravel())
     if not np.isfinite(observed):
         return 1.0
