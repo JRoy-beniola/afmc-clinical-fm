@@ -72,10 +72,10 @@ Freeze a prospective experiment before any new cells are run. The prospective in
 
 ## Raw artifact archival status
 
-The exact local execution produced:
+The exact execution artifacts are archived byte-for-byte under `docs/results/phase06_posthoc_optimization/analysis/`:
 - `phase06_posthoc_pair_mechanisms.csv`
 - `phase06_posthoc_associations.csv`
 - `phase06_posthoc_leave_one_out.csv`
 - `phase06_posthoc_screening.json`
 
-These four files must be imported byte-for-byte from `outputs/phase06_posthoc_optimization/` into this result namespace and checksummed. Do not regenerate or hand-edit them for archival provenance.
+Their archive is checksummed by `docs/results/phase06_posthoc_optimization/MANIFEST.sha256`, with execution provenance recorded in `docs/results/phase06_posthoc_optimization/execution_provenance.json`. These archived artifacts must not be regenerated or hand-edited in place.
