@@ -1,0 +1,101 @@
+{
+  "classification": "structured optimization-conditioned heterogeneity worth prospective testing",
+  "effect_orientation": "Delta_MAE = control - time_scaled",
+  "exploratory_not_confirmatory": true,
+  "mechanism_diagnostics": {
+    "delta_patience_exhausted": {
+      "criteria": {
+        "abs_two_way_pearson_ge_0_35": true,
+        "abs_two_way_spearman_ge_0_30": true,
+        "holm_permutation_p_le_0_05": true,
+        "leave_one_context_out_same_sign_ge_0_80": true,
+        "leave_one_model_out_same_sign_ge_0_80": true,
+        "pearson_spearman_same_direction": true
+      },
+      "leave_one_context_out_same_sign_fraction": 1.0,
+      "leave_one_model_out_same_sign_fraction": 1.0
+    },
+    "delta_selected_epoch": {
+      "criteria": {
+        "abs_two_way_pearson_ge_0_35": true,
+        "abs_two_way_spearman_ge_0_30": true,
+        "holm_permutation_p_le_0_05": true,
+        "leave_one_context_out_same_sign_ge_0_80": true,
+        "leave_one_model_out_same_sign_ge_0_80": true,
+        "pearson_spearman_same_direction": true
+      },
+      "leave_one_context_out_same_sign_fraction": 1.0,
+      "leave_one_model_out_same_sign_fraction": 1.0
+    },
+    "delta_selection_shadow_gap": {
+      "criteria": {
+        "abs_two_way_pearson_ge_0_35": false,
+        "abs_two_way_spearman_ge_0_30": false,
+        "holm_permutation_p_le_0_05": false,
+        "leave_one_context_out_same_sign_ge_0_80": true,
+        "leave_one_model_out_same_sign_ge_0_80": true,
+        "pearson_spearman_same_direction": true
+      },
+      "leave_one_context_out_same_sign_fraction": 1.0,
+      "leave_one_model_out_same_sign_fraction": 1.0
+    },
+    "delta_shadow_mae_epoch": {
+      "criteria": {
+        "abs_two_way_pearson_ge_0_35": true,
+        "abs_two_way_spearman_ge_0_30": true,
+        "holm_permutation_p_le_0_05": true,
+        "leave_one_context_out_same_sign_ge_0_80": true,
+        "leave_one_model_out_same_sign_ge_0_80": true,
+        "pearson_spearman_same_direction": true
+      },
+      "leave_one_context_out_same_sign_fraction": 1.0,
+      "leave_one_model_out_same_sign_fraction": 1.0
+    },
+    "delta_stop_epoch": {
+      "criteria": {
+        "abs_two_way_pearson_ge_0_35": true,
+        "abs_two_way_spearman_ge_0_30": true,
+        "holm_permutation_p_le_0_05": true,
+        "leave_one_context_out_same_sign_ge_0_80": true,
+        "leave_one_model_out_same_sign_ge_0_80": true,
+        "pearson_spearman_same_direction": true
+      },
+      "leave_one_context_out_same_sign_fraction": 1.0,
+      "leave_one_model_out_same_sign_fraction": 1.0
+    }
+  },
+  "mechanism_orientation": "candidate - control",
+  "multiple_testing": "Holm correction across the primary exploratory family",
+  "passing_primary_mechanisms": [
+    "delta_selected_epoch",
+    "delta_stop_epoch",
+    "delta_shadow_mae_epoch",
+    "delta_patience_exhausted"
+  ],
+  "permutation_scheme": "two-axis context/model label permutation after two-way demeaning",
+  "phase06_terminal_decision": "AMBIGUOUS -> STOP",
+  "primary_mechanisms": [
+    "delta_selected_epoch",
+    "delta_stop_epoch",
+    "delta_shadow_mae_epoch",
+    "delta_selection_shadow_gap",
+    "delta_patience_exhausted"
+  ],
+  "secondary_mechanisms": [
+    "delta_prefix10_gradient_l2_mean",
+    "delta_prefix10_parameter_l2_mean",
+    "candidate_prefix10_flow_displacement_mean"
+  ],
+  "trace_prefix_epochs": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+  ]
+}
