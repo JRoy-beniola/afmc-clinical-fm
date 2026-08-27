@@ -2,9 +2,8 @@ import dataclasses
 import hashlib
 from pathlib import Path
 
-from afmc_fm.reproducibility.verify import verify_phase
-
 from afmc_fm.reproducibility.models import ManifestSpec, PhaseDefinition
+from afmc_fm.reproducibility.verify import verify_phase
 
 
 def fixture_phase() -> PhaseDefinition:
