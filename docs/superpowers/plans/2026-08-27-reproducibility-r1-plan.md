@@ -4,26 +4,25 @@
 
 **Goal:** Add a read-only, phase-aware reproducibility registry and `afmc-reproduce status|verify` interface for Phase 0, Phase 0.5, Phase 0.6, and the post-Phase-0.6 archive.
 
-**Architecture:** Add a new importable `afmc_fm.reproducibility` package without rewriting historical execution or analysis tools. Phase truth is encoded as immutable Python phase definitions; `docs/reproducibility/artifact-map.yaml` is the human-readable cross-phase index and is checked for consistency with those definitions. Verification returns structured check records and never writes to the repository or reproduction outputs.
+**Architecture:** Add a focused `afmc_fm.reproducibility` package without rewriting historical execution or analysis code. Immutable Python phase definitions bind each historical decision to repository evidence; verification emits structured checks and never writes. `docs/reproducibility/artifact-map.yaml` mirrors the registry for humans and is consistency-tested.
 
-**Tech Stack:** Python 3.11, stdlib `argparse`/`dataclasses`/`hashlib`/`json`/`pathlib`/`subprocess`, PyYAML, pytest, Ruff.
+**Tech Stack:** Python 3.11, `argparse`, `dataclasses`, `hashlib`, `pathlib`, `re`, `subprocess`, PyYAML, pytest, Ruff.
 
 **Spec:** `docs/superpowers/specs/2026-08-27-reproducibility-closure-design.md`
 
 ## Global Constraints
 
 - `docs/results/phase0/`, `docs/results/phase05/`, `docs/results/phase06/`, and `docs/results/phase06_posthoc_optimization/` are read-only historical evidence.
-- Phase 0.6 remains exactly `D4-B AMBIGUOUS -> STOP`.
-- The post-Phase-0.6 result remains exploratory with classification `structured optimization-conditioned heterogeneity worth prospective testing`.
+- Phase 0.6 remains exactly `D4-B AMBIGUOUS -> STOP` as the normalized R1 label for the frozen `PHASE 0.6 TERMINATED — D4-B AMBIGUOUS → STOP` record.
+- The post-Phase-0.6 classification remains `structured optimization-conditioned heterogeneity worth prospective testing` and remains exploratory.
 - No protected confirmatory seeds may be consumed.
-- R1 implements only registry, artifact map, lineage, `status`, and read-only `verify`; no report extraction, rebuild, rerun, or Phase 0.7 execution.
+- R1 implements registry, artifact map, lineage, `status`, and read-only `verify` only. It does not implement rebuild, rerun, or Phase 0.7.
 - Verification must never treat `outputs/reproduction/` as official evidence.
-- Unknown or malformed phases/manifests must fail explicitly.
-- Existing historical tools under `tools/analysis/`, `tools/execution/`, and `tools/monitoring/` are not refactored.
+- Historical tools under `tools/analysis/`, `tools/execution/`, and `tools/monitoring/` are not refactored.
 
 ---
 
-### Task 1: Phase model and immutable registry
+### Task 1: Immutable phase model and registry
 
 **Files:**
 - Create: `src/afmc_fm/reproducibility/__init__.py`
@@ -32,10 +31,9 @@
 - Test: `tests/reproducibility/test_registry.py`
 
 **Interfaces:**
-- Produces: `PhaseDefinition`, `EnvironmentStatus`, `PHASES`, `get_phase(phase_id)`, `iter_phases()`.
-- Consumes: repository-relative paths only; no filesystem writes.
+- Produces: `PhaseDefinition`, `EnvironmentStatus`, `PHASES`, `get_phase()`, `iter_phases()`.
 
-- [ ] **Step 1: Write failing registry tests**
+- [ ] **Step 1: Write the failing registry test**
 
 ```python
 from pathlib import Path
@@ -47,21 +45,21 @@ from afmc_fm.reproducibility.registry import PHASES, get_phase, iter_phases
 
 def test_registry_exposes_exact_historical_phases():
     assert tuple(PHASES) == ("phase0", "phase05", "phase06", "phase06-posthoc")
-    assert tuple(p.phase_id for p in iter_phases()) == tuple(PHASES)
+    assert tuple(item.phase_id for item in iter_phases()) == tuple(PHASES)
 
 
-def test_phase06_historical_decision_is_frozen():
+def test_phase06_decision_is_frozen():
     phase = get_phase("phase06")
     assert phase.expected_classification == "D4-B AMBIGUOUS -> STOP"
     assert phase.official_evidence_root == Path("docs/results/phase06")
 
 
-def test_posthoc_remains_exploratory():
+def test_posthoc_is_exploratory():
     phase = get_phase("phase06-posthoc")
+    assert phase.result_kind == "exploratory"
     assert phase.expected_classification == (
         "structured optimization-conditioned heterogeneity worth prospective testing"
     )
-    assert phase.result_kind == "exploratory"
 
 
 def test_unknown_phase_is_rejected():
@@ -69,13 +67,13 @@ def test_unknown_phase_is_rejected():
         get_phase("phase07")
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [ ] **Step 2: Verify RED**
 
 Run: `pytest tests/reproducibility/test_registry.py -q`
 
-Expected: collection/import failure because `afmc_fm.reproducibility` does not yet exist.
+Expected: import/collection failure because the package does not exist.
 
-- [ ] **Step 3: Implement minimal immutable models and registry**
+- [ ] **Step 3: Implement the minimal model**
 
 ```python
 from dataclasses import dataclass
@@ -106,13 +104,11 @@ class PhaseDefinition:
     rerun_supported: bool
 ```
 
-Populate `PHASES` with only evidence that exists in the repository at implementation time. Keep R1 support flags `False` for rebuild/rerun.
+Populate the four phase entries only from committed evidence. Keep `rebuild_supported=False` and `rerun_supported=False` in R1.
 
-- [ ] **Step 4: Run registry tests and verify GREEN**
+- [ ] **Step 4: Verify GREEN**
 
 Run: `pytest tests/reproducibility/test_registry.py -q`
-
-Expected: all registry tests pass.
 
 - [ ] **Step 5: Commit**
 
@@ -131,19 +127,20 @@ git commit -m "feat: add reproducibility phase registry"
 - Test: `tests/reproducibility/test_verify.py`
 
 **Interfaces:**
-- Consumes: `PhaseDefinition`, repository root `Path`.
 - Produces: `CheckResult`, `VerificationReport`, `verify_phase(root, phase)`, `verify_all(root)`.
 
-- [ ] **Step 1: Write failing verification tests using a temporary fixture tree**
+- [ ] **Step 1: Write fixture-based failing tests**
 
 ```python
+import dataclasses
+import hashlib
 from pathlib import Path
 
 from afmc_fm.reproducibility.models import PhaseDefinition
 from afmc_fm.reproducibility.verify import verify_phase
 
 
-def _fixture_phase() -> PhaseDefinition:
+def fixture_phase() -> PhaseDefinition:
     return PhaseDefinition(
         phase_id="fixture",
         official_evidence_root=Path("docs/results/fixture"),
@@ -165,45 +162,76 @@ def _fixture_phase() -> PhaseDefinition:
     )
 
 
-def test_verify_detects_missing_evidence(tmp_path):
-    report = verify_phase(tmp_path, _fixture_phase())
-    assert report.ok is False
-    assert any(c.code == "missing_path" for c in report.checks)
-
-
-def test_verify_detects_bad_manifest_hash(tmp_path):
+def write_valid_fixture(tmp_path: Path) -> None:
     root = tmp_path / "docs/results/fixture"
     root.mkdir(parents=True)
     (root / "decision.md").write_text("FIXTURE STOP\n", encoding="utf-8")
     (root / "protocol.json").write_text("{}\n", encoding="utf-8")
     (root / "raw.csv").write_text("x\n1\n", encoding="utf-8")
-    (root / "MANIFEST.sha256").write_text("0" * 64 + "  raw.csv\n", encoding="utf-8")
-    report = verify_phase(tmp_path, _fixture_phase())
-    assert any(c.code == "sha256_mismatch" for c in report.checks)
-
-
-def test_verify_detects_classification_mismatch(tmp_path):
-    root = tmp_path / "docs/results/fixture"
-    root.mkdir(parents=True)
-    (root / "decision.md").write_text("NOT THE FROZEN DECISION\n", encoding="utf-8")
-    (root / "protocol.json").write_text("{}\n", encoding="utf-8")
-    (root / "raw.csv").write_text("x\n1\n", encoding="utf-8")
-    import hashlib
     digest = hashlib.sha256((root / "raw.csv").read_bytes()).hexdigest()
     (root / "MANIFEST.sha256").write_text(f"{digest}  raw.csv\n", encoding="utf-8")
-    report = verify_phase(tmp_path, _fixture_phase())
-    assert any(c.code == "classification_mismatch" for c in report.checks)
+
+
+def snapshot(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
+def test_missing_evidence_is_detected(tmp_path):
+    report = verify_phase(tmp_path, fixture_phase())
+    assert report.ok is False
+    assert any(check.code == "missing_path" for check in report.checks)
+
+
+def test_bad_manifest_hash_is_detected(tmp_path):
+    write_valid_fixture(tmp_path)
+    manifest = tmp_path / "docs/results/fixture/MANIFEST.sha256"
+    manifest.write_text("0" * 64 + "  raw.csv\n", encoding="utf-8")
+    report = verify_phase(tmp_path, fixture_phase())
+    assert any(check.code == "sha256_mismatch" for check in report.checks)
+
+
+def test_classification_mismatch_is_detected(tmp_path):
+    write_valid_fixture(tmp_path)
+    decision = tmp_path / "docs/results/fixture/decision.md"
+    decision.write_text("WRONG\n", encoding="utf-8")
+    report = verify_phase(tmp_path, fixture_phase())
+    assert any(check.code == "classification_mismatch" for check in report.checks)
+
+
+def test_verify_writes_nothing(tmp_path):
+    write_valid_fixture(tmp_path)
+    before = snapshot(tmp_path)
+    report = verify_phase(tmp_path, fixture_phase())
+    after = snapshot(tmp_path)
+    assert report.ok is True
+    assert after == before
+
+
+def test_reproduction_output_cannot_be_official_evidence(tmp_path):
+    phase = dataclasses.replace(
+        fixture_phase(),
+        official_evidence_root=Path("outputs/reproduction/fixture"),
+    )
+    report = verify_phase(tmp_path, phase)
+    assert any(
+        check.code == "official_evidence_in_reproduction_output"
+        for check in report.checks
+    )
 ```
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [ ] **Step 2: Verify RED**
 
 Run: `pytest tests/reproducibility/test_verify.py -q`
 
 Expected: import failure because verification modules do not exist.
 
-- [ ] **Step 3: Implement manifest parser and report models**
+- [ ] **Step 3: Implement minimal verification**
 
-Implement SHA-256 parsing with strict 64-lowercase-hex validation, resolve manifest entries relative to the manifest parent, reject absolute paths and `..` traversal, hash bytes without normalizing file contents, and return explicit check records instead of raising for ordinary verification failures.
+`integrity.py` must validate lowercase 64-character SHA-256 lines, resolve entries relative to each manifest, reject absolute paths and `..` traversal, and compare raw bytes. `verify.py` must return check records rather than writing output or mutating evidence.
 
 ```python
 @dataclass(frozen=True)
@@ -224,107 +252,69 @@ class VerificationReport:
         return all(check.ok for check in self.checks)
 ```
 
-- [ ] **Step 4: Add explicit read-only guard tests**
-
-```python
-def test_verify_writes_nothing(tmp_path):
-    # construct a valid fixture, snapshot every relative path + file bytes,
-    # execute verify_phase, and assert the snapshot is identical afterward.
-    ...
-
-
-def test_official_evidence_cannot_point_into_reproduction_outputs():
-    phase = dataclasses.replace(
-        _fixture_phase(),
-        official_evidence_root=Path("outputs/reproduction/fixture"),
-    )
-    report = verify_phase(Path("."), phase)
-    assert any(c.code == "official_evidence_in_reproduction_output" for c in report.checks)
-```
-
-For the first test, implement a local test helper that returns `{relative_path: bytes}` before and after; do not place snapshot logic in production code.
-
-- [ ] **Step 5: Run focused tests and verify GREEN**
+- [ ] **Step 4: Verify GREEN**
 
 Run: `pytest tests/reproducibility/test_verify.py -q`
 
-Expected: all verification tests pass.
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/afmc_fm/reproducibility/integrity.py src/afmc_fm/reproducibility/verify.py tests/reproducibility/test_verify.py
+git add src/afmc_fm/reproducibility tests/reproducibility/test_verify.py
 git commit -m "feat: add read-only archive verification"
 ```
 
 ---
 
-### Task 3: `afmc-reproduce status` and `verify` CLI
+### Task 3: Public `afmc-reproduce` CLI
 
 **Files:**
 - Create: `src/afmc_fm/reproducibility/cli.py`
 - Modify: `pyproject.toml`
 - Test: `tests/reproducibility/test_cli.py`
 
-**Interfaces:**
-- Produces console script `afmc-reproduce`.
-- Commands: `status`, `verify <phase|all>`.
-- Exit code: `0` when requested checks pass; `1` when verification fails; argparse retains `2` for invalid syntax/phase choices.
-
-- [ ] **Step 1: Write failing parser/CLI tests**
+- [ ] **Step 1: Write failing CLI tests**
 
 ```python
+import pytest
+
 from afmc_fm.reproducibility.cli import main
 
 
-def test_status_lists_all_historical_phases(capsys):
+def test_status_lists_all_phases(capsys):
     assert main(["status"]) == 0
-    out = capsys.readouterr().out
+    output = capsys.readouterr().out
     for phase in ("phase0", "phase05", "phase06", "phase06-posthoc"):
-        assert phase in out
+        assert phase in output
 
 
-def test_verify_rejects_unknown_phase(capsys):
-    try:
+def test_unknown_verify_phase_is_argparse_error():
+    with pytest.raises(SystemExit) as exc:
         main(["verify", "phase07"])
-    except SystemExit as exc:
-        assert exc.code == 2
-    else:
-        raise AssertionError("argparse must reject an unknown phase")
+    assert exc.value.code == 2
 
 
-def test_verify_all_aggregates_failures(monkeypatch, tmp_path, capsys):
-    monkeypatch.chdir(tmp_path)
-    assert main(["verify", "all"]) == 1
+def test_verify_all_aggregates_failures(tmp_path, capsys):
+    assert main(["verify", "all"], root=tmp_path) == 1
     assert "FAIL" in capsys.readouterr().out
 ```
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [ ] **Step 2: Verify RED**
 
 Run: `pytest tests/reproducibility/test_cli.py -q`
 
-Expected: import failure because CLI does not exist.
+- [ ] **Step 3: Implement CLI and entry point**
 
-- [ ] **Step 3: Implement minimal CLI**
+`status` prints archive presence, manifest presence, report-source status, environment status, rebuild/rerun support, and historical decision. `verify <phase|all>` prints concise check results and returns `1` if any requested phase fails.
 
-Use `argparse` and the repository root as `Path.cwd()` unless `main(..., root=...)` is supplied by tests. `status` must show, per phase: archive present, integrity manifest present, report source present/missing, environment exact/reconstructed/unknown, rebuild support, rerun support, and historical decision. `verify all` must print each failed check with phase + code + subject.
-
-- [ ] **Step 4: Add console entry point**
+Add to `pyproject.toml`:
 
 ```toml
-[project.scripts]
-afmc-phase0 = "afmc_fm.cli:main"
-afmc-phase06 = "afmc_fm.phase06.cli:main"
 afmc-reproduce = "afmc_fm.reproducibility.cli:main"
 ```
 
-- [ ] **Step 5: Run CLI tests and verify GREEN**
+- [ ] **Step 4: Verify GREEN and commit**
 
 Run: `pytest tests/reproducibility/test_cli.py -q`
-
-Expected: all CLI tests pass.
-
-- [ ] **Step 6: Commit**
 
 ```bash
 git add src/afmc_fm/reproducibility/cli.py tests/reproducibility/test_cli.py pyproject.toml
@@ -333,7 +323,7 @@ git commit -m "feat: add reproducibility status and verify CLI"
 
 ---
 
-### Task 4: Cross-phase artifact map and research lineage
+### Task 4: Artifact map and research lineage
 
 **Files:**
 - Create: `docs/reproducibility/README.md`
@@ -341,11 +331,7 @@ git commit -m "feat: add reproducibility status and verify CLI"
 - Create: `docs/reproducibility/research-lineage.md`
 - Test: `tests/reproducibility/test_documentation.py`
 
-**Interfaces:**
-- `artifact-map.yaml` is descriptive; Python registry remains the verification authority.
-- Documentation test ensures all four phase IDs, roots, classifications, and implementation SHAs agree with the registry.
-
-- [ ] **Step 1: Write failing documentation consistency test**
+- [ ] **Step 1: Write failing consistency test**
 
 ```python
 from pathlib import Path
@@ -356,7 +342,9 @@ from afmc_fm.reproducibility.registry import PHASES
 
 
 def test_artifact_map_matches_registry():
-    payload = yaml.safe_load(Path("docs/reproducibility/artifact-map.yaml").read_text())
+    payload = yaml.safe_load(
+        Path("docs/reproducibility/artifact-map.yaml").read_text(encoding="utf-8")
+    )
     assert tuple(payload["phases"]) == tuple(PHASES)
     for phase_id, phase in PHASES.items():
         item = payload["phases"][phase_id]
@@ -365,17 +353,15 @@ def test_artifact_map_matches_registry():
         assert item["implementation_sha"] == phase.implementation_sha
 ```
 
-- [ ] **Step 2: Run test and verify RED**
+- [ ] **Step 2: Verify RED**
 
 Run: `pytest tests/reproducibility/test_documentation.py -q`
 
-Expected: `FileNotFoundError` because the artifact map is not yet present.
+Expected: missing artifact map.
 
-- [ ] **Step 3: Create artifact map and lineage docs from verified repository evidence**
+- [ ] **Step 3: Add the three documentation files**
 
-`artifact-map.yaml` must list the official evidence root, official report (or null), decision record, protocol/design/config paths, implementation/execution SHAs, historical tool paths, raw evidence, derived tables, figures, report source status, environment status, integrity manifests, and R1 support flags for each phase.
-
-`research-lineage.md` must preserve this sequence and interpretation boundary:
+The map records every phase's evidence root, report, decision record, protocol/config/spec, implementation/execution SHAs, historical tools, raw/derived evidence, figures, report-source status, environment status, integrity manifests, and R1 support flags. The lineage preserves:
 
 ```text
 Phase 0 -> Phase 0.5 -> Phase 0.6 -> D4-B AMBIGUOUS -> STOP
@@ -383,13 +369,9 @@ Phase 0 -> Phase 0.5 -> Phase 0.6 -> D4-B AMBIGUOUS -> STOP
         -> Phase 0.7 design only (not authorized for execution)
 ```
 
-- [ ] **Step 4: Run documentation tests and verify GREEN**
+- [ ] **Step 4: Verify GREEN and commit**
 
 Run: `pytest tests/reproducibility/test_documentation.py -q`
-
-Expected: pass.
-
-- [ ] **Step 5: Commit**
 
 ```bash
 git add docs/reproducibility tests/reproducibility/test_documentation.py
@@ -398,19 +380,16 @@ git commit -m "docs: add reproducibility artifact map and lineage"
 
 ---
 
-### Task 5: Bind the four real archives and make `verify all` useful
+### Task 5: Bind all real historical archives
 
 **Files:**
 - Modify: `src/afmc_fm/reproducibility/registry.py`
+- Modify: `src/afmc_fm/reproducibility/integrity.py`
 - Modify: `src/afmc_fm/reproducibility/verify.py`
 - Modify: `tests/reproducibility/test_registry.py`
 - Modify: `tests/reproducibility/test_verify.py`
 
-**Interfaces:**
-- Real archive verification must tolerate historically different manifest layouts through phase declarations, not by rewriting old archives.
-- Recorded SHAs must be 40 lowercase hex and, when `.git` history is available, `git cat-file -e <sha>^{commit}` must resolve them.
-
-- [ ] **Step 1: Add failing real-repository tests**
+- [ ] **Step 1: Add failing real-repository verification test**
 
 ```python
 from pathlib import Path
@@ -418,38 +397,30 @@ from pathlib import Path
 from afmc_fm.reproducibility.verify import verify_all
 
 
-def test_real_repository_verify_all_has_no_registry_or_classification_errors():
-    report = verify_all(Path("."))
-    bad_codes = {
+def test_real_repository_has_no_binding_or_classification_errors():
+    reports = verify_all(Path("."))
+    failures = {
         check.code
-        for phase_report in report
-        for check in phase_report.checks
+        for report in reports
+        for check in report.checks
         if not check.ok
     }
-    assert "invalid_sha" not in bad_codes
-    assert "classification_mismatch" not in bad_codes
-    assert "official_evidence_in_reproduction_output" not in bad_codes
+    assert "invalid_sha" not in failures
+    assert "classification_mismatch" not in failures
+    assert "official_evidence_in_reproduction_output" not in failures
 ```
 
-Add targeted assertions for each historical manifest path actually present in the phase registry.
-
-- [ ] **Step 2: Run focused test and verify RED if any declared binding is wrong**
+- [ ] **Step 2: Verify RED where historical manifest layouts require adapters**
 
 Run: `pytest tests/reproducibility/test_registry.py tests/reproducibility/test_verify.py -q`
 
-Expected: at least one failure until all real phase paths/manifests are bound correctly.
+- [ ] **Step 3: Correct only reproducibility-layer bindings/parsers**
 
-- [ ] **Step 3: Correct only reproducibility-layer declarations/parsing**
+Do not edit historical archives to make verification pass. Missing historical report source is reported as status, not corruption. If a historical manifest uses paths rooted differently from another phase, handle that through a declared manifest base mode in the reproducibility layer.
 
-Do not edit historical evidence to make verification pass. If a historical manifest format differs, add a read-only parser branch keyed by the declared manifest path/type. If historical documentary source is absent, report `report_source_present=false`; absence is status, not corruption.
-
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [ ] **Step 4: Verify GREEN and commit**
 
 Run: `pytest tests/reproducibility -q`
-
-Expected: all R1 tests pass.
-
-- [ ] **Step 5: Commit**
 
 ```bash
 git add src/afmc_fm/reproducibility tests/reproducibility
@@ -462,19 +433,14 @@ git commit -m "feat: bind historical archives to reproducibility verification"
 
 **Files:**
 - Create: `tests/reproducibility/test_archive_immutability.py`
-- Modify only if required by tests: files under `src/afmc_fm/reproducibility/`
 
-**Interfaces:**
-- Produces final R1 proof that `status`/`verify` are read-only and do not mutate official archives.
-
-- [ ] **Step 1: Write failing/guard tests for command-level immutability**
+- [ ] **Step 1: Add command-level immutability guard**
 
 ```python
 import hashlib
 from pathlib import Path
 
 from afmc_fm.reproducibility.cli import main
-
 
 ROOTS = (
     Path("docs/results/phase0"),
@@ -484,7 +450,7 @@ ROOTS = (
 )
 
 
-def _snapshot(root: Path) -> dict[str, str]:
+def snapshot(root: Path) -> dict[str, str]:
     return {
         path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in root.rglob("*")
@@ -493,9 +459,9 @@ def _snapshot(root: Path) -> dict[str, str]:
 
 
 def test_verify_all_does_not_mutate_historical_archives():
-    before = {root: _snapshot(root) for root in ROOTS}
+    before = {root: snapshot(root) for root in ROOTS}
     main(["verify", "all"])
-    after = {root: _snapshot(root) for root in ROOTS}
+    after = {root: snapshot(root) for root in ROOTS}
     assert after == before
 ```
 
@@ -503,23 +469,17 @@ def test_verify_all_does_not_mutate_historical_archives():
 
 Run: `pytest tests/reproducibility -q`
 
-Expected: pass after Task 5; if this guard exposes a write, fix production code before continuing.
-
 - [ ] **Step 3: Run Ruff**
 
 Run: `ruff check src tests`
 
-Expected: clean.
-
-- [ ] **Step 4: Run the complete test suite**
+- [ ] **Step 4: Run full suite**
 
 Run: `pytest -q`
 
-Expected: all existing tests plus R1 tests pass; existing CUDA-unavailable skips remain skips only.
+Expected: all tests green; only already-established CUDA-unavailable skips remain.
 
-- [ ] **Step 5: Exercise the public interface**
-
-Run:
+- [ ] **Step 5: Exercise public interface**
 
 ```bash
 afmc-reproduce status
@@ -530,12 +490,10 @@ afmc-reproduce verify phase06-posthoc
 afmc-reproduce verify all
 ```
 
-Expected: concise phase-by-phase audit output; no command writes beneath `docs/results/` or `outputs/reproduction/`.
-
 - [ ] **Step 6: Commit**
 
 ```bash
-git add tests/reproducibility/test_archive_immutability.py src/afmc_fm/reproducibility
+git add tests/reproducibility/test_archive_immutability.py
 git commit -m "test: prove reproducibility verification is read-only"
 ```
 
@@ -543,14 +501,4 @@ git commit -m "test: prove reproducibility verification is read-only"
 
 ## R1 Completion Gate
 
-R1 is complete only when all of the following are true:
-
-- `afmc-reproduce status` reports all four historical phases.
-- `afmc-reproduce verify <phase>` is read-only and produces structured checks.
-- `afmc-reproduce verify all` aggregates failures clearly.
-- Manifest tampering, missing evidence, invalid SHAs, classification mismatch, and reproduction-output-as-official-evidence are detected.
-- `docs/reproducibility/artifact-map.yaml`, `research-lineage.md`, and `README.md` exist and agree with the registry.
-- Historical result roots are byte-identical before and after verification.
-- Ruff is clean.
-- Full pytest is green aside from already-expected CUDA-unavailable skips.
-- No rebuild, rerun, Phase 0.7 execution, PR #7 merge, or protected-seed use has occurred.
+R1 is complete only when `status` and every `verify` command work read-only, all four historical phases are bound, the artifact map and lineage agree with the registry, tampering/missing evidence/classification mismatch/invalid SHAs are detected, archive snapshots remain unchanged, Ruff is clean, the complete pytest suite is green, and no rebuild, rerun, Phase 0.7 execution, PR #7 merge, or protected-seed use has occurred.
