@@ -77,4 +77,5 @@ def main(
     else:
         reports = (verify_phase(root_path, get_phase(args.phase)),)
 
-    return 0 if all(_print_report(report) for report in reports) else 1
+    outcomes = tuple(_print_report(report) for report in reports)
+    return 0 if all(outcomes) else 1
