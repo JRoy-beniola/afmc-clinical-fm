@@ -83,7 +83,7 @@ def dump_manifest(manifest: ReportSourceManifest) -> str:
 def load_manifest(path: Path) -> ReportSourceManifest:
     payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise ValueError("report manifest must be a mapping")
+        raise TypeError("report manifest must be a mapping")
     try:
         return ReportSourceManifest(
             schema_version=int(payload["schema_version"]),
