@@ -76,9 +76,7 @@ def verify_manifest(
             continue
 
         digest, path_text = parts
-        path_text = path_text.strip()
-        if path_text.startswith("*"):
-            path_text = path_text[1:]
+        path_text = path_text.strip().removeprefix("*")
 
         if _SHA256_RE.fullmatch(digest) is None:
             checks.append(
