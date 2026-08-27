@@ -41,14 +41,18 @@ def test_posthoc_is_exploratory():
 
 
 def test_registry_binds_known_execution_identities():
-    assert get_phase("phase0").execution_sha == "d6f105eee73fcb8e9cc5987d292b1bb98a687382"
+    assert get_phase("phase0").execution_sha == (
+        "d6f105eee73fcb8e9cc5987d292b1bb98a687382"
+    )
     assert get_phase("phase05").implementation_sha == (
         "50a94c06bc1c419ca55738f15f074cc06ccc3f36"
     )
     assert get_phase("phase06").implementation_sha == (
         "18f391fa89d80687f38f6c50a60a062e4524edd1"
     )
-    assert get_phase("phase06").execution_sha == "6ef4d506e5a6b96b15eb58225b95ebf64d3247ea"
+    assert get_phase("phase06").execution_sha == (
+        "6ef4d506e5a6b96b15eb58225b95ebf64d3247ea"
+    )
     assert get_phase("phase06-posthoc").implementation_sha == (
         "8c9de2aaeee1e26f65e28a1dd682f8ac3effad72"
     )
