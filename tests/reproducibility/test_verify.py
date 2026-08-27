@@ -3,7 +3,7 @@ import hashlib
 from pathlib import Path
 
 from afmc_fm.reproducibility.models import ManifestSpec, PhaseDefinition
-from afmc_fm.reproducibility.verify import verify_phase
+from afmc_fm.reproducibility.verify import verify_all, verify_phase
 
 
 def fixture_phase() -> PhaseDefinition:
@@ -108,3 +108,19 @@ def test_reproduction_output_cannot_be_official_evidence(tmp_path):
         check.code == "official_evidence_in_reproduction_output"
         for check in report.checks
     )
+
+
+def test_real_archives_have_no_binding_or_classification_failures():
+    forbidden = {
+        "invalid_sha",
+        "classification_mismatch",
+        "official_evidence_in_reproduction_output",
+        "unsafe_manifest_path",
+    }
+    failures = [
+        (report.phase_id, check.code, check.subject, check.detail)
+        for report in verify_all(Path("."))
+        for check in report.checks
+        if not check.ok and check.code in forbidden
+    ]
+    assert failures == []
