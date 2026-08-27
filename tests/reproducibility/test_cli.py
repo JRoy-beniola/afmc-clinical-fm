@@ -18,4 +18,6 @@ def test_unknown_verify_phase_is_argparse_error():
 
 def test_verify_all_aggregates_failures(tmp_path, capsys):
     assert main(["verify", "all"], root=tmp_path) == 1
-    assert "FAIL" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    for phase in ("phase0", "phase05", "phase06", "phase06-posthoc"):
+        assert f"FAIL {phase}" in output
