@@ -1,8 +1,9 @@
 import hashlib
 from pathlib import Path
 
-from afmc_fm.reproducibility.models import ManifestSpec, PhaseDefinition
 from afmc_fm.reproducibility.report_manifest import build_manifest, validate_manifest
+
+from afmc_fm.reproducibility.models import ManifestSpec, PhaseDefinition
 from afmc_fm.reproducibility.report_source import (
     ParagraphBlock,
     ReportSnapshot,
