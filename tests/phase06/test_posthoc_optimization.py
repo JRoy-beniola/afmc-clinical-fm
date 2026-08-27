@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-
 from afmc_fm.phase06.posthoc_optimization import (
     PosthocOptimizationResult,
     analyze_posthoc_optimization,
