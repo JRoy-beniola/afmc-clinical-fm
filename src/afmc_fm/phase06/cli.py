@@ -31,6 +31,8 @@ from afmc_fm.phase06.planning import (
     plan_d2b_cells,
     plan_d4b_cells,
 )
+from afmc_fm.phase06.posthoc_archive import archive_posthoc_outputs
+from afmc_fm.phase06.posthoc_optimization import run_posthoc_archive_analysis
 from afmc_fm.phase06.protocol import (
     build_phase06_d2b_protocol_lock,
     build_phase06_d4b_protocol_lock,
@@ -557,6 +559,45 @@ def _adjudicate_d4b(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_posthoc_optimization(args: argparse.Namespace) -> int:
+    result = run_posthoc_archive_analysis(
+        args.archive,
+        args.output,
+        permutation_resamples=args.permutation_resamples,
+        permutation_seed=args.permutation_seed,
+    )
+    print(result.screening["classification"])
+    for mechanism in result.screening["passing_primary_mechanisms"]:
+        print(mechanism)
+    columns = [
+        "mechanism",
+        "family",
+        "raw_pearson",
+        "raw_spearman",
+        "context_demeaned_pearson",
+        "context_demeaned_spearman",
+        "two_way_pearson",
+        "two_way_spearman",
+        "permutation_pvalue",
+        "permutation_pvalue_holm",
+    ]
+    print(result.associations[columns].to_string(index=False))
+    return 0
+
+
+def _archive_posthoc_optimization(args: argparse.Namespace) -> int:
+    provenance = archive_posthoc_outputs(
+        args.source,
+        args.destination,
+        analysis_commit=args.analysis_commit,
+        permutation_resamples=args.permutation_resamples,
+        permutation_seed=args.permutation_seed,
+    )
+    print(provenance["classification"])
+    print(Path(args.destination) / "MANIFEST.sha256")
+    return 0
+
+
 def _add_stage_arguments(
     parser: argparse.ArgumentParser,
     *,
@@ -609,6 +650,24 @@ def build_parser() -> argparse.ArgumentParser:
     adjudicate_d4b_parser.add_argument("--d2b-parent-output", required=True)
     adjudicate_d4b_parser.add_argument("--output", required=True)
     adjudicate_d4b_parser.set_defaults(handler=_adjudicate_d4b)
+
+    posthoc = subparsers.add_parser("posthoc-optimization")
+    posthoc.add_argument("--archive", default="docs/results/phase06/evidence/d4b")
+    posthoc.add_argument("--output", default="outputs/phase06_posthoc_optimization")
+    posthoc.add_argument("--permutation-resamples", type=int, default=10_000)
+    posthoc.add_argument("--permutation-seed", type=int, default=20260827)
+    posthoc.set_defaults(handler=_run_posthoc_optimization)
+
+    archive_posthoc = subparsers.add_parser("archive-posthoc-optimization")
+    archive_posthoc.add_argument("--source", default="outputs/phase06_posthoc_optimization")
+    archive_posthoc.add_argument(
+        "--destination",
+        default="docs/results/phase06_posthoc_optimization",
+    )
+    archive_posthoc.add_argument("--analysis-commit", required=True)
+    archive_posthoc.add_argument("--permutation-resamples", type=int, default=10_000)
+    archive_posthoc.add_argument("--permutation-seed", type=int, default=20260827)
+    archive_posthoc.set_defaults(handler=_archive_posthoc_optimization)
     return parser
 
 
