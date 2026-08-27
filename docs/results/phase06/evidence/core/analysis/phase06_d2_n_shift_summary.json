@@ -1,0 +1,1 @@
+{"bootstrap_ci_lower":0.007956168293952941,"bootstrap_ci_upper":0.0274852400124073,"bootstrap_resamples":10000,"bootstrap_seed":20260826,"effect_orientation":"T = Delta_MAE_N40 - Delta_MAE_N5","mean_T":0.017918291687965392,"mean_delta_mae_n40":0.021067976355552673,"mean_delta_mae_n5":0.0031496846675872804,"pair_count":25,"positive_T_count":19}

@@ -1,0 +1,7 @@
+n_train,factor,largest_count,largest_frequency,bootstrap_resamples,bootstrap_seed
+5,cohort,462,0.0462,10000,20260826
+5,subset,2103,0.2103,10000,20260826
+5,model,7435,0.7435,10000,20260826
+40,cohort,324,0.0324,10000,20260826
+40,subset,376,0.0376,10000,20260826
+40,model,9300,0.93,10000,20260826
