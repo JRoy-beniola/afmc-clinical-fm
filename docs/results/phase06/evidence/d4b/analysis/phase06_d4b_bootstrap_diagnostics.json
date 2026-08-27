@@ -1,0 +1,1 @@
+{"bootstrap_ci_lower":-0.0016367578506469728,"bootstrap_ci_upper":0.019871510744094847,"bootstrap_resamples":10000,"bootstrap_seed":20260827,"confidence_interval":"percentile_95","contexts_per_model_seed":5,"mean_Delta_MAE":0.00894437611103058,"model_seed_count":10,"pair_count":50,"resampling_unit":"model_seed_cluster"}

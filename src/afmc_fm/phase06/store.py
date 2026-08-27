@@ -19,7 +19,7 @@ PHASE06_STORE_SCHEMA_VERSION = 1
 _CELL_SCHEMA_VERSION = 1
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 _COMMIT_RE = re.compile(r"^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$")
-_ALLOWED_STAGES = frozenset({"d1", "d2a", "d2b"})
+_ALLOWED_STAGES = frozenset({"d1", "d2a", "d2b", "d4b"})
 _RESERVED_SUMMARY_KEYS = frozenset({"artifact_sha256", "identity"})
 
 
@@ -588,7 +588,7 @@ def _validate_expected_cell_ids(
 
 def _require_stage(stage: object) -> str:
     if not isinstance(stage, str) or stage not in _ALLOWED_STAGES:
-        raise ValueError("stage must be d1, d2a, or d2b")
+        raise ValueError("stage must be d1, d2a, d2b, or d4b")
     return stage
 
 

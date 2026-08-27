@@ -1,0 +1,46 @@
+{
+  "phase": "0.6",
+  "status": "TERMINATED",
+  "final_classification": "ambiguous",
+  "next_required_stage": "STOP",
+  "date": "2026-08-27",
+
+  "core_parent": {
+    "execution_sha": "1718402df1d6ef344168677e6d26ea664708e1bc",
+    "protocol_sha256": "c001bc278cc0c41793ef21d972f851b1ccd7a6d1b2adc8d2f45060660f709a51",
+    "d3_adjudication_sha256": "6b9fffed7503fae6beeac2314238ae3d10ffdebfd27ea71ad952ab1f87916460",
+    "d3_route": "D2B"
+  },
+
+  "d2b": {
+    "execution_sha": "516c9e3c0e965582fa5cce976e9d8ebf32ea8404",
+    "canonical_protocol_sha256": "33f7cb1f6e71560f547a746cb7f5eb41130f794ab1e3a6fb1928c40e05b29f12",
+    "canonical_adjudication_sha256": "ea28fd4d5f6490a10fad20d5d3f3e76a1de08bf6b1be3b9805c9cf6c519e845f",
+    "cross_array_evidence": "sufficient",
+    "next_required_stage": "D4_OPTIMIZATION"
+  },
+
+  "d4b": {
+    "execution_sha": "6ef4d506e5a6b96b15eb58225b95ebf64d3247ea",
+    "validated_implementation_sha": "18f391fa89d80687f38f6c50a60a062e4524edd1",
+    "cells_complete": 100,
+    "paired_effects": 50,
+    "delta_overall": 0.00894437611103058,
+    "positive_model_seed_count": 6,
+    "positive_context_count": 3,
+    "bootstrap_ci_lower": -0.0016367578506469728,
+    "bootstrap_ci_upper": 0.019871510744094847,
+    "bootstrap_resamples": 10000,
+    "bootstrap_seed": 20260827,
+    "classification": "ambiguous",
+    "next_required_stage": "STOP",
+    "adjudication_sha256": "106e2535569e1cd5aa1ad176b01786b44d07339e408d9f4c754efd936f279419"
+  },
+
+  "confirmatory_seed_firewall": {
+    "cohort": "701..710",
+    "subset": "801..810",
+    "model": "901..910",
+    "status": "UNTOUCHED"
+  }
+}

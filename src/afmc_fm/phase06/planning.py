@@ -9,6 +9,7 @@ from afmc_fm.phase06.protocol import validate_development_seed_triplet
 
 _D1_TRAIN_SIZES = frozenset({5, 10, 20, 40})
 _D2_TRAIN_SIZES = frozenset({5, 40})
+_D4B_TRAIN_SIZES = frozenset({40})
 _FLOW_MODES = frozenset({"none", "time_scaled"})
 _EXPECTED_DEVELOPMENT_BUNDLES = tuple(
     (400 + index, 500 + index, 600 + index) for index in range(1, 6)
@@ -16,11 +17,19 @@ _EXPECTED_DEVELOPMENT_BUNDLES = tuple(
 _D2_COHORTS = (401, 402, 403, 404, 405)
 _D2_SUBSETS = (501, 502, 503, 504, 505)
 _D2_MODELS = (601, 602, 603, 604, 605)
+_D4B_CONTEXTS = (
+    (401, 501),
+    (402, 502),
+    (403, 503),
+    (404, 504),
+    (405, 505),
+)
+_D4B_MODELS = tuple(range(1001, 1011))
 
 
 @dataclass(frozen=True, slots=True)
 class Phase06CellSpec:
-    stage: Literal["d1", "d2a", "d2b"]
+    stage: Literal["d1", "d2a", "d2b", "d4b"]
     world: Literal["smooth"]
     cohort_seed: int
     subset_seed: int
@@ -31,8 +40,8 @@ class Phase06CellSpec:
     uncertainty_mode: Literal["deterministic"] = "deterministic"
 
     def __post_init__(self) -> None:
-        if self.stage not in {"d1", "d2a", "d2b"}:
-            raise ValueError("stage must be d1, d2a, or d2b")
+        if self.stage not in {"d1", "d2a", "d2b", "d4b"}:
+            raise ValueError("stage must be d1, d2a, d2b, or d4b")
         if self.world != "smooth":
             raise ValueError("world must be smooth")
         validate_development_seed_triplet(
@@ -42,7 +51,12 @@ class Phase06CellSpec:
         )
         if type(self.n_train) is not int or self.n_train <= 0:
             raise ValueError("n_train must be a positive integer")
-        allowed_train_sizes = _D1_TRAIN_SIZES if self.stage == "d1" else _D2_TRAIN_SIZES
+        if self.stage == "d1":
+            allowed_train_sizes = _D1_TRAIN_SIZES
+        elif self.stage in {"d2a", "d2b"}:
+            allowed_train_sizes = _D2_TRAIN_SIZES
+        else:
+            allowed_train_sizes = _D4B_TRAIN_SIZES
         if self.n_train not in allowed_train_sizes:
             raise ValueError(f"n_train is outside the locked {self.stage} scope")
         if self.flow_mode not in _FLOW_MODES:
@@ -144,4 +158,30 @@ def plan_d2b_cells(config: Phase06Config) -> tuple[Phase06CellSpec, ...]:
     return _require_unique_cells(cells, 100, "D2-B")
 
 
-__all__ = ["Phase06CellSpec", "plan_d1_cells", "plan_d2a_cells", "plan_d2b_cells"]
+def plan_d4b_cells(config: Phase06Config) -> tuple[Phase06CellSpec, ...]:
+    cells = tuple(
+        Phase06CellSpec(
+            stage="d4b",
+            world=config.world,
+            cohort_seed=cohort_seed,
+            subset_seed=subset_seed,
+            model_seed=model_seed,
+            n_train=40,
+            flow_mode=flow_mode,
+            jump_mode=config.jump_mode,
+            uncertainty_mode=config.uncertainty_mode,
+        )
+        for cohort_seed, subset_seed in _D4B_CONTEXTS
+        for model_seed in _D4B_MODELS
+        for flow_mode in _FLOW_MODES
+    )
+    return _require_unique_cells(cells, 100, "D4-B")
+
+
+__all__ = [
+    "Phase06CellSpec",
+    "plan_d1_cells",
+    "plan_d2a_cells",
+    "plan_d2b_cells",
+    "plan_d4b_cells",
+]
