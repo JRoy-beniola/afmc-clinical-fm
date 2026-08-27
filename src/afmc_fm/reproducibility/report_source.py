@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,7 @@ _W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 _W = f"{{{_W_NS}}}"
 _R = f"{{{_R_NS}}}"
+_HEADING_RE = re.compile(r"^Heading ([1-6])$")
 
 
 @dataclass(frozen=True)
@@ -183,3 +185,43 @@ def extract_docx(path: Path) -> ReportSnapshot:
                 )
 
     return ReportSnapshot(reference_sha256=digest, blocks=tuple(blocks))
+
+
+def _escape_markdown_cell(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("|", "\\|").replace("\n", "<br>")
+
+
+def _render_table(block: TableBlock) -> str:
+    if not block.rows:
+        return "<!-- empty-table -->"
+    width = max(len(row) for row in block.rows)
+    normalized = [row + ("",) * (width - len(row)) for row in block.rows]
+    header = normalized[0]
+    lines = ["| " + " | ".join(_escape_markdown_cell(cell) for cell in header) + " |"]
+    lines.append("| " + " | ".join("---" for _ in range(width)) + " |")
+    for row in normalized[1:]:
+        lines.append("| " + " | ".join(_escape_markdown_cell(cell) for cell in row) + " |")
+    return "\n".join(lines)
+
+
+def render_markdown(snapshot: ReportSnapshot) -> str:
+    """Render a deterministic, non-generative canonical Markdown representation."""
+
+    rendered: list[str] = []
+    for block in snapshot.blocks:
+        if isinstance(block, ParagraphBlock):
+            if not block.text:
+                rendered.append("<!-- blank -->")
+                continue
+            match = _HEADING_RE.fullmatch(block.style or "")
+            if match:
+                rendered.append(f"{'#' * int(match.group(1))} {block.text}")
+            else:
+                rendered.append(block.text)
+        elif isinstance(block, TableBlock):
+            rendered.append(_render_table(block))
+        else:
+            rendered.append(f"<!-- image rel={block.relationship_id} -->")
+    if not rendered:
+        return ""
+    return "\n\n".join(rendered) + "\n"
