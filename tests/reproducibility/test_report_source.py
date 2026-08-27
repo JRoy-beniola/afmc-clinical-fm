@@ -3,6 +3,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+
 from afmc_fm.reproducibility.report_source import ParagraphBlock, TableBlock, extract_docx
 
 
