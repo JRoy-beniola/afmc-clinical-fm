@@ -124,3 +124,13 @@ def test_real_archives_have_no_binding_or_classification_failures():
         if not check.ok and check.code in forbidden
     ]
     assert failures == []
+
+
+def test_real_archives_verify_cleanly():
+    failures = [
+        (report.phase_id, check.code, check.subject, check.detail)
+        for report in verify_all(Path("."))
+        for check in report.checks
+        if not check.ok
+    ]
+    assert failures == []
