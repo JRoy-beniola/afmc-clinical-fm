@@ -1,0 +1,15 @@
+phase05_config: configs/experiments/phase05.yaml
+phase06_spec: docs/superpowers/specs/2026-08-26-phase0-6-diagnostics-design.md
+simulator_config: configs/simulator/full.yaml
+world: smooth
+d1_train_sizes: [5, 10, 20, 40]
+d2_train_sizes: [5, 40]
+d1_flow_modes: [none, time_scaled]
+d2_flow_modes: [none, time_scaled]
+jump_mode: none
+uncertainty_mode: deterministic
+bootstrap_resamples: 10000
+bootstrap_seed: 20260826
+forbidden_cohort_seeds: [701, 702, 703, 704, 705, 706, 707, 708, 709, 710]
+forbidden_subset_seeds: [801, 802, 803, 804, 805, 806, 807, 808, 809, 810]
+forbidden_model_seeds: [901, 902, 903, 904, 905, 906, 907, 908, 909, 910]

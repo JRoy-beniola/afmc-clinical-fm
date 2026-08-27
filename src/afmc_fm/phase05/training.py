@@ -1,4 +1,6 @@
 from copy import deepcopy
+from dataclasses import dataclass
+from typing import Protocol
 
 import numpy as np
 import torch
@@ -15,6 +17,44 @@ from afmc_fm.models.losses import masked_gaussian_nll
 from afmc_fm.phase05.config import Phase05Config
 from afmc_fm.phase05.losses import masked_half_mse, masked_residual_gaussian_nll
 from afmc_fm.phase05.model import Phase05FlowJumpAdapter
+
+
+@dataclass(frozen=True, slots=True)
+class TrainingDiagnosticEpochRecord:
+    epoch: int
+    train_core_loss: float
+    validation_core_loss: float
+    validation_mae: float
+    validation_rmse: float
+    gradient_l2_norm: float
+    parameter_l2_norm: float
+    mean_flow_displacement: float
+    median_flow_displacement: float
+    p95_flow_displacement: float
+    best_validation_core_loss_so_far: float
+    best_core_epoch: int
+    shadow_best_validation_mae_so_far: float
+    shadow_best_mae_epoch: int
+    stale_epochs: int
+
+
+@dataclass(frozen=True, slots=True)
+class TrainingDiagnosticSummary:
+    epochs_run: int
+    stop_epoch: int
+    selected_checkpoint_epoch: int
+    selected_validation_core_loss: float
+    shadow_mae_checkpoint_epoch: int
+    shadow_validation_mae: float
+    early_stop_reason: str
+    production_state_dict: dict[str, torch.Tensor]
+    shadow_state_dict: dict[str, torch.Tensor]
+
+
+class TrainingDiagnosticObserver(Protocol):
+    def on_epoch(self, record: TrainingDiagnosticEpochRecord) -> None: ...
+
+    def on_training_end(self, summary: TrainingDiagnosticSummary) -> None: ...
 
 
 def _forward(
@@ -69,13 +109,111 @@ def _core_loss(
     )
 
 
+def _global_gradient_l2(parameters: list[torch.nn.Parameter]) -> float:
+    squared = torch.zeros((), device=parameters[0].device)
+    for parameter in parameters:
+        if parameter.grad is not None:
+            squared = squared + parameter.grad.detach().pow(2).sum()
+    return float(torch.sqrt(squared).item())
+
+
+def _global_parameter_l2(parameters: list[torch.nn.Parameter]) -> float:
+    squared = torch.zeros((), device=parameters[0].device)
+    for parameter in parameters:
+        squared = squared + parameter.detach().pow(2).sum()
+    return float(torch.sqrt(squared).item())
+
+
+def _validation_point_metrics(
+    output,
+    batch: dict[str, torch.Tensor],
+) -> tuple[float, float]:
+    selected = batch["target_masks"].bool()
+    if not torch.any(selected):
+        raise ValueError("diagnostic validation requires observed target values")
+    error = output.value_mean[selected] - batch["target_values"][selected]
+    mae = error.abs().mean()
+    rmse = torch.sqrt(error.pow(2).mean())
+    return float(mae.item()), float(rmse.item())
+
+
+def _flow_displacement(
+    output,
+    batch: dict[str, torch.Tensor],
+) -> tuple[float, float, float]:
+    valid = batch["valid"].bool()
+    if valid.shape != output.pre_event_states.shape[:2]:
+        raise ValueError("diagnostic valid mask shape does not match model output")
+    previous = torch.cat(
+        [
+            torch.zeros_like(output.post_event_states[:, :1]),
+            output.post_event_states[:, :-1],
+        ],
+        dim=1,
+    )
+    displacement = torch.linalg.vector_norm(
+        output.pre_event_states - previous,
+        dim=-1,
+    )[valid]
+    if displacement.numel() == 0:
+        raise ValueError("diagnostic validation requires valid sequence positions")
+    return (
+        float(displacement.mean().item()),
+        float(displacement.median().item()),
+        float(torch.quantile(displacement, 0.95).item()),
+    )
+
+
+def _require_finite_diagnostic(name: str, value: float) -> None:
+    if not np.isfinite(value):
+        raise RuntimeError(f"non-finite diagnostic value: {name}")
+
+
+def _cpu_state_dict(
+    state_dict: dict[str, torch.Tensor],
+) -> dict[str, torch.Tensor]:
+    return {
+        name: tensor.detach().cpu().clone()
+        for name, tensor in state_dict.items()
+    }
+
+
+def _emit_epoch(
+    diagnostics: TrainingDiagnosticObserver,
+    record: TrainingDiagnosticEpochRecord,
+) -> None:
+    try:
+        diagnostics.on_epoch(record)
+    except Exception as error:
+        raise RuntimeError("training diagnostic observer failed during on_epoch") from error
+
+
+def _emit_summary(
+    diagnostics: TrainingDiagnosticObserver,
+    summary: TrainingDiagnosticSummary,
+) -> None:
+    try:
+        diagnostics.on_training_end(summary)
+    except Exception as error:
+        raise RuntimeError(
+            "training diagnostic observer failed during on_training_end"
+        ) from error
+
+
 def _fit_core(
     model: Phase05FlowJumpAdapter,
     train: dict[str, torch.Tensor],
     validation: dict[str, torch.Tensor],
     config: Phase05Config,
     device: torch.device,
+    diagnostics: TrainingDiagnosticObserver | None = None,
 ) -> Phase05FlowJumpAdapter:
+    if diagnostics is not None:
+        if "valid" not in train:
+            raise ValueError("diagnostic training requires train batch['valid']")
+        if "valid" not in validation:
+            raise ValueError("diagnostic training requires validation batch['valid']")
+
     model.to(device)
     train = move_batch(train, device)
     validation = move_batch(validation, device)
@@ -91,26 +229,123 @@ def _fit_core(
     )
     best_state = deepcopy(model.state_dict())
     best_loss = float("inf")
+    best_epoch = 0
+    shadow_best_mae = float("inf")
+    shadow_best_epoch = 0
+    shadow_best_state = deepcopy(model.state_dict()) if diagnostics is not None else None
     stale_epochs = 0
-    for _ in range(config.max_epochs):
+    epochs_run = 0
+    early_stop_reason = "max_epochs_reached"
+
+    for epoch_index in range(config.max_epochs):
+        epoch = epoch_index + 1
         model.train()
         optimizer.zero_grad(set_to_none=True)
         loss = _core_loss(model, train, config)
+        train_loss = float(loss.detach().item()) if diagnostics is not None else 0.0
         loss.backward()
+        gradient_norm = (
+            _global_gradient_l2(parameters) if diagnostics is not None else 0.0
+        )
         optimizer.step()
+        parameter_norm = (
+            _global_parameter_l2(parameters) if diagnostics is not None else 0.0
+        )
 
         model.eval()
+        validation_mae = 0.0
+        validation_rmse = 0.0
+        flow_mean = 0.0
+        flow_median = 0.0
+        flow_p95 = 0.0
         with torch.no_grad():
             validation_loss = float(_core_loss(model, validation, config).item())
+            if diagnostics is not None:
+                diagnostic_output = _forward(model, validation)
+                validation_mae, validation_rmse = _validation_point_metrics(
+                    diagnostic_output,
+                    validation,
+                )
+                flow_mean, flow_median, flow_p95 = _flow_displacement(
+                    diagnostic_output,
+                    validation,
+                )
+
+        should_stop = False
         if validation_loss < best_loss:
             best_loss = validation_loss
             best_state = deepcopy(model.state_dict())
+            best_epoch = epoch
             stale_epochs = 0
         else:
             stale_epochs += 1
-            if stale_epochs >= config.patience:
-                break
+            should_stop = stale_epochs >= config.patience
+
+        if diagnostics is not None:
+            for name, value in (
+                ("train_core_loss", train_loss),
+                ("validation_core_loss", validation_loss),
+                ("validation_mae", validation_mae),
+                ("validation_rmse", validation_rmse),
+                ("gradient_l2_norm", gradient_norm),
+                ("parameter_l2_norm", parameter_norm),
+                ("mean_flow_displacement", flow_mean),
+                ("median_flow_displacement", flow_median),
+                ("p95_flow_displacement", flow_p95),
+                ("best_validation_core_loss_so_far", best_loss),
+            ):
+                _require_finite_diagnostic(name, value)
+
+            if validation_mae < shadow_best_mae:
+                shadow_best_mae = validation_mae
+                shadow_best_epoch = epoch
+                shadow_best_state = deepcopy(model.state_dict())
+
+            _emit_epoch(
+                diagnostics,
+                TrainingDiagnosticEpochRecord(
+                    epoch=epoch,
+                    train_core_loss=train_loss,
+                    validation_core_loss=validation_loss,
+                    validation_mae=validation_mae,
+                    validation_rmse=validation_rmse,
+                    gradient_l2_norm=gradient_norm,
+                    parameter_l2_norm=parameter_norm,
+                    mean_flow_displacement=flow_mean,
+                    median_flow_displacement=flow_median,
+                    p95_flow_displacement=flow_p95,
+                    best_validation_core_loss_so_far=best_loss,
+                    best_core_epoch=best_epoch,
+                    shadow_best_validation_mae_so_far=shadow_best_mae,
+                    shadow_best_mae_epoch=shadow_best_epoch,
+                    stale_epochs=stale_epochs,
+                ),
+            )
+
+        epochs_run = epoch
+        if should_stop:
+            early_stop_reason = "patience_exhausted"
+            break
+
     model.load_state_dict(best_state)
+
+    if diagnostics is not None:
+        if shadow_best_state is None or best_epoch == 0 or shadow_best_epoch == 0:
+            raise RuntimeError("diagnostic checkpoint selection did not initialize")
+        _emit_summary(
+            diagnostics,
+            TrainingDiagnosticSummary(
+                epochs_run=epochs_run,
+                stop_epoch=epochs_run,
+                selected_checkpoint_epoch=best_epoch,
+                selected_validation_core_loss=best_loss,
+                shadow_mae_checkpoint_epoch=shadow_best_epoch,
+                shadow_validation_mae=shadow_best_mae,
+                early_stop_reason=early_stop_reason,
+                production_state_dict=_cpu_state_dict(best_state),
+                shadow_state_dict=_cpu_state_dict(shadow_best_state),
+            ),
+        )
     return model
 
 
@@ -191,8 +426,9 @@ def fit_phase05_model(
     validation: dict[str, torch.Tensor],
     config: Phase05Config,
     device: torch.device,
+    diagnostics: TrainingDiagnosticObserver | None = None,
 ) -> Phase05FlowJumpAdapter:
-    _fit_core(model, train, validation, config, device)
+    _fit_core(model, train, validation, config, device, diagnostics)
     if model.uncertainty_mode == "decoupled":
         fit_decoupled_scale_head(model, train, validation, config, device)
     return model
@@ -237,6 +473,9 @@ def evaluate_phase05_model(
 
 
 __all__ = [
+    "TrainingDiagnosticEpochRecord",
+    "TrainingDiagnosticObserver",
+    "TrainingDiagnosticSummary",
     "evaluate_phase05_model",
     "fit_decoupled_scale_head",
     "fit_phase05_model",
