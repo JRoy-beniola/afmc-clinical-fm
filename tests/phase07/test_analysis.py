@@ -118,15 +118,17 @@ def test_crossed_bootstrap_is_deterministic_and_recomputes_residualization():
     assert first["bootstrap_seed"] == 20260827
     assert first["mean_G_ci_lower"] > 0
     assert first["mean_G_ci_upper"] > first["mean_G_ci_lower"]
-    assert first["R_SD_valid_replicates"] <= 10_000
+    assert first["R_SD_valid_replicates"] < first["bootstrap_resamples"]
     assert first["R_SD_valid_replicates"] > 0
+    assert np.isnan(first["R_SD_ci_lower"])
+    assert np.isnan(first["R_SD_ci_upper"])
 
     changed_pairs = module.build_phase07_pair_table(_metric_matrix(forced_shift=0.35))
     changed = module.crossed_phase07_bootstrap(changed_pairs)
     assert changed["mean_G_ci_lower"] != first["mean_G_ci_lower"]
 
 
-def _statistics(module, *, causal: bool, heterogeneity: bool):
+def _statistics(module, *, causal: bool, heterogeneity: bool, valid_replicates: int = 10_000):
     return module.Phase07Statistics(
         mean_G=0.2 if causal else -0.01,
         mean_G_ci_lower=0.05 if causal else -0.05,
@@ -139,7 +141,7 @@ def _statistics(module, *, causal: bool, heterogeneity: bool):
         positive_model_mean_G=9 if causal else 7,
         bootstrap_resamples=10_000,
         bootstrap_seed=20260827,
-        R_SD_valid_replicates=9_900,
+        R_SD_valid_replicates=valid_replicates,
     )
 
 
@@ -158,7 +160,24 @@ def _statistics(module, *, causal: bool, heterogeneity: bool):
 )
 def test_frozen_adjudication_has_exact_three_level_outcome(causal, heterogeneity, expected):
     module = _analysis_api()
-    assert module.adjudicate_phase07(_statistics(module, causal=causal, heterogeneity=heterogeneity)) == expected
+    assert module.adjudicate_phase07(
+        _statistics(module, causal=causal, heterogeneity=heterogeneity)
+    ) == expected
+
+
+def test_incomplete_r_sd_bootstrap_invalidates_heterogeneity_gate():
+    module = _analysis_api()
+    statistics = _statistics(
+        module,
+        causal=True,
+        heterogeneity=True,
+        valid_replicates=9_999,
+    )
+
+    assert (
+        module.adjudicate_phase07(statistics)
+        == "P07_OPTIMIZATION_HORIZON_EFFECT_ONLY"
+    )
 
 
 def test_analysis_rejects_any_matrix_other_than_exact_frozen_200_cells():
