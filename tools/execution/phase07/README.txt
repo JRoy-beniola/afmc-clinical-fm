@@ -18,7 +18,7 @@ Official execution is fail-closed and requires a clean checkout whose imported P
 
   afmc-phase07 official --authorization <authorization.json> --output <output-dir> --device cuda
 
-The clean-worktree guard is anchored to the repository containing the imported Phase 0.7 execution module, not to the caller's current working directory. Running the CLI from another clean Git checkout cannot mask dirty imported execution or analysis source.
+The clean-worktree and commit guards are anchored to one repository resolved from the imported Phase 0.7 execution module, not to the caller's current working directory. Repository-selecting Git environment variables are stripped from these Git subprocesses, so inherited GIT_DIR, GIT_WORK_TREE, or other GIT_* overrides cannot redirect identity checks to another checkout.
 
 The Phase 0.5 and simulator configurations are loaded once for an invocation. The manifest hashes those exact loaded configuration objects, authorization binds those hashes, and the same objects are passed into official execution. They are not reloaded after authorization.
 
