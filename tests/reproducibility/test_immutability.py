@@ -11,6 +11,8 @@ from afmc_fm.reproducibility.rerun import execute_rerun, plan_rerun
 
 from .test_rerun import _fixture_repository
 
+_FROZEN_PHASE_IDS = ("phase0", "phase05", "phase06", "phase06-posthoc")
+
 
 def tree_snapshot(root: Path) -> dict[str, str]:
     if not root.is_dir():
@@ -24,8 +26,8 @@ def tree_snapshot(root: Path) -> dict[str, str]:
 
 def historical_snapshots(repository: Path) -> dict[str, dict[str, str]]:
     return {
-        phase.phase_id: tree_snapshot(repository / phase.official_evidence_root)
-        for phase in iter_phases()
+        phase_id: tree_snapshot(repository / get_phase(phase_id).official_evidence_root)
+        for phase_id in _FROZEN_PHASE_IDS
     }
 
 
