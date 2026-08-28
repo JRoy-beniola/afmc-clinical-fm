@@ -2,10 +2,10 @@ import hashlib
 import json
 from pathlib import Path
 
-from afmc_fm.reproducibility.rebuild import rebuild_phase
 from docx import Document
 
 from afmc_fm.reproducibility.models import PhaseDefinition
+from afmc_fm.reproducibility.rebuild import rebuild_phase
 from afmc_fm.reproducibility.registry import PHASES
 from afmc_fm.reproducibility.report_manifest import build_manifest, dump_manifest
 from afmc_fm.reproducibility.report_source import extract_docx, render_markdown
