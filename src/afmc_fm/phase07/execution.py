@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import subprocess
 from collections.abc import Callable, Sequence
 from copy import deepcopy
@@ -11,7 +13,6 @@ import pandas as pd
 import torch
 
 from afmc_fm.config import load_yaml
-from afmc_fm.execution.manifest import execution_commit_sha
 from afmc_fm.execution.persistence import canonical_config_hash
 from afmc_fm.phase05.config import Phase05Config, load_phase05_config
 from afmc_fm.phase05.model import Phase05FlowJumpAdapter
@@ -30,6 +31,7 @@ from afmc_fm.simulator.config import SimulatorConfig
 
 _EXPECTED_CELL_COUNT = 200
 _AUTHORIZATION_VALUE = "OFFICIAL_EXECUTION_AUTHORIZED"
+_COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 
 
 def _canonical_json_bytes(payload: object) -> bytes:
@@ -69,10 +71,57 @@ def _resolve_dependency_configs(
     return phase05_config, simulator_config
 
 
+def _phase07_git_environment() -> dict[str, str]:
+    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+
+
+def _phase07_source_repository_root() -> Path:
+    source = Path(__file__).resolve()
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=source.parent,
+        env=_phase07_git_environment(),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    raw_root = result.stdout.strip()
+    if not raw_root:
+        raise RuntimeError("unable to resolve the Phase 0.7 source repository")
+    root = Path(raw_root).resolve()
+    if not source.is_relative_to(root):
+        raise RuntimeError("Phase 0.7 source is not contained in its resolved Git repository")
+    return root
+
+
+def phase07_execution_commit_sha() -> str:
+    """Return HEAD for the repository containing the imported Phase 0.7 source."""
+    root = _phase07_source_repository_root()
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        env=_phase07_git_environment(),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    commit = result.stdout.strip().lower()
+    if _COMMIT_PATTERN.fullmatch(commit) is None:
+        raise RuntimeError("git rev-parse HEAD did not return a full commit SHA")
+    return commit
+
+
+def execution_commit_sha() -> str:
+    """Compatibility wrapper for the Phase 0.7 source-anchored commit resolver."""
+    return phase07_execution_commit_sha()
+
+
 def require_clean_phase07_checkout() -> None:
+    root = _phase07_source_repository_root()
     result = subprocess.run(
         ["git", "status", "--porcelain", "--untracked-files=all"],
-        cwd=Path(__file__).resolve().parent,
+        cwd=root,
+        env=_phase07_git_environment(),
         check=True,
         capture_output=True,
         text=True,
@@ -396,7 +445,9 @@ def run_phase07_device_smoke(device: str) -> dict[str, object]:
 
 __all__ = [
     "build_phase07_execution_manifest",
+    "execution_commit_sha",
     "load_completed_phase07_metrics",
+    "phase07_execution_commit_sha",
     "require_clean_phase07_checkout",
     "require_phase07_official_authorization",
     "run_phase07_device_smoke",
