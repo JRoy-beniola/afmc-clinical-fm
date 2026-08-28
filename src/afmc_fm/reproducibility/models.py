@@ -13,6 +13,7 @@ class ManifestSpec:
 
     path: Path
     base: ManifestBase
+    unavailable_patterns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
