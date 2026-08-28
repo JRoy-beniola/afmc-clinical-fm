@@ -254,6 +254,98 @@ def test_completed_metrics_loader_requires_valid_complete_marker(tmp_path):
         module.load_completed_phase07_metrics(store, cells)
 
     store.mark_complete(cells)
+    (tmp_path / "phase07_metrics.csv").write_text(
+        "stage,value\ncorrupt,999\n",
+        encoding="utf-8",
+    )
     loaded = module.load_completed_phase07_metrics(store, cells)
     assert len(loaded) == len(cells)
     assert set(loaded["model_seed"]) == {1101, 1102}
+    assert "corrupt" not in set(loaded["stage"])
+
+
+def test_interrupted_resume_matches_uninterrupted_semantic_evidence(tmp_path):
+    module = _execution_api()
+    cells = _cells()
+    resumed_root = tmp_path / "resumed"
+    uninterrupted_root = tmp_path / "uninterrupted"
+
+    interrupted = _store(resumed_root, cells, resume=False)
+    attempts = 0
+
+    def fail_once(cell: Phase07CellSpec) -> Phase07CellRun:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 3:
+            raise RuntimeError("simulated interruption")
+        return _result(cell)
+
+    with pytest.raises(RuntimeError, match="simulated interruption"):
+        module._run_phase07_cells_with_store(
+            cells,
+            store=interrupted,
+            resume=False,
+            execute_cell=fail_once,
+        )
+
+    resumed = _store(resumed_root, cells, resume=True)
+    module._run_phase07_cells_with_store(
+        cells,
+        store=resumed,
+        resume=True,
+        execute_cell=_result,
+    )
+    resumed.mark_complete(cells)
+
+    uninterrupted = _store(uninterrupted_root, cells, resume=False)
+    module._run_phase07_cells_with_store(
+        cells,
+        store=uninterrupted,
+        resume=False,
+        execute_cell=_result,
+    )
+    uninterrupted.mark_complete(cells)
+
+    pd.testing.assert_frame_equal(
+        resumed.load_metrics(cells).sort_values(
+            ["model_seed", "optimization_policy"]
+        ).reset_index(drop=True),
+        uninterrupted.load_metrics(cells).sort_values(
+            ["model_seed", "optimization_policy"]
+        ).reset_index(drop=True),
+        check_dtype=False,
+    )
+
+    for cell in cells:
+        resumed_bundle = resumed.cells_dir / cell.cell_id
+        uninterrupted_bundle = uninterrupted.cells_dir / cell.cell_id
+        pd.testing.assert_frame_equal(
+            pd.read_csv(resumed_bundle / "training_trace.csv"),
+            pd.read_csv(uninterrupted_bundle / "training_trace.csv"),
+            check_dtype=False,
+        )
+        assert json.loads((resumed_bundle / "summary.json").read_text(encoding="utf-8")) == json.loads(
+            (uninterrupted_bundle / "summary.json").read_text(encoding="utf-8")
+        )
+        for checkpoint in (
+            "production_checkpoint.pt",
+            "shadow_mae_checkpoint.pt",
+        ):
+            resumed_state = torch.load(
+                resumed_bundle / checkpoint,
+                map_location="cpu",
+                weights_only=True,
+            )
+            uninterrupted_state = torch.load(
+                uninterrupted_bundle / checkpoint,
+                map_location="cpu",
+                weights_only=True,
+            )
+            assert resumed_state.keys() == uninterrupted_state.keys()
+            for key in resumed_state:
+                torch.testing.assert_close(
+                    resumed_state[key],
+                    uninterrupted_state[key],
+                    rtol=0,
+                    atol=0,
+                )
