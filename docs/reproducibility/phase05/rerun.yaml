@@ -1,0 +1,52 @@
+schema_version: 1
+phase_id: phase05
+supported: false
+blocked_reason: >-
+  The authentic Stage-I/Stage-II hard-stop runner is preserved, but it requires a
+  project-local historical .venv, CUDA-capable runtime, and the immutable Phase 0
+  metrics parent. R4 does not yet provision that historical execution environment
+  inside the detached worktree, so execution remains blocked rather than falling
+  back to the current environment.
+implementation_sha: 50a94c06bc1c419ca55738f15f074cc06ccc3f36
+command:
+  - bash
+  - tools/execution/phase05/run_stage1.sh
+  - fresh
+environment:
+  REPO: "{worktree}"
+  CONTROL: "{output}/control"
+  PHASE05_OUTPUT: "{output}/scientific"
+  PHASE0_METRICS: "{parent:phase0_metrics}"
+required_paths:
+  - tools/execution/phase05/run_stage1.sh
+  - configs/experiments/phase05.yaml
+  - configs/simulator/full.yaml
+  - docs/superpowers/validation/2026-08-24-phase0-5-core-validation.md
+required_parent_bindings:
+  - name: phase0_metrics
+    environment_variable: PHASE0_METRICS
+    source: docs/results/phase0/raw/metrics.csv
+    sha256: f829502bc3489b3608c1ba06c9b4ca0c0910872c88ee628325339232c6816dcf
+seed_policy:
+  mode: historical_exact
+  protected_confirmatory: false
+  historical_exact_only: true
+  recorded_seeds:
+    - 401
+    - 402
+    - 403
+    - 404
+    - 405
+    - 501
+    - 502
+    - 503
+    - 504
+    - 505
+    - 601
+    - 602
+    - 603
+    - 604
+    - 605
+comparison_policy:
+  decision: PHASE-0.5 TERMINATED AT STAGE I-A — FLOW MECHANISM GATE NOT ESTABLISHED
+  note: The preserved runner hard-stops before any later protected-seed stage.
