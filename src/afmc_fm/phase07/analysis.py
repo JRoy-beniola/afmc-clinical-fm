@@ -241,8 +241,8 @@ def crossed_phase07_bootstrap(pairs: pd.DataFrame) -> dict[str, int | float]:
 
     mean_lower, mean_upper = np.quantile(mean_g, [0.025, 0.975])
     finite_ratios = ratios[np.isfinite(ratios)]
-    if finite_ratios.size:
-        ratio_lower, ratio_upper = np.quantile(finite_ratios, [0.025, 0.975])
+    if finite_ratios.size == _BOOTSTRAP_RESAMPLES:
+        ratio_lower, ratio_upper = np.quantile(ratios, [0.025, 0.975])
     else:
         ratio_lower = ratio_upper = float("nan")
 
@@ -291,7 +291,8 @@ def adjudicate_phase07(statistics: Phase07Statistics) -> str:
         and statistics.positive_model_mean_G >= 8
     )
     heterogeneity = (
-        np.isfinite(statistics.R_SD)
+        statistics.R_SD_valid_replicates == statistics.bootstrap_resamples
+        and np.isfinite(statistics.R_SD)
         and statistics.R_SD < 1
         and np.isfinite(statistics.R_SD_ci_upper)
         and statistics.R_SD_ci_upper < 1
