@@ -1,0 +1,39 @@
+schema_version: 1
+phase_id: phase0
+supported: false
+blocked_reason: >-
+  The archive records the Phase 0 execution SHA and runtime metadata but does not
+  preserve a canonical historical launch kit or immutable environment lock from
+  which the exact official invocation can be justified without reconstruction.
+implementation_sha: d6f105eee73fcb8e9cc5987d292b1bb98a687382
+command: []
+environment: {}
+required_paths:
+  - configs/experiments/low_n.yaml
+  - configs/simulator/full.yaml
+  - docs/results/phase0/raw/run_manifest.json
+  - docs/results/phase0/raw/metrics.csv
+required_parent_bindings: []
+seed_policy:
+  mode: historical_exact
+  protected_confirmatory: false
+  historical_exact_only: true
+  recorded_seeds:
+    - 101
+    - 102
+    - 103
+    - 104
+    - 105
+    - 201
+    - 202
+    - 203
+    - 204
+    - 205
+    - 301
+    - 302
+    - 303
+    - 304
+    - 305
+comparison_policy:
+  decision: PHASE 0 COMPLETE — EXTREME-LOW-N HYPOTHESIS NOT VALIDATED.
+  note: No execution is authorized while supported is false.
