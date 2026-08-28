@@ -2,8 +2,8 @@ import hashlib
 from pathlib import Path
 
 import pytest
-from afmc_fm.reproducibility.artifacts import materialize_artifact
 
+from afmc_fm.reproducibility.artifacts import materialize_artifact
 from afmc_fm.reproducibility.rebuild_models import ArtifactDeclaration
 
 
