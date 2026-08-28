@@ -113,15 +113,24 @@ def test_crossed_bootstrap_is_deterministic_and_recomputes_residualization():
     first = module.crossed_phase07_bootstrap(pairs)
     second = module.crossed_phase07_bootstrap(pairs)
 
-    assert first == second
+    for key in (
+        "bootstrap_resamples",
+        "bootstrap_seed",
+        "mean_G_ci_lower",
+        "mean_G_ci_upper",
+        "R_SD_valid_replicates",
+    ):
+        assert first[key] == second[key]
+    assert np.isnan(first["R_SD_ci_lower"])
+    assert np.isnan(second["R_SD_ci_lower"])
+    assert np.isnan(first["R_SD_ci_upper"])
+    assert np.isnan(second["R_SD_ci_upper"])
     assert first["bootstrap_resamples"] == 10_000
     assert first["bootstrap_seed"] == 20260827
     assert first["mean_G_ci_lower"] > 0
     assert first["mean_G_ci_upper"] > first["mean_G_ci_lower"]
     assert first["R_SD_valid_replicates"] < first["bootstrap_resamples"]
     assert first["R_SD_valid_replicates"] > 0
-    assert np.isnan(first["R_SD_ci_lower"])
-    assert np.isnan(first["R_SD_ci_upper"])
 
     changed_pairs = module.build_phase07_pair_table(_metric_matrix(forced_shift=0.35))
     changed = module.crossed_phase07_bootstrap(changed_pairs)
