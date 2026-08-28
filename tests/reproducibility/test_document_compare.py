@@ -1,5 +1,4 @@
 from afmc_fm.reproducibility.document_compare import compare_snapshots
-
 from afmc_fm.reproducibility.report_source import (
     ImageBlock,
     ParagraphBlock,
