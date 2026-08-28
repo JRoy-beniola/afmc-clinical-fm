@@ -102,6 +102,7 @@ def test_rebuild_phase_orchestrates_without_mutating_official_archive(tmp_path: 
 
     after = _tree_snapshot(tmp_path / phase.official_evidence_root)
     expected_root = (tmp_path / "outputs/reproduction/fixture/rebuild").resolve()
+    assert report.structural_comparison.ok, report.structural_comparison.to_json_dict()
     assert report.ok
     assert report.destination == expected_root
     assert report.candidate_report == expected_root / "report/candidate.docx"
@@ -110,7 +111,6 @@ def test_rebuild_phase_orchestrates_without_mutating_official_archive(tmp_path: 
     assert report.rebuild_report.is_file()
     assert report.reference_copy_count == 1
     assert report.generated_count == 0
-    assert report.structural_comparison.ok
     assert report.historical_archive_unchanged
     assert before == after
 
