@@ -125,6 +125,13 @@ print("fixture historical execution")
     return repository, historical_sha, current_sha
 
 
+def _update_spec(repository: Path, mutate) -> None:
+    path = repository / "docs/reproducibility/fixture/rerun.yaml"
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    mutate(payload)
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
 def test_rerun_plan_and_execution_use_historical_commit_and_isolated_output(
     tmp_path: Path,
     monkeypatch,
@@ -168,3 +175,21 @@ def test_rerun_plan_and_execution_use_historical_commit_and_isolated_output(
     assert (repository / "run.py").read_text(encoding="utf-8") == (
         "raise RuntimeError('CURRENT HEAD MUST NOT EXECUTE')\n"
     )
+
+
+def test_rerun_plan_rejects_required_path_absent_from_historical_commit(
+    tmp_path: Path,
+    monkeypatch,
+):
+    repository, _, _ = _fixture_repository(tmp_path, monkeypatch)
+    (repository / "late_only.py").write_text("print('current only')\n", encoding="utf-8")
+    _update_spec(
+        repository,
+        lambda payload: payload.update(required_paths=["run.py", "late_only.py"]),
+    )
+
+    plan = plan_rerun(repository, "fixture", run_id="historical-path-check")
+
+    assert plan.status == "BLOCKED_POLICY"
+    assert any("late_only.py" in reason for reason in plan.reasons)
+    assert not plan.destination.exists()
