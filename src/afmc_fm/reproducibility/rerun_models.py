@@ -145,7 +145,7 @@ def _seed_policy(value: object) -> SeedPolicy:
     if not isinstance(mode, str) or not mode:
         raise ValueError("seed_policy.mode must be a non-empty string")
     if not isinstance(protected, bool) or not isinstance(exact_only, bool):
-        raise ValueError("seed_policy boolean fields must be booleans")
+        raise TypeError("seed_policy boolean fields must be booleans")
     if not isinstance(seeds, list) or not all(isinstance(seed, int) and not isinstance(seed, bool) for seed in seeds):
         raise ValueError("seed_policy.recorded_seeds must be a list of integers")
 
@@ -183,7 +183,7 @@ def load_rerun_spec(path: Path) -> RerunSpec:
     if not isinstance(phase_id, str) or not phase_id or "/" in phase_id or "\\" in phase_id:
         raise ValueError("phase_id must be a simple non-empty identifier")
     if not isinstance(supported, bool):
-        raise ValueError("supported must be a boolean")
+        raise TypeError("supported must be a boolean")
     if blocked_reason is not None and not isinstance(blocked_reason, str):
         raise ValueError("blocked_reason must be null or a string")
     if not isinstance(implementation_sha, str) or not implementation_sha:
@@ -191,7 +191,7 @@ def load_rerun_spec(path: Path) -> RerunSpec:
 
     required_paths_raw = data["required_paths"]
     if not isinstance(required_paths_raw, list):
-        raise ValueError("required_paths must be a list")
+        raise TypeError("required_paths must be a list")
     required_paths = tuple(
         _safe_relative_path(item, label=f"required_paths[{index}]")
         for index, item in enumerate(required_paths_raw)
@@ -199,7 +199,7 @@ def load_rerun_spec(path: Path) -> RerunSpec:
 
     parents_raw = data["required_parent_bindings"]
     if not isinstance(parents_raw, list):
-        raise ValueError("required_parent_bindings must be a list")
+        raise TypeError("required_parent_bindings must be a list")
     parents = tuple(
         _parent_binding(item, index=index) for index, item in enumerate(parents_raw)
     )
