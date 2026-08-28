@@ -63,9 +63,11 @@ def test_missing_historical_sha_fails_without_current_head_fallback(tmp_path: Pa
     repository, _, current_sha = _fixture_repository(tmp_path)
     missing_sha = "f" * 40
 
-    with pytest.raises(ValueError, match="historical commit"):
-        with historical_worktree(repository, missing_sha):
-            pytest.fail("missing historical SHA must not yield a worktree")
+    with (
+        pytest.raises(ValueError, match="historical commit"),
+        historical_worktree(repository, missing_sha),
+    ):
+        pytest.fail("missing historical SHA must not yield a worktree")
 
     assert _git(repository, "rev-parse", "HEAD") == current_sha
     assert (repository / "marker.txt").read_text(encoding="utf-8") == "CURRENT\n"
