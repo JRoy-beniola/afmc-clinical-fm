@@ -19,3 +19,32 @@ jobs:
       - run: pip install -e . --no-deps
       - run: ruff check src tests tools/reproducibility
       - run: pytest tests/reproducibility -q
+      - name: Bootstrap audited historical report sources
+        run: |
+          set -euo pipefail
+          python tools/reproducibility/bootstrap_reports.py phase0 --root . --destination /tmp/r2-bootstrap/phase0
+          python tools/reproducibility/bootstrap_reports.py phase05 --root . --destination /tmp/r2-bootstrap/phase05
+          python tools/reproducibility/bootstrap_reports.py phase06 --root . --destination /tmp/r2-bootstrap/phase06
+          python - <<'PY'
+          from pathlib import Path
+
+          from afmc_fm.reproducibility.registry import get_phase
+          from afmc_fm.reproducibility.report_audit import audit_report_source
+
+          for phase_id in ("phase0", "phase05", "phase06"):
+              report = audit_report_source(
+                  Path("."),
+                  get_phase(phase_id),
+                  Path("/tmp/r2-bootstrap") / phase_id,
+                  accept=True,
+              )
+              failures = [check for check in report.checks if not check.ok]
+              if failures:
+                  details = "; ".join(f"{item.code}: {item.detail}" for item in failures)
+                  raise SystemExit(f"{phase_id} report-source audit failed: {details}")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r2-report-sources
+          path: /tmp/r2-bootstrap
+          if-no-files-found: error
