@@ -23,12 +23,26 @@ afmc-reproduce verify all
 
 A reproduction output under `outputs/reproduction/` is never treated as official historical evidence.
 
+## Historical report-source recovery
+
+R2 recovered deterministic, version-controlled documentary source for the Phase 0, Phase 0.5, and Phase 0.6 official DOCX reports. Each recovered bundle under `docs/reproducibility/<phase>/` contains:
+
+- `report-source.md`, a non-generative deterministic rendering of the DOCX body;
+- `extraction.json`, the ordered OOXML extraction snapshot;
+- `report.yaml`, which cryptographically binds the recovered source and snapshot to the SHA-256 of the immutable official DOCX and records the accepted audit state.
+
+The official DOCX under `docs/results/` remains authoritative. The recovered Markdown is a reproducibility aid, not a replacement historical report. Re-auditing re-extracts the DOCX read-only and must leave every historical archive byte unchanged.
+
+No canonical report source is claimed for the post-Phase-0.6 exploratory archive because there is no registered official historical report for that phase.
+
 ## Status vocabulary
 
 - `environment=exact` means an exact historical environment lock is available and verified.
 - `environment=reconstructed` means a best-effort reconstruction is explicitly documented.
 - `environment=unknown` means the archive does not yet justify either stronger label.
-- `rebuild=yes` or `rerun=yes` is shown only after that capability has been implemented and validated. R1 does not infer support from the mere existence of historical code.
+- `rebuild=yes` or `rerun=yes` is shown only after that capability has been implemented and validated. Report-source recovery alone does not establish either capability.
+
+At the end of R2, the environment status remains unchanged and `rebuild_supported` / `rerun_supported` remain false for every registered phase. Those capabilities, if supportable, are established only by later reproducibility stages with their own verification gates.
 
 ## Evidence hierarchy
 
