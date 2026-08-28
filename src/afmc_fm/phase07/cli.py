@@ -28,6 +28,7 @@ from afmc_fm.phase07.execution import (
 )
 from afmc_fm.phase07.planning import Phase07CellSpec, phase07_plan_sha256, plan_phase07_cells
 from afmc_fm.phase07.protocol import build_phase07_protocol_lock
+from afmc_fm.phase07.provenance import Phase07ExecutionProvenance
 from afmc_fm.phase07.runner import prepare_phase07_cohort, run_phase07_cell
 from afmc_fm.phase07.store import Phase07Store
 from afmc_fm.simulator.config import SimulatorConfig
@@ -147,11 +148,8 @@ def execute_authorized_phase07(
     if execution_commit_sha() != manifest["execution_commit"]:
         raise ValueError("Phase 0.7 execution checkout does not match the authorized commit")
     require_phase07_official_authorization(authorization_path, manifest)
-
     if device not in {"cpu", "cuda"}:
         raise ValueError("device must be cpu or cuda")
-    if device == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError("CUDA is unavailable for official Phase 0.7 execution")
 
     phase05_config = load_phase05_config(config.phase05_config)
     if phase05_config.max_epochs != config.max_epochs or phase05_config.patience != config.patience:
@@ -163,32 +161,54 @@ def execute_authorized_phase07(
         output=output,
         resume=resume,
     )
-    resolved_device = torch.device(device)
-    prepared_by_cohort: dict[int, object] = {}
-
-    def execute_cell(cell: Phase07CellSpec):
-        prepared = prepared_by_cohort.get(cell.cohort_seed)
-        if prepared is None:
-            prepared = prepare_phase07_cohort(simulator_config, cell)
-            prepared_by_cohort[cell.cohort_seed] = prepared
-        return run_phase07_cell(prepared, phase05_config, cell, resolved_device)
-
-    completed = run_phase07_official_cells(
-        cells,
-        config=config,
-        execution_commit=str(manifest["execution_commit"]),
-        phase07_spec_path=config.phase07_spec,
-        authorization_path=authorization_path,
-        execute_cell=execute_cell,
-        store=store,
-        resume=resume,
+    completed_before = store.validate_resume(cells)
+    provenance = Phase07ExecutionProvenance(
+        output,
+        identity=_store_identity(manifest),
+        device=device,
+        planned_cell_count=len(cells),
     )
+    provenance.start(completed_before=len(completed_before))
 
-    metrics = store.load_metrics(cells)
-    build_phase07_pair_table(metrics)
-    _write_aggregate_metrics_atomic(output, metrics)
-    store.mark_complete(cells)
-    load_completed_phase07_metrics(store, cells)
+    try:
+        if device == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("CUDA is unavailable for official Phase 0.7 execution")
+        resolved_device = torch.device(device)
+        prepared_by_cohort: dict[int, object] = {}
+
+        def execute_cell(cell: Phase07CellSpec):
+            provenance.attempt(cell.cell_id)
+            prepared = prepared_by_cohort.get(cell.cohort_seed)
+            if prepared is None:
+                prepared = prepare_phase07_cohort(simulator_config, cell)
+                prepared_by_cohort[cell.cohort_seed] = prepared
+            return run_phase07_cell(prepared, phase05_config, cell, resolved_device)
+
+        completed = run_phase07_official_cells(
+            cells,
+            config=config,
+            execution_commit=str(manifest["execution_commit"]),
+            phase07_spec_path=config.phase07_spec,
+            authorization_path=authorization_path,
+            execute_cell=execute_cell,
+            store=store,
+            resume=resume,
+        )
+
+        metrics = store.load_metrics(cells)
+        build_phase07_pair_table(metrics)
+        _write_aggregate_metrics_atomic(output, metrics)
+        store.mark_complete(cells)
+        load_completed_phase07_metrics(store, cells)
+    except BaseException as error:
+        try:
+            completed_after = len(store.validate_resume(cells))
+        except (OSError, TypeError, ValueError):
+            completed_after = len(completed_before)
+        provenance.fail(completed_after=completed_after, error=error)
+        raise
+
+    provenance.finish(completed_after=len(cells))
     return completed
 
 
@@ -315,7 +335,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "analyze":
-        print(json.dumps(analyze_completed_phase07(config=config, manifest=manifest, output=args.output), sort_keys=True))
+        print(
+            json.dumps(
+                analyze_completed_phase07(
+                    config=config,
+                    manifest=manifest,
+                    output=args.output,
+                ),
+                sort_keys=True,
+            )
+        )
         return 0
 
     raise RuntimeError(f"unhandled Phase 0.7 command: {args.command}")
