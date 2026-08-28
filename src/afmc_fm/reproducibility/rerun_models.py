@@ -293,6 +293,18 @@ def validate_rerun_spec(
         )
     )
 
+    command_ok = bool(spec.command)
+    checks.append(
+        _check(
+            "command_required",
+            command_ok,
+            spec.phase_id,
+            "rerun command is declared"
+            if command_ok
+            else "supported rerun requires a non-empty command",
+        )
+    )
+
     for path in spec.required_paths:
         exists = (repository / path).exists()
         checks.append(
@@ -375,7 +387,9 @@ def validate_rerun_spec(
                 "missing_parent_source",
                 exists,
                 binding.source.as_posix(),
-                "parent source exists" if exists else "parent source is missing",
+                "parent source exists"
+                if exists
+                else f"parent source is missing: {binding.source.as_posix()}",
             )
         )
         if not spec.supported:
