@@ -81,6 +81,79 @@ def test_manifest_path_traversal_is_rejected(tmp_path):
     assert any(check.code == "unsafe_manifest_path" for check in report.checks)
 
 
+def test_declared_repository_unavailable_manifest_target_is_non_failing(tmp_path):
+    write_valid_fixture(tmp_path)
+    manifest = tmp_path / "docs/results/fixture/MANIFEST.sha256"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + "0" * 64 + "  checkpoints/model.pt\n",
+        encoding="utf-8",
+    )
+    phase = dataclasses.replace(
+        fixture_phase(),
+        manifests=(
+            ManifestSpec(
+                Path("docs/results/fixture/MANIFEST.sha256"),
+                "manifest_parent",
+                unavailable_patterns=("*.pt",),
+            ),
+        ),
+    )
+
+    report = verify_phase(tmp_path, phase)
+
+    unavailable = [
+        check for check in report.checks if check.subject.endswith("checkpoints/model.pt")
+    ]
+    assert len(unavailable) == 1
+    assert unavailable[0].code == "manifest_target_unavailable"
+    assert unavailable[0].ok is True
+    assert report.ok is True
+
+
+def test_unavailable_manifest_pattern_does_not_hide_other_missing_files(tmp_path):
+    write_valid_fixture(tmp_path)
+    manifest = tmp_path / "docs/results/fixture/MANIFEST.sha256"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + "0" * 64 + "  missing.csv\n",
+        encoding="utf-8",
+    )
+    phase = dataclasses.replace(
+        fixture_phase(),
+        manifests=(
+            ManifestSpec(
+                Path("docs/results/fixture/MANIFEST.sha256"),
+                "manifest_parent",
+                unavailable_patterns=("*.pt",),
+            ),
+        ),
+    )
+
+    report = verify_phase(tmp_path, phase)
+
+    assert any(
+        check.code == "missing_path" and check.subject.endswith("missing.csv")
+        for check in report.checks
+    )
+    assert report.ok is False
+
+
+def test_undeclared_missing_pt_remains_failure(tmp_path):
+    write_valid_fixture(tmp_path)
+    manifest = tmp_path / "docs/results/fixture/MANIFEST.sha256"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + "0" * 64 + "  checkpoints/model.pt\n",
+        encoding="utf-8",
+    )
+
+    report = verify_phase(tmp_path, fixture_phase())
+
+    assert any(
+        check.code == "missing_path" and check.subject.endswith("checkpoints/model.pt")
+        for check in report.checks
+    )
+    assert report.ok is False
+
+
 def test_classification_mismatch_is_detected(tmp_path):
     write_valid_fixture(tmp_path)
     decision = tmp_path / "docs/results/fixture/decision.md"
