@@ -227,11 +227,15 @@ def test_execute_authorized_phase07_uses_preloaded_dependencies_without_reloadin
 def test_resume_validates_persisted_identity_before_cuda_resolution(tmp_path, monkeypatch):
     module = _cli_api()
     config = load_phase07_config(_CONFIG_PATH)
+    phase05_config = module.load_phase05_config(config.phase05_config)
+    simulator_config = module._load_simulator_config(config.simulator_config)
     execution_sha = "a" * 40
     manifest = module.build_phase07_execution_manifest(
         config,
         execution_commit=execution_sha,
         phase07_spec_path=config.phase07_spec,
+        phase05_config=phase05_config,
+        simulator_config=simulator_config,
     )
     cuda_checked = False
 
@@ -253,6 +257,8 @@ def test_resume_validates_persisted_identity_before_cuda_resolution(tmp_path, mo
     with pytest.raises(ValueError, match="persisted identity mismatch"):
         module.execute_authorized_phase07(
             config=config,
+            phase05_config=phase05_config,
+            simulator_config=simulator_config,
             manifest=manifest,
             authorization_path=tmp_path / "authorization.json",
             output=tmp_path / "official",
