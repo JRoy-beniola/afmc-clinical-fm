@@ -1,6 +1,6 @@
 # Phase 0.7 Prospective Optimization-Horizon Intervention Design
 
-Status: **REVIEW CANDIDATE — NOT FROZEN — NO OFFICIAL EXECUTION AUTHORIZED**
+Status: **FROZEN — IMPLEMENTATION AUTHORIZED — NO OFFICIAL EXECUTION AUTHORIZED**
 
 Date: 2026-08-28
 
@@ -335,10 +335,10 @@ Before any official Phase 0.7 cell may run, implementation must provide:
 
 ## 18. Authorization boundaries
 
-This review-candidate specification does not authorize implementation or execution by itself.
+This specification is frozen and authorizes implementation work only.
 
-After this written specification is reviewed and explicitly approved, it must be marked frozen and hash-bound before the implementation plan is derived.
+Implementation must be performed on the Phase 0.7 branch through a pull request and must pass CI on the exact candidate head before merge. The frozen design itself does not authorize any official Phase 0.7 training.
 
 After implementation, tests, CI, and execution-SHA freeze are complete, official execution of the 200 Phase 0.7 cells requires a separate explicit human authorization.
 
-No official Phase 0.7 training is authorized by approval of the design or by approval of implementation work.
+No official Phase 0.7 training is authorized by approval of the design, implementation plan, pull request, or merge.
