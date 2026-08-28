@@ -9,14 +9,14 @@ from afmc_fm.phase05.training import fit_phase05_model
 from afmc_fm.phase06.diagnostics import Phase06DiagnosticRecorder
 
 
-def _model() -> Phase05FlowJumpAdapter:
+def _model(flow_mode: str = "time_scaled") -> Phase05FlowJumpAdapter:
     torch.manual_seed(41)
     return Phase05FlowJumpAdapter(
         representation_dim=16,
         value_dim=3,
         event_dim=3,
         state_dim=24,
-        flow_mode="time_scaled",
+        flow_mode=flow_mode,
         jump_mode="none",
         uncertainty_mode="deterministic",
         time_scale_days=30.0,
@@ -123,3 +123,51 @@ def test_forced_horizon_continues_and_is_prefix_identical_to_standard_policy():
     forced_prefix = forced.trace_frame().iloc[: len(standard_trace)].reset_index(drop=True)
     pd.testing.assert_frame_equal(standard_trace, forced_prefix, check_exact=True)
     assert forced.trace_frame()["stale_epochs"].tolist() == [0, 1, 2, 3]
+
+
+def test_frozen_100_epoch_patience_12_policy_invariants_cover_both_architectures():
+    config = Phase05Config(
+        max_epochs=100,
+        patience=12,
+        learning_rate=1e-30,
+        weight_decay=0.0,
+    )
+
+    for flow_mode in ("none", "time_scaled"):
+        batch = _batch()
+        initial_model = _model(flow_mode)
+        standard_model = deepcopy(initial_model)
+        forced_model = deepcopy(initial_model)
+        standard = Phase06DiagnosticRecorder()
+        forced = Phase06DiagnosticRecorder()
+
+        fit_phase05_model(
+            standard_model,
+            deepcopy(batch),
+            deepcopy(batch),
+            config,
+            torch.device("cpu"),
+            diagnostics=standard,
+            stop_on_patience=True,
+        )
+        fit_phase05_model(
+            forced_model,
+            deepcopy(batch),
+            deepcopy(batch),
+            config,
+            torch.device("cpu"),
+            diagnostics=forced,
+            stop_on_patience=False,
+        )
+
+        standard_summary = standard.summary_payload()
+        forced_summary = forced.summary_payload()
+        assert standard_summary["early_stop_reason"] == "patience_exhausted"
+        assert int(standard_summary["epochs_run"]) < 100
+        assert forced_summary["epochs_run"] == 100
+        assert forced_summary["stop_epoch"] == 100
+        assert forced_summary["early_stop_reason"] == "max_epochs_reached"
+
+        standard_trace = standard.trace_frame().reset_index(drop=True)
+        forced_prefix = forced.trace_frame().iloc[: len(standard_trace)].reset_index(drop=True)
+        pd.testing.assert_frame_equal(standard_trace, forced_prefix, check_exact=True)
