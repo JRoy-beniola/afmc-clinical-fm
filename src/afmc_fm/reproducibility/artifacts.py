@@ -4,9 +4,9 @@ import hashlib
 import importlib
 import shutil
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from .rebuild_models import ArtifactDeclaration
 
@@ -53,7 +53,7 @@ def _load_generator(entry_point: str) -> Generator:
     module = importlib.import_module(module_name)
     generator = getattr(module, attribute, None)
     if not callable(generator):
-        raise ValueError(f"generator is not callable: {entry_point}")
+        raise TypeError(f"generator is not callable: {entry_point}")
     return generator
 
 
