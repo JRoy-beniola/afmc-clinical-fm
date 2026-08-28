@@ -1,10 +1,9 @@
 import zipfile
 from pathlib import Path
 
-from afmc_fm.reproducibility.report_audit import audit_report_source
-
 from afmc_fm.reproducibility.bootstrap import bootstrap_phase
 from afmc_fm.reproducibility.models import PhaseDefinition
+from afmc_fm.reproducibility.report_audit import audit_report_source
 from afmc_fm.reproducibility.report_manifest import load_manifest
 
 
