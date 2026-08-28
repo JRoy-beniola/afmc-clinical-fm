@@ -217,7 +217,7 @@ def test_cell_bundle_is_committed_atomically_and_validates(tmp_path):
 
 def test_abandoned_staging_directory_is_not_authoritative_and_is_removed_on_resume(tmp_path):
     cell = _cell()
-    store = _initialized_store(tmp_path, (cell,))
+    _initialized_store(tmp_path, (cell,))
     abandoned = tmp_path / "stages" / "phase07" / ".tmp" / f"{cell.cell_id}.deadbeef"
     abandoned.mkdir(parents=True)
     (abandoned / "cell.json").write_text("partial", encoding="utf-8")
