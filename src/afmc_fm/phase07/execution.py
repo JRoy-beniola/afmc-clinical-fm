@@ -110,7 +110,7 @@ def require_phase07_official_authorization(
     except (OSError, json.JSONDecodeError) as error:
         raise ValueError("Phase 0.7 official execution authorization is invalid") from error
     if not isinstance(payload, dict):
-        raise ValueError("Phase 0.7 official execution authorization must be a JSON object")
+        raise TypeError("Phase 0.7 official execution authorization must be a JSON object")
 
     expected = _expected_authorization(manifest)
     if payload != expected:
