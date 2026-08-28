@@ -33,6 +33,18 @@ def test_nested_rebuild_destination_is_allowed(tmp_path: Path):
     assert validate_rebuild_destination(tmp_path, "phase0", destination) == destination.resolve()
 
 
+def test_rebuild_destination_rejects_symlink_escape(tmp_path: Path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    phase_parent = tmp_path / "outputs/reproduction"
+    phase_parent.mkdir(parents=True)
+    (phase_parent / "phase0").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="outputs/reproduction"):
+        validate_rebuild_destination(tmp_path, "phase0", None)
+
+
+
 def test_load_rebuild_manifest_uses_strict_modes_and_relative_paths(tmp_path: Path):
     manifest_path = tmp_path / "rebuild.yaml"
     manifest_path.write_text(
