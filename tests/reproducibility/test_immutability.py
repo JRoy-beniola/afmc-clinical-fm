@@ -8,7 +8,8 @@ from afmc_fm.reproducibility.rebuild import rebuild_phase
 from afmc_fm.reproducibility.registry import get_phase, iter_phases
 from afmc_fm.reproducibility.report_audit import audit_report_source
 from afmc_fm.reproducibility.rerun import execute_rerun, plan_rerun
-from tests.reproducibility.test_rerun import _fixture_repository
+
+from .test_rerun import _fixture_repository
 
 
 def tree_snapshot(root: Path) -> dict[str, str]:
