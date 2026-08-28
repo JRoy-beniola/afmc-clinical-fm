@@ -19,6 +19,28 @@ def _fake_report(root: Path, phase_id: str, *, ok: bool = True):
     )
 
 
+def _fake_rerun_plan(
+    root: Path,
+    phase_id: str,
+    *,
+    status: str = "READY",
+    reasons: tuple[str, ...] = (),
+    run_id: str = "fixture",
+):
+    destination = root / "outputs/reproduction" / phase_id / "rerun" / run_id
+    return SimpleNamespace(
+        phase_id=phase_id,
+        status=status,
+        reasons=reasons,
+        remediation=(),
+        implementation_sha="a" * 40,
+        destination=destination,
+        historical_environment=SimpleNamespace(status="reconstructed"),
+        ready=status == "READY",
+        spec=SimpleNamespace(comparison_policy={}),
+    )
+
+
 def test_status_lists_all_phases(capsys):
     assert cli.main(["status"]) == 0
     output = capsys.readouterr().out
@@ -122,4 +144,117 @@ def test_failed_rebuild_returns_nonzero(tmp_path, capsys, monkeypatch):
 def test_unknown_rebuild_phase_is_argparse_error():
     with pytest.raises(SystemExit) as exc:
         cli.main(["rebuild", "phase07"])
+    assert exc.value.code == 2
+
+
+def test_rerun_defaults_to_plan_only_and_forwards_run_id(tmp_path, capsys, monkeypatch):
+    calls = []
+
+    def fake_plan(root, phase_id, *, run_id=None):
+        calls.append((Path(root), phase_id, run_id))
+        return _fake_rerun_plan(Path(root), phase_id, run_id=run_id or "generated")
+
+    def forbidden_execute(*args, **kwargs):
+        raise AssertionError("planning must not execute a historical rerun")
+
+    monkeypatch.setattr(cli, "plan_rerun", fake_plan)
+    monkeypatch.setattr(cli, "execute_rerun", forbidden_execute)
+
+    assert cli.main(["rerun", "phase0", "--run-id", "dry-run"], root=tmp_path) == 0
+    output = capsys.readouterr().out
+    assert "READY phase0" in output
+    assert "execution=not-requested" in output
+    assert "a" * 40 in output
+    assert "dry-run" in output
+    assert calls == [(tmp_path, "phase0", "dry-run")]
+
+
+def test_rerun_execute_refuses_blocked_plan_and_prints_reasons(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    def fake_plan(root, phase_id, *, run_id=None):
+        return _fake_rerun_plan(
+            Path(root),
+            phase_id,
+            status="UNSUPPORTED",
+            reasons=("historical environment is not reproducible",),
+            run_id=run_id or "blocked",
+        )
+
+    def forbidden_execute(*args, **kwargs):
+        raise AssertionError("blocked rerun must not execute")
+
+    monkeypatch.setattr(cli, "plan_rerun", fake_plan)
+    monkeypatch.setattr(cli, "execute_rerun", forbidden_execute)
+
+    assert cli.main(["rerun", "phase0", "--execute"], root=tmp_path) == 1
+    output = capsys.readouterr().out
+    assert "UNSUPPORTED phase0" in output
+    assert "historical environment is not reproducible" in output
+
+
+def test_rerun_execute_ready_reports_provenance_and_comparison(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    plan = _fake_rerun_plan(tmp_path, "phase0", run_id="execute-smoke")
+    execution = SimpleNamespace(
+        ok=True,
+        status="SUCCEEDED",
+        returncode=0,
+        implementation_sha=plan.implementation_sha,
+        environment=SimpleNamespace(status="reconstructed"),
+        destination=plan.destination,
+    )
+    calls = []
+
+    def fake_plan(root, phase_id, *, run_id=None):
+        calls.append(("plan", Path(root), phase_id, run_id))
+        return plan
+
+    def fake_execute(root, received_plan):
+        calls.append(("execute", Path(root), received_plan.phase_id))
+        return execution
+
+    def fake_comparison(root, received_plan, received_execution):
+        calls.append(("compare", Path(root), received_plan.phase_id))
+        assert received_execution is execution
+        return SimpleNamespace(verdict="NUMERICALLY_REPRODUCED")
+
+    monkeypatch.setattr(cli, "plan_rerun", fake_plan)
+    monkeypatch.setattr(cli, "execute_rerun", fake_execute)
+    monkeypatch.setattr(cli, "_comparison_for_execution", fake_comparison)
+
+    assert (
+        cli.main(
+            ["rerun", "phase0", "--run-id", "execute-smoke", "--execute"],
+            root=tmp_path,
+        )
+        == 0
+    )
+    output = capsys.readouterr().out
+    assert "PASS phase0" in output
+    assert f"sha={plan.implementation_sha}" in output
+    assert "environment=reconstructed" in output
+    assert f"output={plan.destination}" in output
+    assert "comparison=NUMERICALLY_REPRODUCED" in output
+    assert calls == [
+        ("plan", tmp_path, "phase0", "execute-smoke"),
+        ("execute", tmp_path, "phase0"),
+        ("compare", tmp_path, "phase0"),
+    ]
+
+
+def test_rerun_all_is_not_implemented():
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["rerun", "all"])
+    assert exc.value.code == 2
+
+
+def test_unknown_rerun_phase_is_argparse_error():
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["rerun", "phase07"])
     assert exc.value.code == 2
