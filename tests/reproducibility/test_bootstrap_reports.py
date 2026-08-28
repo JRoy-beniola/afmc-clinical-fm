@@ -114,6 +114,23 @@ def test_bootstrap_preserves_python_docx_heading_semantics(tmp_path: Path):
     assert source.startswith("# Fixture heading\n"), source[:80]
 
 
+def test_bootstrap_serializes_whitespace_only_paragraph_as_blank_marker(tmp_path: Path):
+    report = tmp_path / "docs/results/fixture/report.docx"
+    report.parent.mkdir(parents=True)
+    document = Document()
+    document.add_paragraph("Before")
+    whitespace = document.add_paragraph()
+    whitespace.add_run().add_break()
+    document.add_paragraph("After")
+    document.save(report)
+
+    destination = tmp_path / "staging"
+    bootstrap_phase(root=tmp_path, phase=_phase(), destination=destination)
+
+    source = (destination / "report-source.md").read_text(encoding="utf-8")
+    assert source == "Before\n\n<!-- blank -->\n\nAfter\n"
+
+
 def test_bootstrap_refuses_overwrite_without_replace(tmp_path: Path):
     _write_report(tmp_path)
     destination = tmp_path / "staging"
