@@ -141,7 +141,7 @@ def test_rebuild_phase_rejects_unaccepted_report_source(tmp_path: Path, monkeypa
 
 @pytest.mark.parametrize("phase_id", ["phase0", "phase05", "phase06"])
 def test_registered_historical_phase_rebuilds_without_archive_mutation(phase_id: str):
-    repository = Path(".").resolve()
+    repository = Path.cwd()
     phase = get_phase(phase_id)
     before = _tree_snapshot(repository / phase.official_evidence_root)
 
