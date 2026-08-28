@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -78,6 +79,32 @@ def test_execution_manifest_binds_protocol_config_plan_and_exact_cell_count():
     }
 
 
+def test_execution_manifest_hashes_exact_preloaded_dependency_objects_without_reloading(
+    monkeypatch,
+):
+    module = _execution_api()
+    config = load_phase07_config(_CONFIG_PATH)
+    phase05_config = load_phase05_config(config.phase05_config)
+    simulator_config = _loaded_simulator_config(config)
+
+    def forbidden_reload(*_args, **_kwargs):
+        raise AssertionError("preloaded dependency configs must not be reloaded")
+
+    monkeypatch.setattr(module, "load_phase05_config", forbidden_reload)
+    monkeypatch.setattr(module, "_load_simulator_config", forbidden_reload)
+
+    manifest = module.build_phase07_execution_manifest(
+        config,
+        execution_commit=_EXECUTION_SHA,
+        phase07_spec_path=_SPEC_PATH,
+        phase05_config=phase05_config,
+        simulator_config=simulator_config,
+    )
+
+    assert manifest["phase05_config_sha256"] == canonical_config_hash(phase05_config)
+    assert manifest["simulator_config_sha256"] == canonical_config_hash(simulator_config)
+
+
 def test_official_execution_authorization_fails_closed_when_artifact_is_absent(tmp_path):
     module = _execution_api()
     config = load_phase07_config(_CONFIG_PATH)
@@ -127,6 +154,26 @@ def test_clean_checkout_guard_rejects_dirty_worktree(monkeypatch):
         return SimpleNamespace(stdout=" M src/afmc_fm/phase07/execution.py\n")
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    with pytest.raises(ValueError, match="clean worktree"):
+        module.require_clean_phase07_checkout()
+
+
+def test_clean_checkout_guard_checks_imported_source_repo_not_caller_cwd(tmp_path, monkeypatch):
+    module = _execution_api()
+    clean_repo = tmp_path / "clean-caller"
+    dirty_repo = tmp_path / "dirty-source"
+    clean_repo.mkdir()
+    dirty_repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(clean_repo)], check=True)
+    subprocess.run(["git", "init", "-q", str(dirty_repo)], check=True)
+
+    imported_source = dirty_repo / "src" / "afmc_fm" / "phase07" / "execution.py"
+    imported_source.parent.mkdir(parents=True)
+    imported_source.write_text("# dirty imported source\n", encoding="utf-8")
+
+    monkeypatch.chdir(clean_repo)
+    monkeypatch.setattr(module, "__file__", str(imported_source))
 
     with pytest.raises(ValueError, match="clean worktree"):
         module.require_clean_phase07_checkout()
