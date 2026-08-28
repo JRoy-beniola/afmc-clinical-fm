@@ -7,7 +7,7 @@ import sys
 import time
 import uuid
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import torch
@@ -16,7 +16,7 @@ _SCHEMA_VERSION = 1
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _runtime_metadata() -> dict[str, object]:
