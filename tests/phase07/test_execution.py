@@ -181,6 +181,7 @@ def test_official_execution_authorization_is_exactly_hash_bound(tmp_path):
 
 def test_clean_checkout_guard_rejects_dirty_worktree(monkeypatch):
     module = _execution_api()
+    monkeypatch.setattr(module, "_phase07_source_repository_root", lambda: Path("."))
 
     def fake_run(*_args, **_kwargs):
         return SimpleNamespace(stdout=" M src/afmc_fm/phase07/execution.py\n")
