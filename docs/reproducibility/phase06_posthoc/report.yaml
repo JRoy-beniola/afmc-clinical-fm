@@ -1,0 +1,20 @@
+schema_version: 1
+phase_id: phase06-posthoc
+documentary_mode: source-first
+result_kind: exploratory
+official_report: null
+report_source: docs/reproducibility/phase06_posthoc/report-source.md
+decision_record: docs/results/phase06_posthoc_optimization/decision_record.md
+evidence_manifest: docs/results/phase06_posthoc_optimization/MANIFEST.sha256
+environment_status: unknown
+expected_classification: "structured optimization-conditioned heterogeneity worth prospective testing"
+phase06_terminal_decision: "D4-B AMBIGUOUS -> STOP"
+source_inputs:
+  - docs/results/phase06_posthoc_optimization/decision_record.md
+  - docs/results/phase06_posthoc_optimization/execution_provenance.json
+  - docs/results/phase06_posthoc_optimization/analysis/phase06_posthoc_associations.csv
+  - docs/results/phase06_posthoc_optimization/analysis/phase06_posthoc_leave_one_out.csv
+  - docs/results/phase06_posthoc_optimization/analysis/phase06_posthoc_pair_mechanisms.csv
+  - docs/results/phase06_posthoc_optimization/analysis/phase06_posthoc_screening.json
+archive_authority: docs/results/phase06_posthoc_optimization
+archive_promotion: forbidden
