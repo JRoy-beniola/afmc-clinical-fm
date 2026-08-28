@@ -4,6 +4,7 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
+from .rebuild import RebuildReport, rebuild_phase
 from .registry import PHASES, get_phase, iter_phases
 from .verify import VerificationReport, verify_all, verify_phase
 
@@ -11,7 +12,7 @@ from .verify import VerificationReport, verify_all, verify_phase
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="afmc-reproduce",
-        description="Read-only reproducibility inspection for frozen AFMC research phases.",
+        description="Read-only verification and isolated rebuilds for frozen AFMC research phases.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("status", help="Show reproducibility status for all frozen phases.")
@@ -21,6 +22,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Verify frozen evidence and integrity manifests without modifying them.",
     )
     verify_parser.add_argument("phase", choices=(*PHASES, "all"))
+
+    rebuild_parser = commands.add_parser(
+        "rebuild",
+        help="Rebuild supported documentary artifacts under outputs/reproduction/.",
+    )
+    rebuild_parser.add_argument("phase", choices=(*PHASES, "all"))
+    rebuild_parser.add_argument(
+        "--destination",
+        type=Path,
+        help="Custom isolated reproduction destination for a single phase.",
+    )
     return parser
 
 
@@ -59,6 +71,34 @@ def _print_report(report: VerificationReport) -> bool:
     return False
 
 
+def _print_rebuild_report(report: RebuildReport) -> bool:
+    status = "PASS" if report.ok else "FAIL"
+    structural = "PASS" if report.structural_comparison.ok else "FAIL"
+    print(
+        f"{status} {report.phase_id}: generated={report.generated_count} "
+        f"reference-copy={report.reference_copy_count} structural={structural} "
+        f"candidate={report.candidate_report}"
+    )
+    return report.ok
+
+
+def _run_rebuild(
+    root: Path,
+    phase_id: str,
+    destination: Path | None,
+) -> bool:
+    phase = get_phase(phase_id)
+    if not phase.rebuild_supported:
+        print(f"UNSUPPORTED {phase_id}: deterministic rebuild is not registered")
+        return False
+    try:
+        report = rebuild_phase(root, phase_id, destination)
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        print(f"FAIL {phase_id}: {exc}")
+        return False
+    return _print_rebuild_report(report)
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -71,6 +111,22 @@ def main(
     if args.command == "status":
         _print_status(root_path)
         return 0
+
+    if args.command == "rebuild":
+        destination = args.destination
+        if args.phase == "all":
+            if destination is not None:
+                parser.error("--destination is only valid when rebuilding a single phase")
+            outcomes: list[bool] = []
+            for phase in iter_phases():
+                if not phase.rebuild_supported:
+                    print(
+                        f"UNSUPPORTED {phase.phase_id}: deterministic rebuild is not registered"
+                    )
+                    continue
+                outcomes.append(_run_rebuild(root_path, phase.phase_id, None))
+            return 0 if all(outcomes) else 1
+        return 0 if _run_rebuild(root_path, args.phase, destination) else 1
 
     if args.phase == "all":
         reports = verify_all(root_path)
