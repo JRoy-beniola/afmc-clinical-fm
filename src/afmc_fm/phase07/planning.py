@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 from afmc_fm.phase07.config import Phase07Config
 from afmc_fm.phase07.protocol import validate_phase07_seed_triplet
