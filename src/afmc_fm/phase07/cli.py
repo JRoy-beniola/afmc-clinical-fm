@@ -10,7 +10,6 @@ from pathlib import Path
 import torch
 
 from afmc_fm.config import load_yaml
-from afmc_fm.execution.manifest import execution_commit_sha
 from afmc_fm.phase05.config import Phase05Config, load_phase05_config
 from afmc_fm.phase07.analysis import (
     adjudicate_phase07,
@@ -20,6 +19,7 @@ from afmc_fm.phase07.analysis import (
 from afmc_fm.phase07.config import Phase07Config, load_phase07_config
 from afmc_fm.phase07.execution import (
     build_phase07_execution_manifest,
+    execution_commit_sha,
     load_completed_phase07_metrics,
     require_clean_phase07_checkout,
     require_phase07_official_authorization,
