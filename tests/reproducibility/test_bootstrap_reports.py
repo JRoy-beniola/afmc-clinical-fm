@@ -1,9 +1,12 @@
+import hashlib
+import zipfile
 from pathlib import Path
 
 import pytest
 
 from afmc_fm.reproducibility.bootstrap import bootstrap_phase
 from afmc_fm.reproducibility.models import PhaseDefinition
+from afmc_fm.reproducibility.report_manifest import load_manifest
 
 
 def _phase() -> PhaseDefinition:
@@ -28,6 +31,33 @@ def _phase() -> PhaseDefinition:
     )
 
 
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_report(root: Path) -> Path:
+    path = root / "docs/results/fixture/report.docx"
+    path.parent.mkdir(parents=True)
+    document = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Fixture</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Body text</w:t></w:r></w:p>
+    <w:sectPr/>
+  </w:body>
+</w:document>
+"""
+    styles = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="Heading 1"/></w:style>
+</w:styles>
+"""
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", document)
+        archive.writestr("word/styles.xml", styles)
+    return path
+
+
 def test_bootstrap_refuses_historical_destination(tmp_path: Path):
     with pytest.raises(ValueError, match="historical evidence"):
         bootstrap_phase(
@@ -35,3 +65,68 @@ def test_bootstrap_refuses_historical_destination(tmp_path: Path):
             phase=_phase(),
             destination=tmp_path / "docs/results/phase0/reproducibility",
         )
+
+
+def test_bootstrap_refuses_reproduction_output_destination(tmp_path: Path):
+    with pytest.raises(ValueError, match="reproduction output"):
+        bootstrap_phase(
+            root=tmp_path,
+            phase=_phase(),
+            destination=tmp_path / "outputs/reproduction/fixture/bootstrap",
+        )
+
+
+def test_bootstrap_is_deterministic_and_does_not_mutate_source(tmp_path: Path):
+    report = _write_report(tmp_path)
+    before = _sha256(report)
+    first = tmp_path / "staging-one"
+    second = tmp_path / "staging-two"
+
+    bootstrap_phase(root=tmp_path, phase=_phase(), destination=first)
+    bootstrap_phase(root=tmp_path, phase=_phase(), destination=second)
+
+    expected = {"report-source.md", "report.yaml", "extraction.json"}
+    assert {path.name for path in first.iterdir()} == expected
+    assert {path.name for path in second.iterdir()} == expected
+    for name in expected:
+        assert (first / name).read_bytes() == (second / name).read_bytes()
+    assert _sha256(report) == before
+
+    manifest = load_manifest(first / "report.yaml")
+    assert manifest.report_source == Path("docs/reproducibility/fixture/report-source.md")
+    assert manifest.reference_report_sha256 == before
+    assert manifest.audit_status == "pending"
+
+
+def test_bootstrap_refuses_overwrite_without_replace(tmp_path: Path):
+    _write_report(tmp_path)
+    destination = tmp_path / "staging"
+    bootstrap_phase(root=tmp_path, phase=_phase(), destination=destination)
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        bootstrap_phase(root=tmp_path, phase=_phase(), destination=destination)
+
+
+def test_replace_is_allowed_only_beneath_docs_reproducibility(tmp_path: Path):
+    _write_report(tmp_path)
+    staging = tmp_path / "staging"
+    bootstrap_phase(root=tmp_path, phase=_phase(), destination=staging)
+    with pytest.raises(ValueError, match="replace"):
+        bootstrap_phase(
+            root=tmp_path,
+            phase=_phase(),
+            destination=staging,
+            replace=True,
+        )
+
+    canonical = tmp_path / "docs/reproducibility/fixture"
+    bootstrap_phase(root=tmp_path, phase=_phase(), destination=canonical)
+    before = {path.name: path.read_bytes() for path in canonical.iterdir()}
+    bootstrap_phase(
+        root=tmp_path,
+        phase=_phase(),
+        destination=canonical,
+        replace=True,
+    )
+    after = {path.name: path.read_bytes() for path in canonical.iterdir()}
+    assert after == before
