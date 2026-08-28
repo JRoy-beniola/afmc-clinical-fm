@@ -4,7 +4,7 @@ import re
 import tempfile
 import zipfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from docx import Document
@@ -13,7 +13,7 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
 _IMAGE_RE = re.compile(r"^<!-- image rel=([^ ]+) -->$")
 _TABLE_SEPARATOR_RE = re.compile(r"^:?-{3,}:?$")
 _FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
-_FIXED_CORE_TIME = datetime(2000, 1, 1, 0, 0, 0)
+_FIXED_CORE_TIME = datetime(2000, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
 
 
 @dataclass(frozen=True)
