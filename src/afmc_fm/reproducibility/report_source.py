@@ -12,7 +12,7 @@ _W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 _W = f"{{{_W_NS}}}"
 _R = f"{{{_R_NS}}}"
-_HEADING_RE = re.compile(r"^Heading ([1-6])$")
+_HEADING_RE = re.compile(r"^Heading ([1-6])$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -222,6 +222,4 @@ def render_markdown(snapshot: ReportSnapshot) -> str:
             rendered.append(_render_table(block))
         else:
             rendered.append(f"<!-- image rel={block.relationship_id} -->")
-    if not rendered:
-        return ""
     return "\n\n".join(rendered) + "\n"
