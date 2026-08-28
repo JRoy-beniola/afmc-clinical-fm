@@ -3,6 +3,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from docx import Document
 
 from afmc_fm.reproducibility.bootstrap import bootstrap_phase
 from afmc_fm.reproducibility.models import PhaseDefinition
@@ -96,6 +97,21 @@ def test_bootstrap_is_deterministic_and_does_not_mutate_source(tmp_path: Path):
     assert manifest.report_source == Path("docs/reproducibility/fixture/report-source.md")
     assert manifest.reference_report_sha256 == before
     assert manifest.audit_status == "pending"
+
+
+def test_bootstrap_preserves_python_docx_heading_semantics(tmp_path: Path):
+    report = tmp_path / "docs/results/fixture/report.docx"
+    report.parent.mkdir(parents=True)
+    document = Document()
+    document.add_heading("Fixture heading", level=1)
+    document.add_paragraph("Body text")
+    document.save(report)
+
+    destination = tmp_path / "staging"
+    bootstrap_phase(root=tmp_path, phase=_phase(), destination=destination)
+
+    source = (destination / "report-source.md").read_text(encoding="utf-8")
+    assert source.startswith("# Fixture heading\n"), source[:80]
 
 
 def test_bootstrap_refuses_overwrite_without_replace(tmp_path: Path):
