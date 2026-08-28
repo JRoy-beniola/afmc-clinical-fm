@@ -35,6 +35,13 @@ def _safe_manifest_path(value: str) -> PurePosixPath | None:
     return path
 
 
+def _declared_unavailable(spec: ManifestSpec, path: PurePosixPath) -> str | None:
+    for pattern in spec.unavailable_patterns:
+        if path.match(pattern):
+            return pattern
+    return None
+
+
 def verify_manifest(
     root: Path,
     phase: PhaseDefinition,
@@ -104,14 +111,28 @@ def verify_manifest(
         target = base.joinpath(*relative_path.parts)
         subject = target.relative_to(root).as_posix() if target.is_relative_to(root) else str(target)
         if not target.is_file():
-            checks.append(
-                CheckResult(
-                    code="missing_path",
-                    ok=False,
-                    subject=subject,
-                    detail="manifest target is missing",
+            unavailable_pattern = _declared_unavailable(spec, relative_path)
+            if unavailable_pattern is not None:
+                checks.append(
+                    CheckResult(
+                        code="manifest_target_unavailable",
+                        ok=True,
+                        subject=subject,
+                        detail=(
+                            "manifest target is unavailable in this repository checkout "
+                            f"under declared pattern {unavailable_pattern}; digest not verified"
+                        ),
+                    )
                 )
-            )
+            else:
+                checks.append(
+                    CheckResult(
+                        code="missing_path",
+                        ok=False,
+                        subject=subject,
+                        detail="manifest target is missing",
+                    )
+                )
             continue
 
         actual = hashlib.sha256(target.read_bytes()).hexdigest()
