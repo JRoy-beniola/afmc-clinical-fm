@@ -2,18 +2,26 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections.abc import Sequence
+from dataclasses import asdict
 from pathlib import Path
 
-import pandas as pd
 import torch
 
 from afmc_fm.config import load_yaml
 from afmc_fm.execution.manifest import execution_commit_sha
 from afmc_fm.phase05.config import load_phase05_config
+from afmc_fm.phase07.analysis import (
+    adjudicate_phase07,
+    build_phase07_pair_table,
+    statistics_from_phase07_pairs,
+)
 from afmc_fm.phase07.config import Phase07Config, load_phase07_config
 from afmc_fm.phase07.execution import (
     build_phase07_execution_manifest,
+    load_completed_phase07_metrics,
+    require_clean_phase07_checkout,
     require_phase07_official_authorization,
     run_phase07_device_smoke,
     run_phase07_official_cells,
@@ -21,9 +29,20 @@ from afmc_fm.phase07.execution import (
 from afmc_fm.phase07.planning import Phase07CellSpec, phase07_plan_sha256, plan_phase07_cells
 from afmc_fm.phase07.protocol import build_phase07_protocol_lock
 from afmc_fm.phase07.runner import prepare_phase07_cohort, run_phase07_cell
+from afmc_fm.phase07.store import Phase07Store
 from afmc_fm.simulator.config import SimulatorConfig
 
 _CONFIG_PATH = Path("configs/experiments/phase07.yaml")
+_STORE_IDENTITY_KEYS = (
+    "execution_commit",
+    "phase07_spec_sha256",
+    "phase07_config_sha256",
+    "phase05_config_sha256",
+    "simulator_config_sha256",
+    "protocol_lock_sha256",
+    "phase07_plan_sha256",
+    "expected_cell_count",
+)
 
 
 def _write_json(path: str | Path, payload: object) -> None:
@@ -65,17 +84,44 @@ def _load_simulator_config(path: str | Path) -> SimulatorConfig:
     return SimulatorConfig(**raw)
 
 
-def _persist_official_cell(output: Path, cell: Phase07CellSpec, result) -> None:
-    cell_dir = output / "cells" / cell.cell_id
-    if cell_dir.exists():
-        raise ValueError(f"official Phase 0.7 cell output already exists: {cell.cell_id}")
-    cell_dir.mkdir(parents=True)
-    result.metrics.to_csv(cell_dir / "metrics.csv", index=False)
-    result.trace.to_csv(cell_dir / "training_trace.csv", index=False)
-    _write_json(cell_dir / "summary.json", result.summary)
-    _write_json(cell_dir / "cell.json", _cell_payload(cell))
-    torch.save(result.production_state_dict, cell_dir / "production_checkpoint.pt")
-    torch.save(result.shadow_state_dict, cell_dir / "shadow_mae_checkpoint.pt")
+def _store_identity(manifest: dict[str, object]) -> dict[str, object]:
+    missing = [key for key in _STORE_IDENTITY_KEYS if key not in manifest]
+    if missing:
+        raise ValueError(
+            "Phase 0.7 execution manifest is missing store identity: "
+            + ", ".join(missing)
+        )
+    return {key: manifest[key] for key in _STORE_IDENTITY_KEYS}
+
+
+def _initialize_store(
+    *,
+    config: Phase07Config,
+    manifest: dict[str, object],
+    output: str | Path,
+    resume: bool,
+) -> tuple[Phase07Store, tuple[Phase07CellSpec, ...]]:
+    cells = plan_phase07_cells(config)
+    protocol_lock = build_phase07_protocol_lock(
+        config,
+        execution_commit=str(manifest["execution_commit"]),
+        phase07_spec_path=config.phase07_spec,
+    )
+    store = Phase07Store(output, identity=_store_identity(manifest))
+    store.initialize(
+        manifest,
+        protocol_lock,
+        _plan_payload(config),
+        resume=resume,
+    )
+    return store, cells
+
+
+def _write_aggregate_metrics_atomic(output: str | Path, metrics) -> None:
+    destination = Path(output) / "phase07_metrics.csv"
+    temporary = destination.with_name(destination.name + ".tmp")
+    metrics.to_csv(temporary, index=False)
+    os.replace(temporary, destination)
 
 
 def execute_authorized_phase07(
@@ -85,41 +131,47 @@ def execute_authorized_phase07(
     authorization_path: str | Path,
     output: str | Path,
     device: str,
+    resume: bool = False,
 ) -> tuple[str, ...]:
+    if type(resume) is not bool:
+        raise TypeError("resume must be a bool")
+    expected_manifest = build_phase07_execution_manifest(
+        config,
+        execution_commit=str(manifest.get("execution_commit", "")),
+        phase07_spec_path=config.phase07_spec,
+    )
+    if manifest != expected_manifest:
+        raise ValueError("Phase 0.7 supplied execution manifest does not match loaded configuration")
+
+    require_clean_phase07_checkout()
+    if execution_commit_sha() != manifest["execution_commit"]:
+        raise ValueError("Phase 0.7 execution checkout does not match the authorized commit")
     require_phase07_official_authorization(authorization_path, manifest)
+
     if device not in {"cpu", "cuda"}:
         raise ValueError("device must be cpu or cuda")
     if device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA is unavailable for official Phase 0.7 execution")
 
-    output_root = Path(output)
-    if output_root.exists() and any(output_root.iterdir()):
-        raise ValueError("official Phase 0.7 output directory must be empty")
-    output_root.mkdir(parents=True, exist_ok=True)
-    _write_json(output_root / "execution_manifest.json", manifest)
-    protocol_lock = build_phase07_protocol_lock(
-        config,
-        execution_commit=str(manifest["execution_commit"]),
-        phase07_spec_path=config.phase07_spec,
-    )
-    _write_json(output_root / "protocol_lock.json", protocol_lock)
-
     phase05_config = load_phase05_config(config.phase05_config)
     if phase05_config.max_epochs != config.max_epochs or phase05_config.patience != config.patience:
         raise ValueError("Phase 0.5 training constants do not match the frozen Phase 0.7 protocol")
     simulator_config = _load_simulator_config(config.simulator_config)
-    cells = plan_phase07_cells(config)
+    store, cells = _initialize_store(
+        config=config,
+        manifest=manifest,
+        output=output,
+        resume=resume,
+    )
     resolved_device = torch.device(device)
     prepared_by_cohort: dict[int, object] = {}
 
-    def execute_cell(cell: Phase07CellSpec) -> str:
+    def execute_cell(cell: Phase07CellSpec):
         prepared = prepared_by_cohort.get(cell.cohort_seed)
         if prepared is None:
             prepared = prepare_phase07_cohort(simulator_config, cell)
             prepared_by_cohort[cell.cohort_seed] = prepared
-        result = run_phase07_cell(prepared, phase05_config, cell, resolved_device)
-        _persist_official_cell(output_root, cell, result)
-        return cell.cell_id
+        return run_phase07_cell(prepared, phase05_config, cell, resolved_device)
 
     completed = run_phase07_official_cells(
         cells,
@@ -128,24 +180,44 @@ def execute_authorized_phase07(
         phase07_spec_path=config.phase07_spec,
         authorization_path=authorization_path,
         execute_cell=execute_cell,
+        store=store,
+        resume=resume,
     )
-    metrics = [pd.read_csv(output_root / "cells" / cell_id / "metrics.csv") for cell_id in completed]
-    pd.concat(metrics, ignore_index=True, sort=False).to_csv(
-        output_root / "phase07_metrics.csv",
-        index=False,
-    )
-    _write_json(
-        output_root / "COMPLETE",
-        {
-            "schema_version": 1,
-            "phase": "phase07",
-            "execution_commit": manifest["execution_commit"],
-            "phase07_plan_sha256": manifest["phase07_plan_sha256"],
-            "completed_cell_count": len(completed),
-            "cell_ids": list(completed),
-        },
-    )
+
+    metrics = store.load_metrics(cells)
+    build_phase07_pair_table(metrics)
+    _write_aggregate_metrics_atomic(output, metrics)
+    store.mark_complete(cells)
+    load_completed_phase07_metrics(store, cells)
     return completed
+
+
+def analyze_completed_phase07(
+    *,
+    config: Phase07Config,
+    manifest: dict[str, object],
+    output: str | Path,
+) -> dict[str, object]:
+    require_clean_phase07_checkout()
+    if execution_commit_sha() != manifest["execution_commit"]:
+        raise ValueError("Phase 0.7 analysis checkout does not match the execution commit")
+    store, cells = _initialize_store(
+        config=config,
+        manifest=manifest,
+        output=output,
+        resume=True,
+    )
+    metrics = load_completed_phase07_metrics(store, cells)
+    pairs = build_phase07_pair_table(metrics)
+    statistics = statistics_from_phase07_pairs(pairs)
+    return {
+        "schema_version": 1,
+        "phase": "phase07",
+        "execution_commit": manifest["execution_commit"],
+        "phase07_plan_sha256": manifest["phase07_plan_sha256"],
+        "statistics": asdict(statistics),
+        "adjudication": adjudicate_phase07(statistics),
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -176,6 +248,11 @@ def build_parser() -> argparse.ArgumentParser:
     official.add_argument("--authorization", required=True)
     official.add_argument("--output", required=True)
     official.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
+    official.add_argument("--resume", action="store_true")
+
+    analyze = subparsers.add_parser("analyze")
+    analyze.add_argument("--config", default=str(_CONFIG_PATH))
+    analyze.add_argument("--output", required=True)
 
     return parser
 
@@ -233,7 +310,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             authorization_path=args.authorization,
             output=args.output,
             device=args.device,
+            resume=args.resume,
         )
+        return 0
+
+    if args.command == "analyze":
+        print(json.dumps(analyze_completed_phase07(config=config, manifest=manifest, output=args.output), sort_keys=True))
         return 0
 
     raise RuntimeError(f"unhandled Phase 0.7 command: {args.command}")
