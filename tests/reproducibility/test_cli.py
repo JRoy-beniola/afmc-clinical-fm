@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import afmc_fm.reproducibility.cli as cli
+from afmc_fm.reproducibility import cli
 
 
 def _fake_report(root: Path, phase_id: str, *, ok: bool = True):
