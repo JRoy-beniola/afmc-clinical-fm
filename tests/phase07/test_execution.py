@@ -183,6 +183,8 @@ def test_official_execution_checks_authorization_before_any_cell_callback(tmp_pa
     module = _execution_api()
     config = load_phase07_config(_CONFIG_PATH)
     cells = plan_phase07_cells(config)
+    phase05_config = load_phase05_config(config.phase05_config)
+    simulator_config = _loaded_simulator_config(config)
     called = False
     monkeypatch.setattr(module, "execution_commit_sha", lambda: _EXECUTION_SHA, raising=False)
 
@@ -195,6 +197,8 @@ def test_official_execution_checks_authorization_before_any_cell_callback(tmp_pa
         module.run_phase07_official_cells(
             cells,
             config=config,
+            phase05_config=phase05_config,
+            simulator_config=simulator_config,
             execution_commit=_EXECUTION_SHA,
             phase07_spec_path=_SPEC_PATH,
             authorization_path=tmp_path / "missing.json",
@@ -208,10 +212,14 @@ def test_official_execution_rejects_checkout_sha_drift_before_cell_callback(tmp_
     module = _execution_api()
     config = load_phase07_config(_CONFIG_PATH)
     cells = plan_phase07_cells(config)
+    phase05_config = load_phase05_config(config.phase05_config)
+    simulator_config = _loaded_simulator_config(config)
     manifest = module.build_phase07_execution_manifest(
         config,
         execution_commit=_EXECUTION_SHA,
         phase07_spec_path=_SPEC_PATH,
+        phase05_config=phase05_config,
+        simulator_config=simulator_config,
     )
     authorization = tmp_path / "authorization.json"
     authorization.write_text(json.dumps(_authorization_payload(manifest)), encoding="utf-8")
@@ -229,6 +237,8 @@ def test_official_execution_rejects_checkout_sha_drift_before_cell_callback(tmp_
         module.run_phase07_official_cells(
             cells,
             config=config,
+            phase05_config=phase05_config,
+            simulator_config=simulator_config,
             execution_commit=_EXECUTION_SHA,
             phase07_spec_path=_SPEC_PATH,
             authorization_path=authorization,
