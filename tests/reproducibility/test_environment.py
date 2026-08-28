@@ -4,11 +4,11 @@ import json
 from pathlib import Path
 
 import pytest
-
 from afmc_fm.reproducibility.environment import (
     capture_current_environment,
     classify_historical_environment,
 )
+
 from afmc_fm.reproducibility.models import ManifestSpec, PhaseDefinition
 from afmc_fm.reproducibility.registry import get_phase
 
