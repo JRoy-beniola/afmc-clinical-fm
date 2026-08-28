@@ -7,6 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from afmc_fm.phase07.config import load_phase07_config
+
+_CONFIG_PATH = Path("configs/experiments/phase07.yaml")
+
 
 def _cli_api():
     try:
@@ -104,6 +108,45 @@ def test_official_cli_fails_closed_before_execution_when_authorization_is_missin
         )
 
     assert called is False
+
+
+def test_resume_validates_persisted_identity_before_cuda_resolution(tmp_path, monkeypatch):
+    module = _cli_api()
+    config = load_phase07_config(_CONFIG_PATH)
+    execution_sha = "a" * 40
+    manifest = module.build_phase07_execution_manifest(
+        config,
+        execution_commit=execution_sha,
+        phase07_spec_path=config.phase07_spec,
+    )
+    cuda_checked = False
+
+    monkeypatch.setattr(module, "require_clean_phase07_checkout", lambda: None)
+    monkeypatch.setattr(module, "execution_commit_sha", lambda: execution_sha)
+    monkeypatch.setattr(module, "require_phase07_official_authorization", lambda *_args: {})
+
+    def reject_persisted_identity(**_kwargs):
+        raise ValueError("persisted identity mismatch")
+
+    def forbidden_cuda_query():
+        nonlocal cuda_checked
+        cuda_checked = True
+        raise AssertionError("CUDA must not be queried before persisted identity validation")
+
+    monkeypatch.setattr(module, "_initialize_store", reject_persisted_identity)
+    monkeypatch.setattr(module.torch.cuda, "is_available", forbidden_cuda_query)
+
+    with pytest.raises(ValueError, match="persisted identity mismatch"):
+        module.execute_authorized_phase07(
+            config=config,
+            manifest=manifest,
+            authorization_path=tmp_path / "authorization.json",
+            output=tmp_path / "official",
+            device="cuda",
+            resume=True,
+        )
+
+    assert cuda_checked is False
 
 
 def test_pyproject_registers_phase07_console_script():
