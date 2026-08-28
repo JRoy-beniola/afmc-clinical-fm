@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import json
 import platform as platform_module
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,8 +81,6 @@ def _load_runtime_metadata(path: Path) -> tuple[dict[str, Any], ...]:
     if path.suffix.casefold() != ".json" or not path.is_file():
         return ()
     try:
-        import json
-
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return ()
@@ -119,9 +118,11 @@ def _registered_environment_candidates(phase: PhaseDefinition) -> tuple[Path, ..
     candidates: list[Path] = []
     for path in (*phase.raw_evidence_paths, *phase.protocol_paths):
         name = path.name.casefold()
-        if path.suffix.casefold() == ".lock" or "environment" in name or "container" in name:
-            if path not in candidates:
-                candidates.append(path)
+        is_environment_artifact = (
+            path.suffix.casefold() == ".lock" or "environment" in name or "container" in name
+        )
+        if is_environment_artifact and path not in candidates:
+            candidates.append(path)
     return tuple(candidates)
 
 
