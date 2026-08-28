@@ -11,11 +11,12 @@ phases:
     implementation_sha: d6f105eee73fcb8e9cc5987d292b1bb98a687382
     execution_sha: d6f105eee73fcb8e9cc5987d292b1bb98a687382
     environment_status: unknown
-    rebuild_supported: false
+    rebuild_supported: true
     rerun_supported: false
     manifests:
       - docs/results/phase0/integrity/repository_evidence_manifest.sha256
     report_source: docs/reproducibility/phase0/report-source.md
+    rebuild_manifest: docs/reproducibility/phase0/rebuild.yaml
     historical_tools:
       - src/afmc_fm/cli.py
 
@@ -28,11 +29,12 @@ phases:
     implementation_sha: 50a94c06bc1c419ca55738f15f074cc06ccc3f36
     execution_sha: 50a94c06bc1c419ca55738f15f074cc06ccc3f36
     environment_status: unknown
-    rebuild_supported: false
+    rebuild_supported: true
     rerun_supported: false
     manifests:
       - docs/results/phase05/integrity/repository_evidence_manifest.sha256
     report_source: docs/reproducibility/phase05/report-source.md
+    rebuild_manifest: docs/reproducibility/phase05/rebuild.yaml
     historical_tools:
       - src/afmc_fm/phase05
       - tools/monitoring/phase05/monitor_stage1.py
@@ -46,11 +48,15 @@ phases:
     implementation_sha: 18f391fa89d80687f38f6c50a60a062e4524edd1
     execution_sha: 6ef4d506e5a6b96b15eb58225b95ebf64d3247ea
     environment_status: unknown
-    rebuild_supported: false
+    rebuild_supported: true
     rerun_supported: false
     manifests:
       - docs/results/phase06/provenance/FINAL_MANIFEST.sha256
+    manifest_unavailable_patterns:
+      docs/results/phase06/provenance/FINAL_MANIFEST.sha256:
+        - "*.pt"
     report_source: docs/reproducibility/phase06/report-source.md
+    rebuild_manifest: docs/reproducibility/phase06/rebuild.yaml
     historical_tools:
       - src/afmc_fm/phase06/cli.py
       - src/afmc_fm/phase06/analysis.py
