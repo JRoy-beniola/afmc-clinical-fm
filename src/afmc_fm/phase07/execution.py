@@ -6,8 +6,8 @@ import subprocess
 from collections.abc import Callable, Sequence
 from copy import deepcopy
 from pathlib import Path
-from typing import TypeVar
 
+import pandas as pd
 import torch
 
 from afmc_fm.config import load_yaml
@@ -24,11 +24,12 @@ from afmc_fm.phase07.planning import (
     plan_phase07_cells,
 )
 from afmc_fm.phase07.protocol import build_phase07_protocol_lock
+from afmc_fm.phase07.runner import Phase07CellRun
+from afmc_fm.phase07.store import Phase07Store
 from afmc_fm.simulator.config import SimulatorConfig
 
 _EXPECTED_CELL_COUNT = 200
 _AUTHORIZATION_VALUE = "OFFICIAL_EXECUTION_AUTHORIZED"
-_T = TypeVar("_T")
 
 
 def _canonical_json_bytes(payload: object) -> bytes:
@@ -149,6 +150,68 @@ def require_phase07_official_authorization(
     return payload
 
 
+def _run_phase07_cells_with_store(
+    cells: Sequence[Phase07CellSpec],
+    *,
+    store: Phase07Store,
+    resume: bool,
+    execute_cell: Callable[[Phase07CellSpec], Phase07CellRun],
+) -> tuple[str, ...]:
+    if not isinstance(store, Phase07Store):
+        raise TypeError("store must be a Phase07Store")
+    if type(resume) is not bool:
+        raise TypeError("resume must be a bool")
+    if not callable(execute_cell):
+        raise TypeError("execute_cell must be callable")
+
+    planned = tuple(cells)
+    if not planned:
+        raise ValueError("Phase 0.7 cell sequence must not be empty")
+    if not all(isinstance(cell, Phase07CellSpec) for cell in planned):
+        raise TypeError("Phase 0.7 cell sequence must contain Phase07CellSpec instances")
+    if len({cell.cell_id for cell in planned}) != len(planned):
+        raise ValueError("Phase 0.7 cell sequence contains duplicate cell IDs")
+
+    completed_before = store.validate_resume(planned)
+    if completed_before and not resume:
+        raise ValueError("persisted Phase 0.7 cells exist; pass resume=True to continue")
+
+    for cell in planned:
+        if cell.cell_id in completed_before:
+            continue
+        result = execute_cell(cell)
+        if not isinstance(result, Phase07CellRun):
+            raise TypeError("execute_cell must return a Phase07CellRun")
+        store.write_cell_bundle(
+            cell,
+            metrics=result.metrics,
+            trace=result.trace,
+            summary=result.summary,
+            production_state_dict=result.production_state_dict,
+            shadow_state_dict=result.shadow_state_dict,
+        )
+
+    completed_after = store.validate_resume(planned)
+    expected_ids = frozenset(cell.cell_id for cell in planned)
+    if completed_after != expected_ids:
+        missing = sorted(expected_ids - completed_after)
+        raise ValueError(
+            "Phase 0.7 execution ended with missing expected cells: " + ", ".join(missing)
+        )
+    return tuple(cell.cell_id for cell in planned)
+
+
+def load_completed_phase07_metrics(
+    store: Phase07Store,
+    expected_cells: Sequence[Phase07CellSpec],
+) -> pd.DataFrame:
+    if not isinstance(store, Phase07Store):
+        raise TypeError("store must be a Phase07Store")
+    planned = tuple(expected_cells)
+    store.require_complete(planned)
+    return store.load_metrics(planned)
+
+
 def run_phase07_official_cells(
     cells: Sequence[Phase07CellSpec],
     *,
@@ -156,10 +219,14 @@ def run_phase07_official_cells(
     execution_commit: str,
     phase07_spec_path: str | Path,
     authorization_path: str | Path,
-    execute_cell: Callable[[Phase07CellSpec], _T],
-) -> tuple[_T, ...]:
+    execute_cell: Callable[[Phase07CellSpec], Phase07CellRun],
+    store: Phase07Store | None = None,
+    resume: bool = False,
+) -> tuple[str, ...]:
     if not callable(execute_cell):
         raise TypeError("execute_cell must be callable")
+    if type(resume) is not bool:
+        raise TypeError("resume must be a bool")
     manifest = build_phase07_execution_manifest(
         config,
         execution_commit=execution_commit,
@@ -173,7 +240,14 @@ def run_phase07_official_cells(
     if execution_commit_sha() != execution_commit:
         raise ValueError("Phase 0.7 execution checkout does not match the authorized commit")
     require_phase07_official_authorization(authorization_path, manifest)
-    return tuple(execute_cell(cell) for cell in cells)
+    if store is None:
+        raise ValueError("official Phase 0.7 execution requires a crash-resilient Phase07Store")
+    return _run_phase07_cells_with_store(
+        cells,
+        store=store,
+        resume=resume,
+        execute_cell=execute_cell,
+    )
 
 
 def _smoke_model() -> Phase05FlowJumpAdapter:
@@ -289,6 +363,7 @@ def run_phase07_device_smoke(device: str) -> dict[str, object]:
 
 __all__ = [
     "build_phase07_execution_manifest",
+    "load_completed_phase07_metrics",
     "require_clean_phase07_checkout",
     "require_phase07_official_authorization",
     "run_phase07_device_smoke",
