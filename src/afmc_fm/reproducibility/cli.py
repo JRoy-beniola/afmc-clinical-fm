@@ -4,15 +4,20 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
+from .comparison import ReproductionComparison
 from .rebuild import RebuildReport, rebuild_phase
 from .registry import PHASES, get_phase, iter_phases
+from .rerun import RerunExecution, RerunPlan, execute_rerun, plan_rerun
 from .verify import VerificationReport, verify_all, verify_phase
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="afmc-reproduce",
-        description="Read-only verification and isolated rebuilds for frozen AFMC research phases.",
+        description=(
+            "Verification, isolated rebuilds, and guarded historical rerun planning "
+            "for frozen AFMC research phases."
+        ),
     )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("status", help="Show reproducibility status for all frozen phases.")
@@ -32,6 +37,21 @@ def _build_parser() -> argparse.ArgumentParser:
         "--destination",
         type=Path,
         help="Custom isolated reproduction destination for a single phase.",
+    )
+
+    rerun_parser = commands.add_parser(
+        "rerun",
+        help="Plan one historical rerun; add --execute only after reviewing readiness.",
+    )
+    rerun_parser.add_argument("phase", choices=tuple(PHASES))
+    rerun_parser.add_argument(
+        "--run-id",
+        help="Safe identifier for the isolated rerun output directory.",
+    )
+    rerun_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Explicitly acknowledge and execute a READY historical rerun plan.",
     )
     return parser
 
@@ -99,6 +119,75 @@ def _run_rebuild(
     return _print_rebuild_report(report)
 
 
+def _print_rerun_plan(plan: RerunPlan, *, execution_requested: bool) -> None:
+    execution = "requested" if execution_requested else "not-requested"
+    print(
+        f"{plan.status} {plan.phase_id}: sha={plan.implementation_sha} "
+        f"environment={plan.historical_environment.status} output={plan.destination} "
+        f"execution={execution}"
+    )
+    for reason in plan.reasons:
+        print(f"  reason: {reason}")
+    for remediation in plan.remediation:
+        print(f"  remediation: {remediation}")
+
+
+def _comparison_for_execution(
+    root: Path,
+    plan: RerunPlan,
+    execution: RerunExecution,
+) -> ReproductionComparison | None:
+    """Return a comparison only when a concrete phase comparison binding exists.
+
+    R4 deliberately does not infer table/file bindings from prose-only historical
+    comparison notes. Phase-specific machine-readable policies can enable this
+    later without weakening the execution acknowledgement boundary.
+    """
+
+    del root, plan, execution
+    return None
+
+
+def _run_rerun(
+    root: Path,
+    phase_id: str,
+    *,
+    run_id: str | None,
+    execute: bool,
+) -> bool:
+    try:
+        plan = plan_rerun(root, phase_id, run_id=run_id)
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        print(f"FAIL {phase_id}: {exc}")
+        return False
+
+    if not execute:
+        _print_rerun_plan(plan, execution_requested=False)
+        return plan.ready
+
+    if not plan.ready:
+        _print_rerun_plan(plan, execution_requested=True)
+        return False
+
+    try:
+        execution = execute_rerun(root, plan)
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        print(f"FAIL {phase_id}: {exc}")
+        return False
+
+    comparison = _comparison_for_execution(root, plan, execution)
+    comparison_label = comparison.verdict if comparison is not None else "unavailable"
+    status = "PASS" if execution.ok else "FAIL"
+    print(
+        f"{status} {phase_id}: sha={execution.implementation_sha} "
+        f"environment={execution.environment.status} output={execution.destination} "
+        f"comparison={comparison_label}"
+    )
+
+    comparison_ok = comparison is None or comparison.verdict != "FAILED_REPRODUCTION"
+    return execution.ok and comparison_ok
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -111,6 +200,18 @@ def main(
     if args.command == "status":
         _print_status(root_path)
         return 0
+
+    if args.command == "rerun":
+        return (
+            0
+            if _run_rerun(
+                root_path,
+                args.phase,
+                run_id=args.run_id,
+                execute=args.execute,
+            )
+            else 1
+        )
 
     if args.command == "rebuild":
         destination = args.destination
