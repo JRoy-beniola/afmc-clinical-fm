@@ -11,7 +11,7 @@ import torch
 
 from afmc_fm.config import load_yaml
 from afmc_fm.execution.manifest import execution_commit_sha
-from afmc_fm.phase05.config import load_phase05_config
+from afmc_fm.phase05.config import Phase05Config, load_phase05_config
 from afmc_fm.phase07.analysis import (
     adjudicate_phase07,
     build_phase07_pair_table,
@@ -128,18 +128,26 @@ def _write_aggregate_metrics_atomic(output: str | Path, metrics) -> None:
 def execute_authorized_phase07(
     *,
     config: Phase07Config,
+    phase05_config: Phase05Config,
+    simulator_config: SimulatorConfig,
     manifest: dict[str, object],
     authorization_path: str | Path,
     output: str | Path,
     device: str,
     resume: bool = False,
 ) -> tuple[str, ...]:
+    if not isinstance(phase05_config, Phase05Config):
+        raise TypeError("phase05_config must be a Phase05Config")
+    if not isinstance(simulator_config, SimulatorConfig):
+        raise TypeError("simulator_config must be a SimulatorConfig")
     if type(resume) is not bool:
         raise TypeError("resume must be a bool")
     expected_manifest = build_phase07_execution_manifest(
         config,
         execution_commit=str(manifest.get("execution_commit", "")),
         phase07_spec_path=config.phase07_spec,
+        phase05_config=phase05_config,
+        simulator_config=simulator_config,
     )
     if manifest != expected_manifest:
         raise ValueError("Phase 0.7 supplied execution manifest does not match loaded configuration")
@@ -151,10 +159,8 @@ def execute_authorized_phase07(
     if device not in {"cpu", "cuda"}:
         raise ValueError("device must be cpu or cuda")
 
-    phase05_config = load_phase05_config(config.phase05_config)
     if phase05_config.max_epochs != config.max_epochs or phase05_config.patience != config.patience:
         raise ValueError("Phase 0.5 training constants do not match the frozen Phase 0.7 protocol")
-    simulator_config = _load_simulator_config(config.simulator_config)
     store, cells = _initialize_store(
         config=config,
         manifest=manifest,
@@ -187,6 +193,8 @@ def execute_authorized_phase07(
         completed = run_phase07_official_cells(
             cells,
             config=config,
+            phase05_config=phase05_config,
+            simulator_config=simulator_config,
             execution_commit=str(manifest["execution_commit"]),
             phase07_spec_path=config.phase07_spec,
             authorization_path=authorization_path,
@@ -313,10 +321,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError("Phase 0.7 plan does not match the frozen 200-cell plan")
         return 0
 
+    phase05_config = load_phase05_config(config.phase05_config)
+    simulator_config = _load_simulator_config(config.simulator_config)
     manifest = build_phase07_execution_manifest(
         config,
         execution_commit=execution_commit,
         phase07_spec_path=config.phase07_spec,
+        phase05_config=phase05_config,
+        simulator_config=simulator_config,
     )
     if args.command == "manifest":
         _write_json(args.output, manifest)
@@ -326,6 +338,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         require_phase07_official_authorization(args.authorization, manifest)
         execute_authorized_phase07(
             config=config,
+            phase05_config=phase05_config,
+            simulator_config=simulator_config,
             manifest=manifest,
             authorization_path=args.authorization,
             output=args.output,
