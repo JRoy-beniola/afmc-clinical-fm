@@ -152,7 +152,7 @@ PHASES: dict[str, PhaseDefinition] = {
         ),
         derived_table_paths=(),
         figure_paths=(),
-        report_source=None,
+        report_source=Path("docs/reproducibility/phase06_posthoc/report-source.md"),
         environment_status="unknown",
         rebuild_supported=False,
         rerun_supported=False,
