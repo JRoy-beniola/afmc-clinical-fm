@@ -1,0 +1,15 @@
+schema_version: 1
+phase_id: phase06
+reference_report: docs/results/phase06/AFMC_Phase0_6_Diagnostic_Validation_Report_FINAL.docx
+reference_report_sha256: cfe9393215418096ff25b489aaed36c3a6c09c2442c9e1fde925e8d13a732a6c
+report_source: docs/reproducibility/phase06/report-source.md
+report_source_sha256: d5615a79a544bd8fbce7945664b30c03232443ac248b086221ff139205269d0b
+extraction_snapshot: docs/reproducibility/phase06/extraction.json
+extractor: afmc_fm.reproducibility.report_source
+extractor_schema_version: 1
+block_count: 200
+paragraph_count: 156
+table_count: 37
+image_count: 7
+audit_status: accepted
+known_limitations: []
