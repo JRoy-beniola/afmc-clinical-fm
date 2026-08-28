@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 from .models import ManifestSpec, PhaseDefinition
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
 
 @dataclass(frozen=True)
@@ -29,10 +30,16 @@ def _manifest_base(root: Path, phase: PhaseDefinition, spec: ManifestSpec) -> Pa
 
 
 def _safe_manifest_path(value: str) -> PurePosixPath | None:
+    if "\\" in value or _WINDOWS_DRIVE_RE.match(value):
+        return None
     path = PurePosixPath(value)
     if path.is_absolute() or ".." in path.parts:
         return None
     return path
+
+
+def _is_within(path: Path, base: Path) -> bool:
+    return path == base or path.is_relative_to(base)
 
 
 def _declared_unavailable(spec: ManifestSpec, path: PurePosixPath) -> str | None:
@@ -49,7 +56,8 @@ def verify_manifest(
 ) -> tuple[CheckResult, ...]:
     """Verify one checksum manifest without mutating the repository."""
 
-    manifest_path = root / spec.path
+    repository = Path(root).resolve()
+    manifest_path = Path(root) / spec.path
     if not manifest_path.is_file():
         return (
             CheckResult(
@@ -60,7 +68,29 @@ def verify_manifest(
             ),
         )
 
-    base = _manifest_base(root, phase, spec)
+    resolved_manifest = manifest_path.resolve()
+    if not _is_within(resolved_manifest, repository):
+        return (
+            CheckResult(
+                code="unsafe_manifest_path",
+                ok=False,
+                subject=spec.path.as_posix(),
+                detail="checksum manifest resolves outside the repository",
+            ),
+        )
+
+    base = _manifest_base(Path(root), phase, spec)
+    resolved_base = base.resolve()
+    if not _is_within(resolved_base, repository):
+        return (
+            CheckResult(
+                code="unsafe_manifest_path",
+                ok=False,
+                subject=spec.path.as_posix(),
+                detail="checksum manifest base resolves outside the repository",
+            ),
+        )
+
     checks: list[CheckResult] = []
     for line_number, raw_line in enumerate(
         manifest_path.read_text(encoding="utf-8").splitlines(),
@@ -109,6 +139,18 @@ def verify_manifest(
             continue
 
         target = base.joinpath(*relative_path.parts)
+        resolved_target = target.resolve()
+        if not _is_within(resolved_target, resolved_base):
+            checks.append(
+                CheckResult(
+                    code="unsafe_manifest_path",
+                    ok=False,
+                    subject=f"{spec.path.as_posix()}:{line_number}",
+                    detail=f"manifest path escapes its declared base: {path_text}",
+                )
+            )
+            continue
+
         subject = target.relative_to(root).as_posix() if target.is_relative_to(root) else str(target)
         if not target.is_file():
             unavailable_pattern = _declared_unavailable(spec, relative_path)
