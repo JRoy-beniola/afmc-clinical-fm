@@ -49,6 +49,38 @@ def _authorization_payload(manifest: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _init_committed_repo(repo: Path, relative_path: str, content: str) -> tuple[Path, str]:
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    path = repo / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=Phase07 Test",
+            "-c",
+            "user.email=phase07@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "initial",
+        ],
+        check=True,
+    )
+    commit = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return path, commit
+
+
 def test_execution_manifest_binds_protocol_config_plan_and_exact_cell_count():
     module = _execution_api()
     config = load_phase07_config(_CONFIG_PATH)
@@ -177,6 +209,52 @@ def test_clean_checkout_guard_checks_imported_source_repo_not_caller_cwd(tmp_pat
 
     with pytest.raises(ValueError, match="clean worktree"):
         module.require_clean_phase07_checkout()
+
+
+def test_clean_checkout_guard_ignores_git_repository_selection_environment(tmp_path, monkeypatch):
+    module = _execution_api()
+    source_repo = tmp_path / "dirty-source"
+    alternate_repo = tmp_path / "clean-alternate"
+    imported_source, _ = _init_committed_repo(
+        source_repo,
+        "src/afmc_fm/phase07/execution.py",
+        "# committed source\n",
+    )
+    _init_committed_repo(alternate_repo, "placeholder.txt", "clean alternate\n")
+    imported_source.write_text("# dirty imported source\n", encoding="utf-8")
+
+    monkeypatch.setattr(module, "__file__", str(imported_source))
+    monkeypatch.setenv("GIT_DIR", str(alternate_repo / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(alternate_repo))
+
+    with pytest.raises(ValueError, match="clean worktree"):
+        module.require_clean_phase07_checkout()
+
+
+def test_phase07_commit_resolution_ignores_git_repository_selection_environment(
+    tmp_path,
+    monkeypatch,
+):
+    module = _execution_api()
+    source_repo = tmp_path / "source"
+    alternate_repo = tmp_path / "alternate"
+    imported_source, source_commit = _init_committed_repo(
+        source_repo,
+        "src/afmc_fm/phase07/execution.py",
+        "# source\n",
+    )
+    _, alternate_commit = _init_committed_repo(
+        alternate_repo,
+        "placeholder.txt",
+        "alternate\n",
+    )
+    assert source_commit != alternate_commit
+
+    monkeypatch.setattr(module, "__file__", str(imported_source))
+    monkeypatch.setenv("GIT_DIR", str(alternate_repo / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(alternate_repo))
+
+    assert module.phase07_execution_commit_sha() == source_commit
 
 
 def test_official_execution_checks_authorization_before_any_cell_callback(tmp_path, monkeypatch):
