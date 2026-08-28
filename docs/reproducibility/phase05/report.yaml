@@ -3,7 +3,7 @@ phase_id: phase05
 reference_report: docs/results/phase05/AFMC_Phase0_5_Mechanistic_Validation_Report.docx
 reference_report_sha256: 8be7f0350ae4cd0a9026ab13cea81a5c381b4cacdb5567d121b78ebda31c94d2
 report_source: docs/reproducibility/phase05/report-source.md
-report_source_sha256: b2bf60fb5a77ccdaf8db0a373300e3b0f8138005cc86fb487d425c6a7569701e
+report_source_sha256: d4f56ebdf0124c040b0c521ccaa3ce9c02e35cbedb873485382bf23545ae3761
 extraction_snapshot: docs/reproducibility/phase05/extraction.json
 extractor: afmc_fm.reproducibility.report_source
 extractor_schema_version: 1

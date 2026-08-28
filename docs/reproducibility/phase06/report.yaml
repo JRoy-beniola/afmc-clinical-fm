@@ -3,7 +3,7 @@ phase_id: phase06
 reference_report: docs/results/phase06/AFMC_Phase0_6_Diagnostic_Validation_Report_FINAL.docx
 reference_report_sha256: cfe9393215418096ff25b489aaed36c3a6c09c2442c9e1fde925e8d13a732a6c
 report_source: docs/reproducibility/phase06/report-source.md
-report_source_sha256: 7eb3f35c7567597ccc51ae8ff3b911da8e9e34ed95960c84653760b246ad0930
+report_source_sha256: 8b7d7005411acb8563537fbae820a3711572537cad78bc5d767488c0da7b9e1d
 extraction_snapshot: docs/reproducibility/phase06/extraction.json
 extractor: afmc_fm.reproducibility.report_source
 extractor_schema_version: 1

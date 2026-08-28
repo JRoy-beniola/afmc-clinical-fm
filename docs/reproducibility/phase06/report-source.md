@@ -32,8 +32,7 @@ From Instrumented Reproduction to Initialization-Stability Stop
 
 Figure 1. Complete Phase-0.6 evidence path. Each stage narrowed the explanation before the final initialization-stability falsification.
 
-
-
+<!-- blank -->
 
 # Contents
 
@@ -74,8 +73,7 @@ Figure 1. Complete Phase-0.6 evidence path. Each stage narrowed the explanation 
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 # 1. Executive Summary
 
@@ -102,8 +100,7 @@ D4-B then held five cohort/subset contexts fixed and expanded only model initial
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 # 2. Scientific Scope and Evidence Boundary
 
@@ -140,8 +137,7 @@ Phase-0.6 used hash-bound output stores and staged authorization. Execution and 
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 # 4. D0 - Diagnostic Instrumentation
 
@@ -171,8 +167,7 @@ D1 completed and established an auditable reproduction surface. The late N=40 pr
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 # 6. D2-A - Orthogonal Variance Screen
 
@@ -207,8 +202,7 @@ D3 did not treat the D2-A model-seed result as final because a single strength-2
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 # 8. D2-B - Complementary Orthogonal Replication
 
@@ -240,8 +234,7 @@ Figure 2. D2-B variance decomposition. At N=40, model initialization explains 59
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 ## D2-B N-dependent crossover
 
@@ -281,8 +274,7 @@ The five overlapping seed triples supplied an execution-fidelity check. At both 
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 # 10. D4-B - Frozen Initialization/Optimization Stability Test
 
@@ -317,8 +309,7 @@ Primary estimand: ΔMAE(c,m) = MAE_none(c,m) - MAE_time_scaled(c,m). Positive va
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 # 11. D4-B Implementation, Review, and Readiness
 
@@ -346,8 +337,7 @@ The validated execution-critical implementation SHA was 18f391fa89d80687f38f6c50
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 # 12. D4-B CUDA Execution and Resume Event
 
@@ -384,8 +374,7 @@ The first fresh run was interrupted when the WSL session terminated after 95 of 
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 # 13. D4-B Results
 
@@ -412,8 +401,7 @@ The completed D4-B matrix contained exactly 100 unique cells: stage d4b, world s
 
 Figure 4. D4-B grand paired effect and 95% model-seed-cluster bootstrap interval. The mean is positive, but the interval crosses zero.
 
-
-
+<!-- blank -->
 
 ## Model-seed effects
 
@@ -456,8 +444,7 @@ Figure 6. Mean D4-B ΔMAE by fixed context. Three context means are positive and
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 ## Optimization-dispersion diagnostics
 
@@ -489,8 +476,7 @@ Figure 7. Mean production-selected checkpoint epoch by context and flow variant.
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 # 14. Final D4-B Adjudication
 
@@ -526,8 +512,7 @@ The result also did not meet the frozen FRAGILE definition: the grand mean was p
 
 AMBIGUOUS does not mean that Phase-0.6 learned nothing. It means the evidence is insufficient to certify a robust positive effect, but it is also insufficient to classify the candidate as consistently non-beneficial under the stricter fragile rule. The scientific claim that matters is binary at a higher level: D4-B does not support a robust time-scaled advantage. Because the frozen protocol required stability before capacity/time testing, the correct action is STOP rather than threshold revision or further opportunistic search.
 
-
-
+<!-- blank -->
 
 # 15. Scientific Interpretation and Limits
 
@@ -568,8 +553,7 @@ Clinical validity, safety, transportability, or real-world utility.
 
 The STOP boundary protects the scientific value of the program. Continuing directly into capacity/time testing after a non-stable D4-B result would convert a falsification sequence into post-hoc hypothesis rescue. Phase-0.6 instead closes the branch at the point defined before D4-B results were observed. Any future optimization redesign or new temporal mechanism must therefore begin as a new study with a newly frozen hypothesis and protocol.
 
-
-
+<!-- blank -->
 
 # 16. Final Evidence Inventory and Phase-0.6 Closeout
 

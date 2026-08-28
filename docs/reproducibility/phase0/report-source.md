@@ -24,8 +24,7 @@ Date: 23 August 2026
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 # 1. Executive Summary
 
@@ -134,8 +133,7 @@ Figure 7. Flow-Jump ablation effect for no flow.
 
 Figure 8. Flow-Jump ablation effect for no jump.
 
-
-
+<!-- blank -->
 
 <!-- blank -->
 
@@ -252,8 +250,7 @@ Report paired differences, confidence intervals / bootstrap intervals, and consi
 
 Table 3. Official run provenance and completeness record.
 
-
-
+<!-- blank -->
 
 | Artifact | SHA-256 |
 | --- | --- |

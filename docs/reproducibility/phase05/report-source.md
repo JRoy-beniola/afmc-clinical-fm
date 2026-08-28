@@ -22,8 +22,7 @@ Stage I-A flow-mechanism falsification under extreme low-N constraints
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 # 1. Executive Summary
 
@@ -278,8 +277,7 @@ The observed N=40 predictive benefit should not be described as mechanistic late
 
 <!-- blank -->
 
-
-
+<!-- blank -->
 
 # 12. Evidence Inventory and Reproducibility Map
 
@@ -314,8 +312,7 @@ Repository evidence lineage
 | Closeout note: the repository evidence manifest should be generated only after this final DOCX is placed in docs/results/phase05/, so the human decision record is itself covered by the final hash set. |
 | --- |
 
-
-
+<!-- blank -->
 
 # 13. Complete Exploratory Metric Matrix
 
@@ -345,8 +342,7 @@ The N=40 pattern is therefore internally asymmetric: value prediction becomes fa
 | Interpretation guardrail: Stage I-A remains failed because the official decision statistic is paired MAE nAULC across N={5,10,20,40}, with the locked 4.1567% effect floor and 4/5 consistency requirement. No N-specific postmortem row can retrospectively replace that criterion. |
 | --- |
 
-
-
+<!-- blank -->
 
 # 14. Phase-0 → Phase-0.5 → Phase-0.6 Reasoning Chain
 
