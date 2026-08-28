@@ -89,6 +89,22 @@ def _spec_path(phase_id: str) -> Path:
     return Path("docs/reproducibility") / phase_id / "rerun.yaml"
 
 
+def _rerun_destination(repository: Path, phase_id: str, run_id: str | None) -> Path:
+    reproduction_root = (repository / "outputs/reproduction").resolve()
+    if reproduction_root != repository and not reproduction_root.is_relative_to(repository):
+        raise ValueError("outputs/reproduction must resolve within the repository")
+
+    rerun_root = (repository / "outputs/reproduction" / phase_id / "rerun").resolve()
+    expected = Path("outputs/reproduction") / phase_id / "rerun"
+    if rerun_root != reproduction_root and not rerun_root.is_relative_to(reproduction_root):
+        raise ValueError(f"rerun destination must be beneath {expected.as_posix()}")
+
+    destination = (rerun_root / _run_id(run_id)).resolve()
+    if destination != rerun_root and not destination.is_relative_to(rerun_root):
+        raise ValueError(f"rerun destination must be beneath {expected.as_posix()}")
+    return destination
+
+
 def _commit_available(repository: Path, sha: str) -> bool:
     completed = subprocess.run(
         ["git", "cat-file", "-e", f"{sha}^{{commit}}"],
@@ -148,14 +164,7 @@ def plan_rerun(
     phase = get_phase(phase_id)
     relative_spec = _spec_path(phase_id)
     specification = load_rerun_spec(repository / relative_spec)
-    destination = (
-        repository
-        / "outputs"
-        / "reproduction"
-        / phase_id
-        / "rerun"
-        / _run_id(run_id)
-    ).resolve()
+    destination = _rerun_destination(repository, phase_id, run_id)
     historical_environment = classify_historical_environment(repository, phase)
 
     if not phase.rerun_supported or not specification.supported:
