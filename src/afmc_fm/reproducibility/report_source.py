@@ -210,7 +210,7 @@ def render_markdown(snapshot: ReportSnapshot) -> str:
     rendered: list[str] = []
     for block in snapshot.blocks:
         if isinstance(block, ParagraphBlock):
-            if not block.text:
+            if not block.text.strip():
                 rendered.append("<!-- blank -->")
                 continue
             match = _HEADING_RE.fullmatch(block.style or "")
