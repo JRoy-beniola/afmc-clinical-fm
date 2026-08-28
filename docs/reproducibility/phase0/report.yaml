@@ -1,0 +1,15 @@
+schema_version: 1
+phase_id: phase0
+reference_report: docs/results/phase0/AFMC_Phase0_Synthetic_Validation_Report.docx
+reference_report_sha256: 9fafbd5d37db52368d691a9dbaaed5ada704a9bd2cd1f6f13105ba7408580997
+report_source: docs/reproducibility/phase0/report-source.md
+report_source_sha256: d05ba0debee9b63d79050b38dc76327bd4f2163a3621e9ba608dc893e5ccb143
+extraction_snapshot: docs/reproducibility/phase0/extraction.json
+extractor: afmc_fm.reproducibility.report_source
+extractor_schema_version: 1
+block_count: 120
+paragraph_count: 95
+table_count: 11
+image_count: 14
+audit_status: accepted
+known_limitations: []

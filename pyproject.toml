@@ -15,6 +15,7 @@ dependencies = [
   "torch>=2.3",
   "PyYAML>=6.0",
   "matplotlib>=3.9",
+  "python-docx>=1.1",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +28,7 @@ dev = [
 [project.scripts]
 afmc-phase0 = "afmc_fm.cli:main"
 afmc-phase06 = "afmc_fm.phase06.cli:main"
+afmc-reproduce = "afmc_fm.reproducibility.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

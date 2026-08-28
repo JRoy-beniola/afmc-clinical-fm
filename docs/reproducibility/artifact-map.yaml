@@ -1,0 +1,83 @@
+schema_version: 1
+scope: frozen historical evidence through post-Phase-0.6 exploratory analysis
+
+phases:
+  phase0:
+    official_evidence_root: docs/results/phase0
+    official_report: docs/results/phase0/AFMC_Phase0_Synthetic_Validation_Report.docx
+    decision_record: docs/results/phase0/official-result.md
+    expected_classification: "PHASE 0 COMPLETE — EXTREME-LOW-N HYPOTHESIS NOT VALIDATED."
+    result_kind: historical
+    implementation_sha: d6f105eee73fcb8e9cc5987d292b1bb98a687382
+    execution_sha: d6f105eee73fcb8e9cc5987d292b1bb98a687382
+    environment_status: unknown
+    rebuild_supported: true
+    rerun_supported: false
+    manifests:
+      - docs/results/phase0/integrity/repository_evidence_manifest.sha256
+    report_source: docs/reproducibility/phase0/report-source.md
+    rebuild_manifest: docs/reproducibility/phase0/rebuild.yaml
+    historical_tools:
+      - src/afmc_fm/cli.py
+
+  phase05:
+    official_evidence_root: docs/results/phase05
+    official_report: docs/results/phase05/AFMC_Phase0_5_Mechanistic_Validation_Report.docx
+    decision_record: docs/results/phase05/official-result.md
+    expected_classification: "PHASE-0.5 TERMINATED AT STAGE I-A — FLOW MECHANISM GATE NOT ESTABLISHED"
+    result_kind: historical
+    implementation_sha: 50a94c06bc1c419ca55738f15f074cc06ccc3f36
+    execution_sha: 50a94c06bc1c419ca55738f15f074cc06ccc3f36
+    environment_status: unknown
+    rebuild_supported: true
+    rerun_supported: false
+    manifests:
+      - docs/results/phase05/integrity/repository_evidence_manifest.sha256
+    report_source: docs/reproducibility/phase05/report-source.md
+    rebuild_manifest: docs/reproducibility/phase05/rebuild.yaml
+    historical_tools:
+      - src/afmc_fm/phase05
+      - tools/monitoring/phase05/monitor_stage1.py
+
+  phase06:
+    official_evidence_root: docs/results/phase06
+    official_report: docs/results/phase06/AFMC_Phase0_6_Diagnostic_Validation_Report_FINAL.docx
+    decision_record: docs/results/phase06/decision_record.md
+    expected_classification: "D4-B AMBIGUOUS -> STOP"
+    result_kind: historical
+    implementation_sha: 18f391fa89d80687f38f6c50a60a062e4524edd1
+    execution_sha: 6ef4d506e5a6b96b15eb58225b95ebf64d3247ea
+    environment_status: unknown
+    rebuild_supported: true
+    rerun_supported: false
+    manifests:
+      - docs/results/phase06/provenance/FINAL_MANIFEST.sha256
+    manifest_unavailable_patterns:
+      docs/results/phase06/provenance/FINAL_MANIFEST.sha256:
+        - "*.pt"
+    report_source: docs/reproducibility/phase06/report-source.md
+    rebuild_manifest: docs/reproducibility/phase06/rebuild.yaml
+    historical_tools:
+      - src/afmc_fm/phase06/cli.py
+      - src/afmc_fm/phase06/analysis.py
+      - src/afmc_fm/phase06/d2b.py
+      - src/afmc_fm/phase06/d4b.py
+
+  phase06-posthoc:
+    official_evidence_root: docs/results/phase06_posthoc_optimization
+    official_report: null
+    decision_record: docs/results/phase06_posthoc_optimization/decision_record.md
+    expected_classification: "structured optimization-conditioned heterogeneity worth prospective testing"
+    result_kind: exploratory
+    implementation_sha: 8c9de2aaeee1e26f65e28a1dd682f8ac3effad72
+    execution_sha: 8c9de2aaeee1e26f65e28a1dd682f8ac3effad72
+    environment_status: unknown
+    rebuild_supported: false
+    rerun_supported: false
+    manifests:
+      - docs/results/phase06_posthoc_optimization/MANIFEST.sha256
+    report_source: docs/reproducibility/phase06_posthoc/report-source.md
+    report_manifest: docs/reproducibility/phase06_posthoc/report.yaml
+    historical_tools:
+      - src/afmc_fm/phase06/posthoc_optimization.py
+      - src/afmc_fm/phase06/posthoc_archive.py

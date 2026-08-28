@@ -1,0 +1,14 @@
+schema_version: 1
+phase_id: phase0
+report_source: docs/reproducibility/phase0/report-source.md
+reference_report: docs/results/phase0/AFMC_Phase0_Synthetic_Validation_Report.docx
+document_output: report/AFMC_Phase0_Synthetic_Validation_Report_rebuilt.docx
+artifacts:
+  - kind: derived-table
+    source: docs/results/phase0/tables/all_full_model_test_results.csv
+    output: reference/tables/all_full_model_test_results.csv
+    mode: reference-copy
+  - kind: figure
+    source: docs/results/phase0/figures/learning_curves.png
+    output: reference/figures/learning_curves.png
+    mode: reference-copy

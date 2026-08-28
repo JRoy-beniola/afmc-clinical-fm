@@ -1,0 +1,10 @@
+schema_version: 1
+phase_id: phase05
+report_source: docs/reproducibility/phase05/report-source.md
+reference_report: docs/results/phase05/AFMC_Phase0_5_Mechanistic_Validation_Report.docx
+document_output: report/AFMC_Phase0_5_Mechanistic_Validation_Report_rebuilt.docx
+artifacts:
+  - kind: derived-table
+    source: docs/results/phase05/tables/flow_gate_verified.csv
+    output: reference/tables/flow_gate_verified.csv
+    mode: reference-copy

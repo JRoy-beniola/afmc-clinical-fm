@@ -1,0 +1,54 @@
+schema_version: 1
+phase_id: phase06
+supported: false
+blocked_reason: >-
+  The authentic D4-B runner is preserved, but a safe historical rerun requires a
+  project-local historical .venv, CUDA-capable runtime, the immutable core parent,
+  and the immutable D2-B parent. The Git archive is not a complete executable copy
+  of those historical parent output trees, including checkpoint binaries, so R4
+  must remain blocked rather than reconstructing or substituting them silently.
+implementation_sha: 18f391fa89d80687f38f6c50a60a062e4524edd1
+command:
+  - bash
+  - tools/execution/phase06/run_stage.sh
+  - d4b
+  - fresh
+environment:
+  REPO: "{worktree}"
+  CONTROL: "{output}/control"
+  PHASE06_OUTPUT: "{output}/scientific"
+  PHASE06_CORE_PARENT_OUTPUT: "{parent:core}"
+  PHASE06_D2B_PARENT_OUTPUT: "{parent:d2b}"
+required_paths:
+  - tools/execution/phase06/run_stage.sh
+  - configs/experiments/phase06.yaml
+  - docs/superpowers/validation/2026-08-27-phase0-6-d4b-validation.md
+  - docs/superpowers/specs/2026-08-27-phase0-6-d4b-execution-addendum.md
+  - docs/results/phase05/raw/official_output/protocol_lock.json
+required_parent_bindings:
+  - name: core
+    environment_variable: PHASE06_CORE_PARENT_OUTPUT
+    source: docs/results/phase06/evidence/core
+    sha256: null
+  - name: d2b
+    environment_variable: PHASE06_D2B_PARENT_OUTPUT
+    source: docs/results/phase06/evidence/d2b
+    sha256: null
+seed_policy:
+  mode: historical_exact
+  protected_confirmatory: false
+  historical_exact_only: true
+  recorded_seeds:
+    - 1001
+    - 1002
+    - 1003
+    - 1004
+    - 1005
+    - 1006
+    - 1007
+    - 1008
+    - 1009
+    - 1010
+comparison_policy:
+  decision: D4-B AMBIGUOUS -> STOP
+  note: Only the historical D4-B diagnostic boundary is described; no later experiment is authorized.
