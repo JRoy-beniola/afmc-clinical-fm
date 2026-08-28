@@ -180,7 +180,7 @@ def _neutralize_properties(document: Document) -> None:
     properties.last_modified_by = ""
     properties.created = _FIXED_CORE_TIME
     properties.modified = _FIXED_CORE_TIME
-    properties.last_printed = None
+    properties.last_printed = _FIXED_CORE_TIME
     properties.revision = 1
 
 
