@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from tools.reproducibility.bootstrap_reports import bootstrap_phase
+from afmc_fm.reproducibility.bootstrap import bootstrap_phase
 
 from afmc_fm.reproducibility.models import PhaseDefinition
 
