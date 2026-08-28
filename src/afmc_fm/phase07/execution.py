@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from collections.abc import Callable, Sequence
 from copy import deepcopy
 from pathlib import Path
@@ -9,8 +10,10 @@ from typing import TypeVar
 
 import torch
 
+from afmc_fm.config import load_yaml
+from afmc_fm.execution.manifest import execution_commit_sha
 from afmc_fm.execution.persistence import canonical_config_hash
-from afmc_fm.phase05.config import Phase05Config
+from afmc_fm.phase05.config import Phase05Config, load_phase05_config
 from afmc_fm.phase05.model import Phase05FlowJumpAdapter
 from afmc_fm.phase05.training import fit_phase05_model
 from afmc_fm.phase06.diagnostics import Phase06DiagnosticRecorder
@@ -21,6 +24,7 @@ from afmc_fm.phase07.planning import (
     plan_phase07_cells,
 )
 from afmc_fm.phase07.protocol import build_phase07_protocol_lock
+from afmc_fm.simulator.config import SimulatorConfig
 
 _EXPECTED_CELL_COUNT = 200
 _AUTHORIZATION_VALUE = "OFFICIAL_EXECUTION_AUTHORIZED"
@@ -39,6 +43,23 @@ def _canonical_json_bytes(payload: object) -> bytes:
     ).encode("utf-8")
 
 
+def _load_simulator_config(path: str | Path) -> SimulatorConfig:
+    raw = dict(load_yaml(path))
+    raw.pop("seed", None)
+    return SimulatorConfig(**raw)
+
+
+def require_clean_phase07_checkout() -> None:
+    result = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    if result.stdout.strip():
+        raise ValueError("official Phase 0.7 execution requires a clean worktree")
+
+
 def build_phase07_execution_manifest(
     config: Phase07Config,
     *,
@@ -49,6 +70,8 @@ def build_phase07_execution_manifest(
         raise TypeError("config must be a Phase07Config")
 
     cells = plan_phase07_cells(config)
+    phase05_config = load_phase05_config(config.phase05_config)
+    simulator_config = _load_simulator_config(config.simulator_config)
     protocol_lock = build_phase07_protocol_lock(
         config,
         execution_commit=execution_commit,
@@ -65,6 +88,8 @@ def build_phase07_execution_manifest(
         "execution_commit": execution_commit,
         "phase07_spec_sha256": protocol_lock["phase07_spec_sha256"],
         "phase07_config_sha256": canonical_config_hash(config),
+        "phase05_config_sha256": canonical_config_hash(phase05_config),
+        "simulator_config_sha256": canonical_config_hash(simulator_config),
         "protocol_lock_sha256": protocol_hash,
         "phase07_plan_sha256": plan_hash,
         "expected_cell_count": len(cells),
@@ -79,6 +104,8 @@ def build_phase07_execution_manifest(
 def _expected_authorization(manifest: dict[str, object]) -> dict[str, object]:
     required = (
         "execution_commit",
+        "phase05_config_sha256",
+        "simulator_config_sha256",
         "protocol_lock_sha256",
         "phase07_plan_sha256",
     )
@@ -93,6 +120,8 @@ def _expected_authorization(manifest: dict[str, object]) -> dict[str, object]:
         "phase": "phase07",
         "authorization": _AUTHORIZATION_VALUE,
         "execution_commit": manifest["execution_commit"],
+        "phase05_config_sha256": manifest["phase05_config_sha256"],
+        "simulator_config_sha256": manifest["simulator_config_sha256"],
         "protocol_lock_sha256": manifest["protocol_lock_sha256"],
         "phase07_plan_sha256": manifest["phase07_plan_sha256"],
     }
@@ -140,6 +169,9 @@ def run_phase07_official_cells(
     if supplied_plan_hash != manifest["phase07_plan_sha256"]:
         raise ValueError("Phase 0.7 official cell plan does not match the frozen plan")
 
+    require_clean_phase07_checkout()
+    if execution_commit_sha() != execution_commit:
+        raise ValueError("Phase 0.7 execution checkout does not match the authorized commit")
     require_phase07_official_authorization(authorization_path, manifest)
     return tuple(execute_cell(cell) for cell in cells)
 
@@ -257,6 +289,7 @@ def run_phase07_device_smoke(device: str) -> dict[str, object]:
 
 __all__ = [
     "build_phase07_execution_manifest",
+    "require_clean_phase07_checkout",
     "require_phase07_official_authorization",
     "run_phase07_device_smoke",
     "run_phase07_official_cells",
