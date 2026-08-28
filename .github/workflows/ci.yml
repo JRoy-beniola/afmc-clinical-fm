@@ -17,5 +17,41 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install PyYAML pytest ruff python-docx
       - run: pip install -e . --no-deps
+      - name: Stage corrected R2 report-source bundles
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from afmc_fm.reproducibility.bootstrap import bootstrap_phase
+          from afmc_fm.reproducibility.registry import get_phase
+          from afmc_fm.reproducibility.report_audit import audit_report_source
+
+          root = Path('.')
+          for phase_id in ('phase0', 'phase05', 'phase06'):
+              phase = get_phase(phase_id)
+              destination = Path('docs/reproducibility') / phase_id
+              bootstrap_phase(
+                  root=root,
+                  phase=phase,
+                  destination=destination,
+                  replace=True,
+              )
+              audit = audit_report_source(root, phase, destination, accept=True)
+              if not audit.ok:
+                  failed = [(check.code, check.detail) for check in audit.checks if not check.ok]
+                  raise SystemExit(f'{phase_id} audit failed: {failed}')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: corrected-r2-report-sources
+          path: |
+            docs/reproducibility/phase0/report-source.md
+            docs/reproducibility/phase0/report.yaml
+            docs/reproducibility/phase0/extraction.json
+            docs/reproducibility/phase05/report-source.md
+            docs/reproducibility/phase05/report.yaml
+            docs/reproducibility/phase05/extraction.json
+            docs/reproducibility/phase06/report-source.md
+            docs/reproducibility/phase06/report.yaml
+            docs/reproducibility/phase06/extraction.json
       - run: ruff check src tests tools/reproducibility
       - run: pytest tests/reproducibility -q
