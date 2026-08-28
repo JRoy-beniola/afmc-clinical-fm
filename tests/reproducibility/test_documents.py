@@ -2,6 +2,8 @@ import hashlib
 from pathlib import Path
 
 import pytest
+from docx import Document
+
 from afmc_fm.reproducibility.documents import (
     BlankNode,
     HeadingNode,
@@ -11,8 +13,6 @@ from afmc_fm.reproducibility.documents import (
     build_report_docx,
     parse_report_source,
 )
-from docx import Document
-
 from afmc_fm.reproducibility.report_source import extract_docx
 
 
