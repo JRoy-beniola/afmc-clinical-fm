@@ -22,6 +22,8 @@ def first_patience_exhaustion_epoch(
 
     epochs = pd.to_numeric(trace["epoch"], errors="raise")
     stale = pd.to_numeric(trace["stale_epochs"], errors="raise")
+    if (epochs <= 0).any() or not epochs.is_monotonic_increasing:
+        raise ValueError("trace epochs must be positive and increasing")
     matched = trace.loc[stale >= patience]
     if matched.empty:
         return None
