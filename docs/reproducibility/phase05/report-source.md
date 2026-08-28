@@ -25,7 +25,7 @@ Stage I-A flow-mechanism falsification under extreme low-N constraints
 
 
 
-1. Executive Summary
+# 1. Executive Summary
 
 The official Phase-0.5 Stage I-A run completed all 60 planned flow-isolation cells successfully. The run then stopped exactly at the preregistered mechanism gate because neither learned flow candidate demonstrated a sufficiently large and sufficiently consistent low-N advantage over the no-flow control.
 
@@ -38,7 +38,7 @@ Postmortem analysis reveals a structured but non-confirmatory pattern: time-scal
 
 <!-- blank -->
 
-Gate Criterion Assessment
+## Gate Criterion Assessment
 
 | Gate | Question | Status | Evidence |
 | --- | --- | --- | --- |
@@ -50,7 +50,7 @@ Gate Criterion Assessment
 
 <!-- blank -->
 
-2. Experimental Context and Evidence Boundary
+# 2. Experimental Context and Evidence Boundary
 
 Phase-0.5 was designed as a staged falsification protocol rather than an architecture sweep. Stage I-A isolates continuous latent flow in the smooth positive-control world while jump is disabled and uncertainty is deterministic. Only a flow mechanism that clears the development gate is permitted to advance to jump isolation.
 
@@ -62,7 +62,7 @@ Figure 1. Phase-0.5 staged evidence path. The official run terminated after Stag
 
 The development evidence uses five preregistered seed bundles (401/501/601 through 405/505/605) and the primary low-N budgets N = {5, 10, 20, 40}. Confirmatory bundles 701-710 were not touched. No post-hoc threshold change, seed substitution, or manual mechanism selection was performed.
 
-3. Stage I-A Flow Gate Result
+# 3. Stage I-A Flow Gate Result
 
 The gate compares each learned flow candidate against the no-flow control using paired normalized log-N AULC across the four primary train sizes. A candidate passes only if all three conditions hold: mean paired improvement > 0, at least 4/5 bundles favor the candidate, and mean relative improvement is at least the locked minimum effect.
 
@@ -86,7 +86,7 @@ Figure 2. Mean paired relative improvement for the two learned flow candidates a
 
 <!-- blank -->
 
-4. Seed-Bundle Heterogeneity
+# 4. Seed-Bundle Heterogeneity
 
 Aggregate means conceal substantial heterogeneity. Gated flow has several large negative bundle effects and no stable pattern. Time-scaled flow is more structured: one bundle shows a strong +8.11% nAULC benefit, one a +1.90% benefit, two are slightly negative, and one is strongly negative at -7.64%.
 
@@ -108,7 +108,7 @@ Figure 3. Time-scaled flow paired nAULC effect by development bundle. The sign c
 
 Because each bundle changes cohort, low-N subset, and model-initialization seeds together, the current artifact cannot attribute this heterogeneity to one source. Cohort variation, subset composition, optimization initialization, or their interactions remain plausible.
 
-5. Low-N Learning-Regime Diagnosis
+# 5. Low-N Learning-Regime Diagnosis
 
 Unfolding nAULC into the individual train sizes reveals a late predictive crossover. Time-scaled flow is negative on average at N=5, 10, and 20, then becomes strongly positive at N=40 with 4/5 bundle wins. Gated flow is more erratic and only weakly positive at N=40.
 
@@ -132,7 +132,7 @@ Figure 4. Mean relative MAE effect across N. Time-scaled flow only shows a clear
 
 <!-- blank -->
 
-6. Secondary Metrics and Mechanistic Interpretation
+# 6. Secondary Metrics and Mechanistic Interpretation
 
 The N=40 result must be interpreted across secondary metrics, not MAE alone. Oriented deltas below are defined so that positive values favor time-scaled flow.
 
@@ -160,7 +160,7 @@ At N=40, time-scaled flow improves MAE and RMSE with 4/5 wins and also improves 
 
 <!-- blank -->
 
-7. Low-N Model-Selection Constraint
+# 7. Low-N Model-Selection Constraint
 
 The nominal low-N budget is split internally into fit and validation patients. At the smallest budgets, early stopping is therefore based on extremely small validation sets.
 
@@ -186,7 +186,7 @@ The training loop selects the best checkpoint using a multitask validation objec
 
 <!-- blank -->
 
-8. Phase-0.5 Decision
+# 8. Phase-0.5 Decision
 
 The official Phase-0.5 run terminates at Stage I-A. Since flow is a prerequisite mechanism in the staged protocol, jump isolation, uncertainty selection, timing audit, freeze, confirmatory low-N testing, and robustness testing are not scientifically authorized within this run.
 
@@ -207,7 +207,7 @@ The official Phase-0.5 run terminates at Stage I-A. Since flow is a prerequisite
 
 <!-- blank -->
 
-9. Recommended Follow-up Agenda (Outside Official Phase-0.5)
+# 9. Recommended Follow-up Agenda (Outside Official Phase-0.5)
 
 Any further experimentation should be explicitly separated from the failed official run and restricted to development information. The goal is diagnosis before redesign, not continuation of the stopped protocol.
 
@@ -236,7 +236,7 @@ Any further experimentation should be explicitly separated from the failed offic
 
 <!-- blank -->
 
-10. Execution Integrity and Provenance
+# 10. Execution Integrity and Provenance
 
 | Field | Value |
 | --- | --- |
@@ -259,7 +259,7 @@ Any further experimentation should be explicitly separated from the failed offic
 
 The launcher returned exit code 1 because the application intentionally raises a runtime exception when the flow development gate fails. All 60 planned flow cells were already persisted, and the gate artifact was written before the stop. This report therefore treats the event as a protocol-governed scientific termination rather than a computational failure.
 
-11. Interpretation Limits
+# 11. Interpretation Limits
 
 The result is synthetic methodological evidence only; it does not establish clinical validity, utility, safety, or transportability.
 
@@ -281,7 +281,7 @@ The observed N=40 predictive benefit should not be described as mechanistic late
 
 
 
-12. Evidence Inventory and Reproducibility Map
+# 12. Evidence Inventory and Reproducibility Map
 
 | EVIDENCE CLASS: ARCHIVAL / REPRODUCIBILITY |
 | --- |
@@ -317,7 +317,7 @@ Repository evidence lineage
 
 
 
-13. Complete Exploratory Metric Matrix
+# 13. Complete Exploratory Metric Matrix
 
 | EVIDENCE CLASS: EXPLORATORY POSTMORTEM — NOT A PREREGISTERED SUCCESS CRITERION |
 | --- |
@@ -348,7 +348,7 @@ The N=40 pattern is therefore internally asymmetric: value prediction becomes fa
 
 
 
-14. Phase-0 → Phase-0.5 → Phase-0.6 Reasoning Chain
+# 14. Phase-0 → Phase-0.5 → Phase-0.6 Reasoning Chain
 
 | STATUS: PHASE-0.6 IS A SEPARATE DIAGNOSTIC PROGRAM; CONFIRMATORY BUNDLES REMAIN PROTECTED |
 | --- |

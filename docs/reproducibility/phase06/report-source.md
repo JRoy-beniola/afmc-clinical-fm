@@ -35,7 +35,7 @@ Figure 1. Complete Phase-0.6 evidence path. Each stage narrowed the explanation 
 
 
 
-Contents
+# Contents
 
 1. Executive Summary
 
@@ -77,7 +77,7 @@ Contents
 
 
 
-1. Executive Summary
+# 1. Executive Summary
 
 Phase-0.6 was a diagnostic program created to explain a structured failure rather than to rescue a failed mechanism claim. Its target was the reproducible observation that time-scaled flow could become predictively favorable around N=40 while remaining heterogeneous across matched seed bundles. The program therefore instrumented training, reproduced the behavior under an auditable output identity, decomposed variance sources, required complementary replication before causal narrowing, and finally subjected the resulting initialization hypothesis to a frozen stress test.
 
@@ -105,7 +105,7 @@ D4-B then held five cohort/subset contexts fixed and expanded only model initial
 
 
 
-2. Scientific Scope and Evidence Boundary
+# 2. Scientific Scope and Evidence Boundary
 
 Phase-0.6 was explicitly separated from the stopped Phase-0.5 protocol. Its purpose was diagnostic: determine why a late N=40 predictive crossover appeared and why that behavior varied across seed bundles. The program did not reinterpret the earlier mechanism-gate failure, did not claim latent-mechanism recovery, and did not authorize confirmatory evaluation.
 
@@ -119,7 +119,7 @@ D4 capacity/time controls were a conditional future route, not part of Phase-0.6
 
 All evidence is synthetic methodological evidence; it does not establish clinical validity, safety, utility, or transportability.
 
-3. Protocol Architecture and Provenance Model
+# 3. Protocol Architecture and Provenance Model
 
 Phase-0.6 used hash-bound output stores and staged authorization. Execution and adjudication were deliberately separate operations. A later stage could consume earlier evidence only after deep validation of protocol identity, completion, seed firewall, and parent-child linkage. This design prevented a failed or altered parent from silently propagating into a later diagnostic.
 
@@ -143,7 +143,7 @@ Phase-0.6 used hash-bound output stores and staged authorization. Execution and 
 
 
 
-4. D0 - Diagnostic Instrumentation
+# 4. D0 - Diagnostic Instrumentation
 
 D0 added the observability missing from the earlier run while preserving training behavior. Persisted diagnostics included epoch-level training and validation losses, validation MAE/RMSE, production checkpoint selection, a shadow best-validation-MAE checkpoint, stopping epoch and reason, gradient and parameter norms, flow displacement/update magnitude, and execution provenance.
 
@@ -160,7 +160,7 @@ The central non-interference requirement was verified: the diagnostic path was b
 
 <!-- blank -->
 
-5. D1 - Exact Instrumented Reproduction
+# 5. D1 - Exact Instrumented Reproduction
 
 D1 replayed the exact five development bundles across N={5,10,20,40} for only the no-flow and time-scaled variants, producing 40 diagnostic cells. Architecture, optimizer, objective, data generation, split semantics, and the earlier decision boundary were held fixed. The purpose was not to rerun a failed gate but to verify that the N-dependent pattern survived under instrumentation and a separate Phase-0.6 identity.
 
@@ -174,7 +174,7 @@ D1 completed and established an auditable reproduction surface. The late N=40 pr
 
 
 
-6. D2-A - Orthogonal Variance Screen
+# 6. D2-A - Orthogonal Variance Screen
 
 The five original matched bundles changed cohort seed, subset seed, and model seed together. D2-A therefore recombined the five exposed development levels in a balanced OA(25,3,5,2) strength-2 design. For cohort index i and subset index j, the model index was k=(i+j) mod 5. Each factor level appeared five times and every factor pair occurred once.
 
@@ -187,7 +187,7 @@ D2-A evaluated N={5,40} and flow={none,time_scaled}, giving exactly 100 cells. T
 
 <!-- blank -->
 
-7. D3 - Hypothesis Adjudication
+# 7. D3 - Hypothesis Adjudication
 
 D3 did not treat the D2-A model-seed result as final because a single strength-2 orthogonal array can alias main effects with unmodeled interactions. The adjudicator therefore required a second, independently structured complementary array before model-initialization dominance could be considered sufficient evidence.
 
@@ -210,7 +210,7 @@ D3 did not treat the D2-A model-seed result as final because a single strength-2
 
 
 
-8. D2-B - Complementary Orthogonal Replication
+# 8. D2-B - Complementary Orthogonal Replication
 
 D2-B changed only the orthogonal mapping to k=(i+2j) mod 5. Cohort/subset levels, N values, flow modes, training semantics, and seed firewall remained unchanged. All 100 cells were recomputed in a new child store, including five seed triples overlapping D2-A so that reproducibility itself became observable evidence rather than inherited data.
 
@@ -243,7 +243,7 @@ Figure 2. D2-B variance decomposition. At N=40, model initialization explains 59
 
 
 
-D2-B N-dependent crossover
+## D2-B N-dependent crossover
 
 Across the 25 D2-B seed triples, mean ΔMAE was -0.00546 at N=5 and +0.02546 at N=40. The paired shift T = ΔMAE_N40 - ΔMAE_N5 averaged +0.03093; 19/25 shifts were positive, and the fixed 10,000-resample 95% bootstrap interval [0.01383, 0.04739] lay wholly above zero. This independently reproduced the late predictive crossover.
 
@@ -258,7 +258,7 @@ Figure 3. D2-B reproduces the N-dependent crossover: slightly unfavorable at N=5
 
 <!-- blank -->
 
-9. Cross-Array Adjudication and Sufficiency
+# 9. Cross-Array Adjudication and Sufficiency
 
 After the D2-B child was audited, a separate adjudicator compared D2-A and D2-B under the frozen sufficiency rule. Both arrays returned the same named-factor state: none at N=5 and model at N=40. Complementary-array evidence was therefore classified sufficient, removing the need for a full 5x5x5 development factorial.
 
@@ -284,7 +284,7 @@ The five overlapping seed triples supplied an execution-fidelity check. At both 
 
 
 
-10. D4-B - Frozen Initialization/Optimization Stability Test
+# 10. D4-B - Frozen Initialization/Optimization Stability Test
 
 The cross-array result did not justify changing the optimizer. It justified first asking whether the observed N=40 advantage survives broader model-initialization variation when cohort/subset context and the entire training recipe are held fixed. D4-B was therefore a falsification/stability test, not an optimization sweep.
 
@@ -320,7 +320,7 @@ Primary estimand: ΔMAE(c,m) = MAE_none(c,m) - MAE_time_scaled(c,m). Positive va
 
 
 
-11. D4-B Implementation, Review, and Readiness
+# 11. D4-B Implementation, Review, and Readiness
 
 D4-B was implemented behind a strict execution-readiness gate. The child protocol bound two immutable parents: the core D1/D2-A/D3 root and the completed D2-B root. Before child creation, the implementation deeply validated both parents, recomputed D2-A and D2-B analyses, recomputed the cross-array adjudication, required equality with the persisted frozen decision, and required the route to remain D4_OPTIMIZATION.
 
@@ -349,7 +349,7 @@ The validated execution-critical implementation SHA was 18f391fa89d80687f38f6c50
 
 
 
-12. D4-B CUDA Execution and Resume Event
+# 12. D4-B CUDA Execution and Resume Event
 
 The official D4-B child was created at outputs/phase06_d4b_6ef4d506e5a6b96b15eb58225b95ebf64d3247ea under execution HEAD 6ef4d506e5a6b96b15eb58225b95ebf64d3247ea. CUDA preflight passed on the RTX 4060 Laptop GPU with PyTorch 2.13.0+cu130 and CUDA 13.0.
 
@@ -387,7 +387,7 @@ The first fresh run was interrupted when the WSL session terminated after 95 of 
 
 
 
-13. D4-B Results
+# 13. D4-B Results
 
 The completed D4-B matrix contained exactly 100 unique cells: stage d4b, world smooth, N=40, 50 no-flow cells, 50 time-scaled cells, five fixed contexts, and model seeds 1001-1010. The primary analysis produced exactly 50 paired effects. No adjudication artifact existed during the post-execution audit.
 
@@ -415,7 +415,7 @@ Figure 4. D4-B grand paired effect and 95% model-seed-cluster bootstrap interval
 
 
 
-Model-seed effects
+## Model-seed effects
 
 <!-- blank -->
 
@@ -438,7 +438,7 @@ Figure 5. Mean D4-B ΔMAE by model seed. Six seed means are positive and four ar
 
 <!-- blank -->
 
-Fixed-context effects
+## Fixed-context effects
 
 <!-- blank -->
 
@@ -459,7 +459,7 @@ Figure 6. Mean D4-B ΔMAE by fixed context. Three context means are positive and
 
 
 
-Optimization-dispersion diagnostics
+## Optimization-dispersion diagnostics
 
 The optimization traces were strongly context-dependent. The no-flow baseline frequently trained to epoch 100, whereas time-scaled flow often selected earlier checkpoints and exhausted patience in specific contexts. These diagnostics do not change the frozen classification, but they support the interpretation that the candidate changes optimization dynamics in a non-uniform way.
 
@@ -492,7 +492,7 @@ Figure 7. Mean production-selected checkpoint epoch by context and flow variant.
 
 
 
-14. Final D4-B Adjudication
+# 14. Final D4-B Adjudication
 
 After the post-execution audit confirmed the exact 100-cell matrix, required analysis files, hashes, completion marker, and absence of any pre-existing adjudication artifact, the separate adjudicate-d4b action was run with both immutable parent roots explicitly supplied. It exited successfully with code 0 and wrote the final adjudication artifact.
 
@@ -522,16 +522,16 @@ The result also did not meet the frozen FRAGILE definition: the grand mean was p
 
 <!-- blank -->
 
-Why the verdict is AMBIGUOUS
+## Why the verdict is AMBIGUOUS
 
 AMBIGUOUS does not mean that Phase-0.6 learned nothing. It means the evidence is insufficient to certify a robust positive effect, but it is also insufficient to classify the candidate as consistently non-beneficial under the stricter fragile rule. The scientific claim that matters is binary at a higher level: D4-B does not support a robust time-scaled advantage. Because the frozen protocol required stability before capacity/time testing, the correct action is STOP rather than threshold revision or further opportunistic search.
 
 
 
 
-15. Scientific Interpretation and Limits
+# 15. Scientific Interpretation and Limits
 
-What Phase-0.6 established
+## What Phase-0.6 established
 
 The late N=40 predictive crossover is reproducible across independently structured development diagnostics.
 
@@ -545,7 +545,7 @@ Expanded model-seed testing shows that the N=40 time-scaled effect is not stable
 
 Optimization traces show material context-dependent differences in checkpoint selection and early stopping for time-scaled flow.
 
-What Phase-0.6 did not establish
+## What Phase-0.6 did not establish
 
 A robust time-scaled architectural advantage at N=40.
 
@@ -564,14 +564,14 @@ Clinical validity, safety, transportability, or real-world utility.
 
 <!-- blank -->
 
-Why STOP is scientifically meaningful
+## Why STOP is scientifically meaningful
 
 The STOP boundary protects the scientific value of the program. Continuing directly into capacity/time testing after a non-stable D4-B result would convert a falsification sequence into post-hoc hypothesis rescue. Phase-0.6 instead closes the branch at the point defined before D4-B results were observed. Any future optimization redesign or new temporal mechanism must therefore begin as a new study with a newly frozen hypothesis and protocol.
 
 
 
 
-16. Final Evidence Inventory and Phase-0.6 Closeout
+# 16. Final Evidence Inventory and Phase-0.6 Closeout
 
 | Evidence / artifact | Pinned status or identity |
 | --- | --- |
@@ -595,7 +595,7 @@ The STOP boundary protects the scientific value of the program. Continuing direc
 
 <!-- blank -->
 
-Evidence inventory and final program state
+## Evidence inventory and final program state
 
 | Program component | Final status | Scientific consequence |
 | --- | --- | --- |

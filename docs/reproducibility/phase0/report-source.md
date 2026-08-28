@@ -27,7 +27,7 @@ Date: 23 August 2026
 
 
 
-1. Executive Summary
+# 1. Executive Summary
 
 The official Phase-0 synthetic benchmark completed successfully and passed execution, persistence, provenance, and metric-integrity audits. The result is scientifically mixed: Flow-Jump is capable of outperforming both a frozen-representation linear probe and a scratch GRU, but those simultaneous wins occur only in 4 of 18 dynamics-world/N settings and only at N = 80 or 100.
 
@@ -50,7 +50,7 @@ The ablations provide actionable diagnosis: the continuous-flow pathway is modes
 
 Table 1. Preliminary Phase-0 go/no-go assessment. “PASS, weak” refers to the literal preregistered threshold, not to the stronger scientific claim.
 
-2. Experimental Context and Evidence Boundary
+# 2. Experimental Context and Evidence Boundary
 
 Phase-0 was designed as a methodological stress test before scarce clinical data are used. The central question was whether a compact continuous-time flow–jump adapter could transform frozen longitudinal clinical representations into disease-specific latent states more sample-efficiently than conventional probing or scratch temporal learning.
 
@@ -62,7 +62,7 @@ Figure 1. Phase-0 evidence path and decision logic.
 
 The benchmark spans five synthetic worlds (smooth, jumps, informative observation, site shift, and misspecified), six training-patient budgets N ∈ {5, 10, 20, 40, 80, 100}, and five matched cohort/subset/model seed bundles. The principal point-forecasting metric is test MAE. The scientific interpretation below is restricted to the outputs supplied by the official run and does not treat synthetic evidence as clinical validation.
 
-3. Primary Low-N Result
+# 3. Primary Low-N Result
 
 Flow-Jump beats both the representation-linear probe and the scratch GRU in only four dynamics-world/N settings: informative observation at N=100; jumps at N=80; and site shift at N=80 and N=100. There are no simultaneous wins at N ≤ 40.
 
@@ -81,7 +81,7 @@ Figure 2. Win map for simultaneous mean-MAE superiority over both primary compar
 
 Table 2. The four dynamics-world/N settings in which Flow-Jump has the lowest mean MAE among the two primary comparators.
 
-4. Learning-Curve Crossover
+# 4. Learning-Curve Crossover
 
 The dominant pattern is a late crossover: Flow-Jump is usually inferior to the scratch GRU at N = 5–40, but becomes competitive or superior in specific structured/shifted worlds at N = 80–100. This is inconsistent with the intended “extreme-low-N first” behavior, but it is consistent with a structured model whose inductive bias becomes exploitable once enough disease-specific observations are available.
 
@@ -103,7 +103,7 @@ Figure 4. Mean test MAE learning curve in the jumps world.
 
 Figure 5. Mean test MAE learning curve in the site shift world.
 
-5. Capacity and Alternative Explanation
+# 5. Capacity and Alternative Explanation
 
 A capacity-matched control is necessary before attributing the higher-N wins specifically to the flow–jump inductive bias. Flow-Jump has 6,967 trainable parameters, approximately 1.56× the scratch GRU’s 4,455 parameters. Because the crossover toward Flow-Jump occurs primarily at N = 80–100, additional capacity remains a plausible explanation for part of the observed advantage.
 
@@ -118,7 +118,7 @@ Figure 6. Trainable parameter counts for the principal benchmark models.
 
 <!-- blank -->
 
-6. Ablation Diagnosis
+# 6. Ablation Diagnosis
 
 Ablation deltas are defined as ΔMAE = MAE(ablated) − MAE(full). Positive values mean that removing the component worsened MAE and therefore support a useful contribution from the component; negative values mean that the ablated model improved point forecasting.
 
@@ -158,7 +158,7 @@ The explicit jump pathway is more ambiguous. It is clearly useful in the informa
 
 <!-- blank -->
 
-7. Observation-Process Head
+# 7. Observation-Process Head
 
 The observation-aware model does not show reproducible robustness benefit in the dedicated site-shift benchmark. Mean benefit is defined so that positive values favor the full observation-head model. Most shifted-site effects are extremely close to zero, while MAE, RMSE, event Brier, event ROC-AUC, and latent recovery are slightly negative. Coverage and event log-loss improve only marginally.
 
@@ -179,7 +179,7 @@ Figure 12. NLL effect of the observation head. Mean benefit is negative with ver
 
 <!-- blank -->
 
-8. Misspecification Robustness
+# 8. Misspecification Robustness
 
 In the misspecified world, Flow-Jump loses to the representation-linear probe at every training size. It is nevertheless competitive with the scratch GRU in isolated settings, including N=20 (1.602 vs 1.618) and N=80 (1.471 vs 1.483). The appropriate conclusion is therefore “competitive in isolated settings, not robustly superior.”
 
@@ -189,7 +189,7 @@ In the misspecified world, Flow-Jump loses to the representation-linear probe at
 
 Figure 13. Mean test MAE under simulator misspecification.
 
-9. Phase-0 Decision
+# 9. Phase-0 Decision
 
 <!-- blank -->
 
@@ -204,33 +204,33 @@ The literal Criterion A threshold (“improve at least one primary low-N objecti
 
 <!-- blank -->
 
-10. Phase-0.5 Research Agenda
+# 10. Phase-0.5 Research Agenda
 
-Capacity-matched control
+### Capacity-matched control
 
 Construct a GRU with approximately 7k trainable parameters and rerun the same seed/world/N matrix. This is necessary to separate inductive bias from capacity.
 
-Jump-pathway diagnosis
+### Jump-pathway diagnosis
 
 Instrument event-conditioned updates and build a stricter pre-event representation path h_{t−}=f(H_{<t}) so the jump ablation cannot inherit current-event semantics through h_t.
 
-Uncertainty redesign
+### Uncertainty redesign
 
 Evaluate whether the probabilistic-scale head’s MAE penalty purchases better NLL/coverage. If not, decouple point and scale optimization or redesign the uncertainty parameterization.
 
-Observation-head redesign
+### Observation-head redesign
 
 Remove the current observation-process head from the default model. Reintroduce only after a mechanism can show reproducible site-shift robustness/calibration benefit.
 
-Low-N crossover target
+### Low-N crossover target
 
 Treat N=5,10,20,40 as the primary optimization target. The next architecture should be judged by paired seed-level gains in this region, not by N=80/100 improvements alone.
 
-Seed-level inference
+### Seed-level inference
 
 Report paired differences, confidence intervals / bootstrap intervals, and consistency across the five matched seed bundles rather than relying only on mean learning curves.
 
-11. Execution Integrity and Provenance
+# 11. Execution Integrity and Provenance
 
 | Field | Value |
 | --- | --- |
@@ -266,7 +266,7 @@ Table 3. Official run provenance and completeness record.
 
 Table 4. Checksums captured immediately after the audit-passed official execution.
 
-12. Interpretation Limits
+# 12. Interpretation Limits
 
 Synthetic evidence is methodological evidence only; it does not establish clinical validity, transportability, safety, or utility on real patients.
 
