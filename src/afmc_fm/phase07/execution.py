@@ -7,7 +7,6 @@ from copy import deepcopy
 from pathlib import Path
 from typing import TypeVar
 
-import pandas as pd
 import torch
 
 from afmc_fm.execution.persistence import canonical_config_hash
