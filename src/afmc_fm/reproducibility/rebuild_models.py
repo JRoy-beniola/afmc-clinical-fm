@@ -110,7 +110,7 @@ def load_rebuild_manifest(path: Path) -> RebuildManifest:
 
     artifacts_raw = data["artifacts"]
     if not isinstance(artifacts_raw, list):
-        raise ValueError("artifacts must be a list")
+        raise TypeError("artifacts must be a list")
 
     return RebuildManifest(
         phase_id=phase_id,
