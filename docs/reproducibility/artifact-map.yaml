@@ -76,7 +76,8 @@ phases:
     rerun_supported: false
     manifests:
       - docs/results/phase06_posthoc_optimization/MANIFEST.sha256
-    report_source: null
+    report_source: docs/reproducibility/phase06_posthoc/report-source.md
+    report_manifest: docs/reproducibility/phase06_posthoc/report.yaml
     historical_tools:
       - src/afmc_fm/phase06/posthoc_optimization.py
       - src/afmc_fm/phase06/posthoc_archive.py
