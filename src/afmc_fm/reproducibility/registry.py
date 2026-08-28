@@ -86,6 +86,7 @@ PHASES: dict[str, PhaseDefinition] = {
             ManifestSpec(
                 Path("docs/results/phase06/provenance/FINAL_MANIFEST.sha256"),
                 "evidence_root",
+                unavailable_patterns=("*.pt",),
             ),
         ),
         raw_evidence_paths=(
