@@ -163,9 +163,7 @@ Final authoritative location:
 stages/phase07/cells/<cell_id>/
 ```
 
-The temporary and final locations must reside on the same filesystem so that the final directory move can use atomic filesystem rename semantics.
-
-If atomic directory replacement cannot be guaranteed on the target filesystem, execution must fail rather than silently downgrade to a non-atomic copy protocol.
+The temporary and final locations must reside on the same filesystem. The implementation uses the platform's atomic same-filesystem rename/replace primitive and must not fall back to copy-then-delete semantics. If the atomic rename fails, the cell commit fails and the staged directory remains non-authoritative.
 
 ## 8. Interruption classes
 
@@ -303,7 +301,7 @@ A resumed cell begins from the same frozen cell specification and deterministic 
 
 The required scientific acceptance property is:
 
-> Given the same execution identity, a completed run produced through interruption + cell-boundary resume must yield the same scientific cell evidence as an uninterrupted run, modulo explicitly non-scientific runtime timestamps/durations.
+> Given the same execution identity, interruption + cell-boundary resume must produce the same scientific evidence as uninterrupted execution: metrics, traces, semantic summaries and checkpoint tensor values must be equal under the repository's deterministic test fixture. Runtime-only provenance may differ. Serialized checkpoint bytes and their per-run artifact hashes are not required to match across two independently produced output roots if the serialization format introduces non-semantic byte differences; each persisted bundle must still validate against its own recorded hashes.
 
 ## 15. CLI behavior
 
@@ -347,12 +345,12 @@ Implementation is not accepted unless tests establish the following RED → GREE
 9. valid completed cells are never passed to `run_phase07_cell()` again during resume;
 10. a completion marker cannot be produced with fewer or more than the exact 200 expected cells;
 11. aggregate metrics are rebuilt from authoritative cell bundles rather than trusted as resume state;
-12. interruption + resume and uninterrupted execution produce identical scientific persisted content for a controlled deterministic mini-plan, excluding runtime-only provenance;
+12. interruption + resume and uninterrupted execution produce semantically identical scientific evidence for a controlled deterministic test fixture as defined in Section 14;
 13. existing Phase 0.5/0.6 tests remain unchanged and green;
 14. the non-official CPU smoke remains green;
 15. the final candidate requires a user-run CUDA smoke after all crash-resilience changes are complete.
 
-Tests may use a small synthetic/test-only plan to exercise interruption semantics; no test or CI path may execute the official 200-cell matrix.
+Tests may exercise persistence/orchestration with a small injected test-only cell set or fake cell callback, but that injection point must not be exposed through the production CLI and must not weaken `plan_phase07_cells()` / `phase07_plan_sha256()` or the production requirement that official execution contains exactly the frozen 200 cells. No test or CI path may execute the official 200-cell matrix.
 
 ## 17. Files / component boundaries
 
@@ -385,7 +383,7 @@ The system is intentionally fail-closed:
 - unexpected authoritative cell → stop;
 - corrupt authoritative cell → stop;
 - conflicting completion marker → stop;
-- non-atomic target filesystem → stop;
+- failed atomic final rename → stop;
 - partial staging work → recoverable only by discard + rerun after identity validation.
 
 There is no automatic evidence repair.
