@@ -38,6 +38,19 @@ def test_parser_exposes_manifest_smoke_and_authorization_gated_official_commands
     )
     assert official.command == "official"
     assert official.device == "cuda"
+    assert official.resume is False
+
+    resumed = parser.parse_args(
+        [
+            "official",
+            "--authorization",
+            str(tmp_path / "authorization.json"),
+            "--output",
+            str(tmp_path / "official"),
+            "--resume",
+        ]
+    )
+    assert resumed.resume is True
 
 
 def test_manifest_command_writes_identity_only_and_no_cell_outputs(tmp_path):
