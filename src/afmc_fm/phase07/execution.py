@@ -50,9 +50,29 @@ def _load_simulator_config(path: str | Path) -> SimulatorConfig:
     return SimulatorConfig(**raw)
 
 
+def _resolve_dependency_configs(
+    config: Phase07Config,
+    *,
+    phase05_config: Phase05Config | None,
+    simulator_config: SimulatorConfig | None,
+) -> tuple[Phase05Config, SimulatorConfig]:
+    if phase05_config is None:
+        phase05_config = load_phase05_config(config.phase05_config)
+    elif not isinstance(phase05_config, Phase05Config):
+        raise TypeError("phase05_config must be a Phase05Config")
+
+    if simulator_config is None:
+        simulator_config = _load_simulator_config(config.simulator_config)
+    elif not isinstance(simulator_config, SimulatorConfig):
+        raise TypeError("simulator_config must be a SimulatorConfig")
+
+    return phase05_config, simulator_config
+
+
 def require_clean_phase07_checkout() -> None:
     result = subprocess.run(
         ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=Path(__file__).resolve().parent,
         check=True,
         capture_output=True,
         text=True,
@@ -66,13 +86,18 @@ def build_phase07_execution_manifest(
     *,
     execution_commit: str,
     phase07_spec_path: str | Path,
+    phase05_config: Phase05Config | None = None,
+    simulator_config: SimulatorConfig | None = None,
 ) -> dict[str, object]:
     if not isinstance(config, Phase07Config):
         raise TypeError("config must be a Phase07Config")
 
+    phase05_config, simulator_config = _resolve_dependency_configs(
+        config,
+        phase05_config=phase05_config,
+        simulator_config=simulator_config,
+    )
     cells = plan_phase07_cells(config)
-    phase05_config = load_phase05_config(config.phase05_config)
-    simulator_config = _load_simulator_config(config.simulator_config)
     protocol_lock = build_phase07_protocol_lock(
         config,
         execution_commit=execution_commit,
@@ -216,6 +241,8 @@ def run_phase07_official_cells(
     cells: Sequence[Phase07CellSpec],
     *,
     config: Phase07Config,
+    phase05_config: Phase05Config,
+    simulator_config: SimulatorConfig,
     execution_commit: str,
     phase07_spec_path: str | Path,
     authorization_path: str | Path,
@@ -223,6 +250,10 @@ def run_phase07_official_cells(
     store: Phase07Store | None = None,
     resume: bool = False,
 ) -> tuple[str, ...]:
+    if not isinstance(phase05_config, Phase05Config):
+        raise TypeError("phase05_config must be a Phase05Config")
+    if not isinstance(simulator_config, SimulatorConfig):
+        raise TypeError("simulator_config must be a SimulatorConfig")
     if not callable(execute_cell):
         raise TypeError("execute_cell must be callable")
     if type(resume) is not bool:
@@ -231,6 +262,8 @@ def run_phase07_official_cells(
         config,
         execution_commit=execution_commit,
         phase07_spec_path=phase07_spec_path,
+        phase05_config=phase05_config,
+        simulator_config=simulator_config,
     )
     supplied_plan_hash = phase07_plan_sha256(cells)
     if supplied_plan_hash != manifest["phase07_plan_sha256"]:
