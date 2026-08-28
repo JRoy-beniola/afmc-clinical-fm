@@ -34,7 +34,7 @@ PHASES: dict[str, PhaseDefinition] = {
         figure_paths=(Path("docs/results/phase0/figures/learning_curves.png"),),
         report_source=Path("docs/reproducibility/phase0/report-source.md"),
         environment_status="unknown",
-        rebuild_supported=False,
+        rebuild_supported=True,
         rerun_supported=False,
     ),
     "phase05": PhaseDefinition(
@@ -67,7 +67,7 @@ PHASES: dict[str, PhaseDefinition] = {
         figure_paths=(),
         report_source=Path("docs/reproducibility/phase05/report-source.md"),
         environment_status="unknown",
-        rebuild_supported=False,
+        rebuild_supported=True,
         rerun_supported=False,
     ),
     "phase06": PhaseDefinition(
@@ -105,7 +105,7 @@ PHASES: dict[str, PhaseDefinition] = {
         figure_paths=(),
         report_source=Path("docs/reproducibility/phase06/report-source.md"),
         environment_status="unknown",
-        rebuild_supported=False,
+        rebuild_supported=True,
         rerun_supported=False,
     ),
     "phase06-posthoc": PhaseDefinition(

@@ -2,11 +2,12 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
 from docx import Document
 
 from afmc_fm.reproducibility.models import PhaseDefinition
 from afmc_fm.reproducibility.rebuild import rebuild_phase
-from afmc_fm.reproducibility.registry import PHASES
+from afmc_fm.reproducibility.registry import PHASES, get_phase
 from afmc_fm.reproducibility.report_manifest import build_manifest, dump_manifest
 from afmc_fm.reproducibility.report_source import extract_docx, render_markdown
 
@@ -136,3 +137,24 @@ def test_rebuild_phase_rejects_unaccepted_report_source(tmp_path: Path, monkeypa
         assert "accepted" in str(exc)
     else:
         raise AssertionError("pending R2 source manifest must not be rebuildable")
+
+
+@pytest.mark.parametrize("phase_id", ["phase0", "phase05", "phase06"])
+def test_registered_historical_phase_rebuilds_without_archive_mutation(phase_id: str):
+    repository = Path(".").resolve()
+    phase = get_phase(phase_id)
+    before = _tree_snapshot(repository / phase.official_evidence_root)
+
+    report = rebuild_phase(repository, phase_id)
+
+    after = _tree_snapshot(repository / phase.official_evidence_root)
+    assert report.structural_comparison.ok, report.structural_comparison.to_json_dict()
+    assert report.ok
+    assert report.destination == repository / "outputs/reproduction" / phase_id / "rebuild"
+    assert report.candidate_report.is_file()
+    assert report.rebuild_report.is_file()
+    assert report.generated_count == 0
+    assert report.reference_copy_count == len(report.artifacts)
+    assert all(result.mode == "reference-copy" for result in report.artifacts)
+    assert report.historical_archive_unchanged
+    assert before == after

@@ -58,6 +58,15 @@ def test_registry_binds_known_execution_identities():
     )
 
 
+def test_registry_exposes_only_historical_report_phases_as_rebuildable():
+    assert tuple(phase.phase_id for phase in iter_phases() if phase.rebuild_supported) == (
+        "phase0",
+        "phase05",
+        "phase06",
+    )
+    assert not get_phase("phase06-posthoc").rebuild_supported
+
+
 def test_unknown_phase_is_rejected():
     with pytest.raises(ValueError, match="unknown reproducibility phase"):
         get_phase("phase07")

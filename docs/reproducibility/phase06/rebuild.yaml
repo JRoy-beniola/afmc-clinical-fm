@@ -1,0 +1,14 @@
+schema_version: 1
+phase_id: phase06
+report_source: docs/reproducibility/phase06/report-source.md
+reference_report: docs/results/phase06/AFMC_Phase0_6_Diagnostic_Validation_Report_FINAL.docx
+document_output: report/AFMC_Phase0_6_Diagnostic_Validation_Report_rebuilt.docx
+artifacts:
+  - kind: derived-table
+    source: docs/results/phase06/evidence/d4b/analysis/phase06_d4b_model_seed_summary.csv
+    output: reference/tables/phase06_d4b_model_seed_summary.csv
+    mode: reference-copy
+  - kind: derived-table
+    source: docs/results/phase06/evidence/d4b/analysis/phase06_d4b_context_summary.csv
+    output: reference/tables/phase06_d4b_context_summary.csv
+    mode: reference-copy
