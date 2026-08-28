@@ -100,6 +100,17 @@ def _commit_available(repository: Path, sha: str) -> bool:
     return completed.returncode == 0
 
 
+def _path_available_at_commit(repository: Path, sha: str, path: Path) -> bool:
+    completed = subprocess.run(
+        ["git", "cat-file", "-e", f"{sha}:{path.as_posix()}"],
+        cwd=repository,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return completed.returncode == 0
+
+
 def _plan(
     *,
     phase_id: str,
@@ -199,6 +210,33 @@ def plan_rerun(
                 f"historical implementation commit is unavailable: {specification.implementation_sha}",
             ),
             remediation=("restore or fetch the exact registered historical commit",),
+            implementation_sha=specification.implementation_sha,
+            destination=destination,
+            spec_path=relative_spec,
+            spec=specification,
+            historical_environment=historical_environment,
+        )
+
+    missing_historical_paths = tuple(
+        path
+        for path in specification.required_paths
+        if not _path_available_at_commit(
+            repository,
+            specification.implementation_sha,
+            path,
+        )
+    )
+    if missing_historical_paths:
+        return _plan(
+            phase_id=phase_id,
+            status="BLOCKED_POLICY",
+            reasons=tuple(
+                "historical_required_path_missing: " + path.as_posix()
+                for path in missing_historical_paths
+            ),
+            remediation=(
+                "bind required execution paths to files present at the historical implementation commit",
+            ),
             implementation_sha=specification.implementation_sha,
             destination=destination,
             spec_path=relative_spec,
