@@ -62,6 +62,16 @@ def _presence(root: Path, paths: tuple[Path, ...]) -> str:
     return "present" if all((root / path).exists() for path in paths) else "missing"
 
 
+def _rerun_readiness(root: Path, phase_id: str) -> str:
+    phase = get_phase(phase_id)
+    if not phase.rerun_supported:
+        return "UNSUPPORTED"
+    try:
+        return plan_rerun(root, phase_id, run_id="status").status
+    except (FileNotFoundError, RuntimeError, ValueError):
+        return "UNAVAILABLE"
+
+
 def _print_status(root: Path) -> None:
     for phase in iter_phases():
         archive = "present" if (root / phase.official_evidence_root).exists() else "missing"
@@ -70,11 +80,14 @@ def _print_status(root: Path) -> None:
             report_source = "unavailable"
         else:
             report_source = "present" if (root / phase.report_source).exists() else "missing"
+        readiness = _rerun_readiness(root, phase.phase_id)
         print(
             f"{phase.phase_id}: archive={archive} manifests={manifests} "
             f"report_source={report_source} environment={phase.environment_status} "
+            f"result_kind={phase.result_kind} "
             f"rebuild={'yes' if phase.rebuild_supported else 'no'} "
-            f"rerun={'yes' if phase.rerun_supported else 'no'}"
+            f"rerun={'yes' if phase.rerun_supported else 'no'} "
+            f"rerun_readiness={readiness}"
         )
         print(f"  decision: {phase.expected_classification}")
 
