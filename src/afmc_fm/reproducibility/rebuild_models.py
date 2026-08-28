@@ -132,7 +132,15 @@ def validate_rebuild_destination(
     if not phase_id or "/" in phase_id or "\\" in phase_id or phase_id in {".", ".."}:
         raise ValueError("phase_id must be a simple non-empty identifier")
 
+    reproduction_root = (repository / "outputs/reproduction").resolve()
+    if reproduction_root != repository and not reproduction_root.is_relative_to(repository):
+        raise ValueError("outputs/reproduction must resolve within the repository")
+
     allowed_root = (repository / "outputs/reproduction" / phase_id / "rebuild").resolve()
+    if allowed_root != reproduction_root and not allowed_root.is_relative_to(reproduction_root):
+        expected = Path("outputs/reproduction") / phase_id / "rebuild"
+        raise ValueError(f"rebuild destination must be beneath {expected.as_posix()}")
+
     if destination is None:
         return allowed_root
 
