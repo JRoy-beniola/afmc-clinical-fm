@@ -38,19 +38,6 @@ def _cell(*, model_seed: int = 1101, policy: str = "standard_early_stop") -> Pha
     )
 
 
-def _identity() -> dict[str, object]:
-    return {
-        "execution_commit": "a" * 40,
-        "phase07_spec_sha256": "1" * 64,
-        "phase07_config_sha256": "2" * 64,
-        "phase05_config_sha256": "3" * 64,
-        "simulator_config_sha256": "4" * 64,
-        "protocol_lock_sha256": "5" * 64,
-        "phase07_plan_sha256": "6" * 64,
-        "expected_cell_count": 200,
-    }
-
-
 def _protocol_lock() -> dict[str, object]:
     return {
         "schema_version": 1,
@@ -59,6 +46,20 @@ def _protocol_lock() -> dict[str, object]:
         "execution_commit": "a" * 40,
         "world": "smooth",
         "n_train": 40,
+        "expected_cell_count": 200,
+    }
+
+
+def _identity() -> dict[str, object]:
+    protocol_hash = hashlib.sha256(_canonical_json_bytes(_protocol_lock())).hexdigest()
+    return {
+        "execution_commit": "a" * 40,
+        "phase07_spec_sha256": "1" * 64,
+        "phase07_config_sha256": "2" * 64,
+        "phase05_config_sha256": "3" * 64,
+        "simulator_config_sha256": "4" * 64,
+        "protocol_lock_sha256": protocol_hash,
+        "phase07_plan_sha256": "6" * 64,
         "expected_cell_count": 200,
     }
 
