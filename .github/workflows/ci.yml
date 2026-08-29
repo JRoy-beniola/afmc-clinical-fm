@@ -19,3 +19,4 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check src tests tools/reproducibility
       - run: pytest -q
+      - run: afmc-phase07 smoke --device cpu

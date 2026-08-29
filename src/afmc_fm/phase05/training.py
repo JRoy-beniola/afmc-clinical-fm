@@ -207,7 +207,11 @@ def _fit_core(
     config: Phase05Config,
     device: torch.device,
     diagnostics: TrainingDiagnosticObserver | None = None,
+    *,
+    stop_on_patience: bool = True,
 ) -> Phase05FlowJumpAdapter:
+    if type(stop_on_patience) is not bool:
+        raise TypeError("stop_on_patience must be a boolean")
     if diagnostics is not None:
         if "valid" not in train:
             raise ValueError("diagnostic training requires train batch['valid']")
@@ -323,7 +327,7 @@ def _fit_core(
             )
 
         epochs_run = epoch
-        if should_stop:
+        if should_stop and stop_on_patience:
             early_stop_reason = "patience_exhausted"
             break
 
@@ -427,8 +431,18 @@ def fit_phase05_model(
     config: Phase05Config,
     device: torch.device,
     diagnostics: TrainingDiagnosticObserver | None = None,
+    *,
+    stop_on_patience: bool = True,
 ) -> Phase05FlowJumpAdapter:
-    _fit_core(model, train, validation, config, device, diagnostics)
+    _fit_core(
+        model,
+        train,
+        validation,
+        config,
+        device,
+        diagnostics,
+        stop_on_patience=stop_on_patience,
+    )
     if model.uncertainty_mode == "decoupled":
         fit_decoupled_scale_head(model, train, validation, config, device)
     return model
