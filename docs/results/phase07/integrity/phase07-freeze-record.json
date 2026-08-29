@@ -1,0 +1,16 @@
+{
+  "artifacts": {
+    "phase07-adjudication-frozen.json": "44c15c7433cd3847d98679a9b7f9739d93440f204c6ac710ba3c386f1606b522",
+    "phase07-execution-provenance-frozen.json": "64784be6f42c2de77f3ca6af0dd73fc39fef3c34c723c0813b61074c0821a39f",
+    "phase07-metrics-frozen.csv": "47828a642020c243d8042dd8bc534c4aed40278f1060b644d1e86e9ad96deca9",
+    "phase07-official-file-manifest.sha256": "32430be72465daa85f449475e97648c94bb85c013eb23c26d99180140bd64265",
+    "prep/authorization.json": "031f705e0f577775506f219b4ae3ef895142aaae7e6dfb640463922f17bb4693",
+    "prep/manifest.json": "ea0d00eb4ed233836a94ba85b562aee60cba44667b7b0ba85d655d2e371ff3de",
+    "prep/plan.json": "621e45744a8b54b167137e843a72c236faafb55b80bbb522806fc8e2a93c9bc7",
+    "prep/protocol.json": "503b86ef89016cd6d4d700e34181a018de505bee53858acc053aa2660d53a71c"
+  },
+  "execution_commit": "43a9f75d69250f6421b5d2e8f35f656665abd62e",
+  "phase": "phase07",
+  "schema_version": 1,
+  "status": "FROZEN_AFTER_OFFICIAL_ANALYSIS"
+}

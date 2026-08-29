@@ -18,8 +18,10 @@ Each completed phase should preserve:
 | Phase | Status | Primary decision |
 |---|---|---|
 | Phase 0 | COMPLETE | Extreme-low-N superiority not validated; focused redesign required |
-| Phase 0.5 | PENDING ARCHIVAL | Official Stage I-A result to be archived before merge |
-| Phase 0.6 | NOT STARTED | Diagnostic decomposition and evidence-driven redesign |
+| Phase 0.5 | COMPLETE | Flow mechanism gate failed; later preregistered stages were not entered |
+| Phase 0.6 | COMPLETE | `D4-B AMBIGUOUS -> STOP`; model initialization dominated the N=40 variance diagnosis |
+| Post-Phase-0.6 | EXPLORATORY | Optimization-conditioned retrospective signal identified; no causal claim |
+| Phase 0.7 | COMPLETE | `P07_OPTIMIZATION_HORIZON_NOT_ESTABLISHED` |
 
 ## Directory convention
 
@@ -29,6 +31,8 @@ docs/results/
 ├── phase0/
 ├── phase05/
 ├── phase06/
+├── phase06_posthoc_optimization/
+├── phase07/
 └── ...
 ~~~
 
@@ -295,21 +299,60 @@ docs/results/phase05/
 
 ## Phase 0.6
 
-Phase 0.6 will begin only after Phase 0 and Phase 0.5 are fully archived and merged.
+Phase 0.6 is the completed diagnostic-decomposition program following the failed Phase 0.5 mechanism gate.
 
-Its purpose is diagnostic decomposition and evidence-driven redesign.
+Its principal findings were:
 
-Current planned diagnostic themes include:
+- model initialization was the dominant named source of N=40 variability;
+- the terminal D4-B result was heterogeneous across contexts and model seeds;
+- the frozen classification was `D4-B AMBIGUOUS -> STOP`;
+- no confirmatory rescue was authorized from that result.
 
-- model-initialization variance;
-- subset-selection variance;
-- cohort heterogeneity;
-- genuine sample-complexity threshold;
-- checkpoint-selection-objective mismatch;
-- capacity as an alternative explanation;
-- predictive versus mechanistic divergence.
+The canonical Phase 0.6 archive is stored under:
 
-Phase-0.6 should follow the same archival convention from the beginning rather than reconstructing it after execution.
+~~~text
+docs/results/phase06/
+~~~
+
+A later optimization-conditioned analysis reused the D4-B development pairs only as exploratory evidence. That work remains explicitly post-Phase-0.6 and cannot alter the frozen `AMBIGUOUS -> STOP` decision.
+
+Its archive is stored under:
+
+~~~text
+docs/results/phase06_posthoc_optimization/
+~~~
+
+## Phase 0.7
+
+Phase 0.7 is the completed prospective optimization-horizon intervention motivated by the exploratory post-Phase-0.6 diagnostics.
+
+The frozen experiment tested whether preventing premature stopping would establish the preregistered positive architecture-by-policy interaction and reduce initialization-linked heterogeneity.
+
+The official result was:
+
+`P07_OPTIMIZATION_HORIZON_NOT_ESTABLISHED`
+
+Primary evidence:
+
+- mean G = 0.0006074243783950794;
+- crossed-bootstrap 95% CI = [-0.0022108983993530317, 0.0047499954700469926];
+- 1 / 5 positive context means;
+- 1 / 10 positive model-seed means;
+- 1 / 50 positive paired G effects.
+
+The observed residual heterogeneity ratio was below one, but 11 of 10,000 bootstrap replicates violated the frozen validity condition. Under the preregistered fail-closed rule, the R_SD confidence interval is therefore undefined and the heterogeneity gate cannot be claimed.
+
+A post-adjudication exploratory exposure audit found that the stopping intervention was behaviorally active in only 2 / 100 matched architecture cells. Both activated cells improved under continuation, one in each architecture, but this cannot modify the official Phase 0.7 adjudication.
+
+The supported interpretation is:
+
+> Under the frozen Phase 0.7 intervention, preventing premature termination did not establish the preregistered architecture-relative optimization-horizon effect.
+
+The canonical Phase 0.7 archive is stored under:
+
+~~~text
+docs/results/phase07/
+~~~
 
 ## Research-history principle
 
