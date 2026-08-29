@@ -1,0 +1,93 @@
+{
+  "bootstrap_resamples": 10000,
+  "bootstrap_seed": 20260827,
+  "contexts": [
+    [
+      406,
+      506
+    ],
+    [
+      407,
+      507
+    ],
+    [
+      408,
+      508
+    ],
+    [
+      409,
+      509
+    ],
+    [
+      410,
+      510
+    ]
+  ],
+  "execution_commit": "43a9f75d69250f6421b5d2e8f35f656665abd62e",
+  "expected_cell_count": 200,
+  "flow_modes": [
+    "none",
+    "time_scaled"
+  ],
+  "forbidden_seed_sets": {
+    "cohort": [
+      701,
+      702,
+      703,
+      704,
+      705,
+      706,
+      707,
+      708,
+      709,
+      710
+    ],
+    "model": [
+      901,
+      902,
+      903,
+      904,
+      905,
+      906,
+      907,
+      908,
+      909,
+      910
+    ],
+    "subset": [
+      801,
+      802,
+      803,
+      804,
+      805,
+      806,
+      807,
+      808,
+      809,
+      810
+    ]
+  },
+  "max_epochs": 100,
+  "model_seeds": [
+    1101,
+    1102,
+    1103,
+    1104,
+    1105,
+    1106,
+    1107,
+    1108,
+    1109,
+    1110
+  ],
+  "n_train": 40,
+  "optimization_policies": [
+    "standard_early_stop",
+    "forced_horizon"
+  ],
+  "patience": 12,
+  "phase07_config_sha256": "d0b3eaf9bddbf4543c83dce61982c1b13c7ca4c2be831570153d3ce43e6617d3",
+  "phase07_spec_sha256": "01fbefb609ec827001776f3b1be90148fe8d5071e44ecc14331aa2a717dbe48f",
+  "schema_version": 1,
+  "world": "smooth"
+}

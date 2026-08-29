@@ -1,0 +1,36 @@
+{
+  "identity": {
+    "execution_commit": "43a9f75d69250f6421b5d2e8f35f656665abd62e",
+    "expected_cell_count": 200,
+    "phase05_config_sha256": "befd7140cbf68cb981418cdc0c8880bb0652c2a6db614d05f61ad267297d519b",
+    "phase07_config_sha256": "d0b3eaf9bddbf4543c83dce61982c1b13c7ca4c2be831570153d3ce43e6617d3",
+    "phase07_plan_sha256": "3dbf88a54b982c7c6e73d71027e4f814dc633d660e3f8804a354b9d0d94fab91",
+    "phase07_spec_sha256": "01fbefb609ec827001776f3b1be90148fe8d5071e44ecc14331aa2a717dbe48f",
+    "protocol_lock_sha256": "f937661347a8f8ea2caab603c3e60909430093a9d4cf9851763ee4ad3ca2530e",
+    "simulator_config_sha256": "f093115ae47274680e8b7cf1c7fea440a739079881099227e5b8c4abc0320aa8"
+  },
+  "invocations": [
+    {
+      "completed_after_count": 200,
+      "completed_before_count": 0,
+      "device": "cuda",
+      "ended_at_utc": "2026-08-28T20:18:58.970361+00:00",
+      "failure": null,
+      "last_attempted_cell_id": "p07__smooth__cohort410__subset510__model1110__n40__time_scaled__forced_horizon",
+      "runtime": {
+        "cuda_available": true,
+        "gpu_name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+        "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+        "python": "3.14.4",
+        "torch": "2.13.0+cu130",
+        "torch_cuda": "13.0"
+      },
+      "started_at_utc": "2026-08-28T19:42:20.122243+00:00",
+      "status": "complete",
+      "wall_time_seconds": 2198.8480909380014
+    }
+  ],
+  "phase": "phase07",
+  "planned_cell_count": 200,
+  "schema_version": 1
+}

@@ -1,0 +1,50 @@
+{
+  "execution_commit": "43a9f75d69250f6421b5d2e8f35f656665abd62e",
+  "expected_cell_count": 200,
+  "forbidden_seed_sets": {
+    "cohort": [
+      701,
+      702,
+      703,
+      704,
+      705,
+      706,
+      707,
+      708,
+      709,
+      710
+    ],
+    "model": [
+      901,
+      902,
+      903,
+      904,
+      905,
+      906,
+      907,
+      908,
+      909,
+      910
+    ],
+    "subset": [
+      801,
+      802,
+      803,
+      804,
+      805,
+      806,
+      807,
+      808,
+      809,
+      810
+    ]
+  },
+  "phase": "phase07",
+  "phase05_config_sha256": "befd7140cbf68cb981418cdc0c8880bb0652c2a6db614d05f61ad267297d519b",
+  "phase07_config_sha256": "d0b3eaf9bddbf4543c83dce61982c1b13c7ca4c2be831570153d3ce43e6617d3",
+  "phase07_plan_sha256": "3dbf88a54b982c7c6e73d71027e4f814dc633d660e3f8804a354b9d0d94fab91",
+  "phase07_spec_sha256": "01fbefb609ec827001776f3b1be90148fe8d5071e44ecc14331aa2a717dbe48f",
+  "protocol_lock_sha256": "f937661347a8f8ea2caab603c3e60909430093a9d4cf9851763ee4ad3ca2530e",
+  "schema_version": 1,
+  "simulator_config_sha256": "f093115ae47274680e8b7cf1c7fea440a739079881099227e5b8c4abc0320aa8"
+}

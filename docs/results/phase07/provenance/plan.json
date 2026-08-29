@@ -1,0 +1,2008 @@
+{
+  "cells": [
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1101__n40__none__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1101__n40__none__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1101__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1101__n40__time_scaled__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1102__n40__none__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1102__n40__none__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1102__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1102__n40__time_scaled__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1103__n40__none__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1103__n40__none__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1103__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1103__n40__time_scaled__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1104__n40__none__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1104__n40__none__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1104__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1104__n40__time_scaled__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1105__n40__none__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1105__n40__none__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1105__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1105__n40__time_scaled__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1106__n40__none__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1106__n40__none__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1106__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1106__n40__time_scaled__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1107__n40__none__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1107__n40__none__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1107__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1107__n40__time_scaled__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1108__n40__none__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1108__n40__none__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1108__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1108__n40__time_scaled__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1109__n40__none__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1109__n40__none__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1109__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1109__n40__time_scaled__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1110__n40__none__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1110__n40__none__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "none",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1110__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort406__subset506__model1110__n40__time_scaled__forced_horizon",
+      "cohort_seed": 406,
+      "flow_mode": "time_scaled",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 506,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1101__n40__none__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1101__n40__none__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1101__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1101__n40__time_scaled__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1102__n40__none__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1102__n40__none__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1102__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1102__n40__time_scaled__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1103__n40__none__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1103__n40__none__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1103__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1103__n40__time_scaled__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1104__n40__none__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1104__n40__none__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1104__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1104__n40__time_scaled__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1105__n40__none__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1105__n40__none__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1105__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1105__n40__time_scaled__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1106__n40__none__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1106__n40__none__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1106__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1106__n40__time_scaled__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1107__n40__none__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1107__n40__none__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1107__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1107__n40__time_scaled__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1108__n40__none__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1108__n40__none__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1108__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1108__n40__time_scaled__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1109__n40__none__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1109__n40__none__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1109__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1109__n40__time_scaled__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1110__n40__none__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1110__n40__none__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1110__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort407__subset507__model1110__n40__time_scaled__forced_horizon",
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 507,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1101__n40__none__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1101__n40__none__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1101__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1101__n40__time_scaled__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1102__n40__none__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1102__n40__none__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1102__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1102__n40__time_scaled__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1103__n40__none__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1103__n40__none__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1103__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1103__n40__time_scaled__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1104__n40__none__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1104__n40__none__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1104__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1104__n40__time_scaled__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1105__n40__none__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1105__n40__none__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1105__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1105__n40__time_scaled__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1106__n40__none__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1106__n40__none__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1106__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1106__n40__time_scaled__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1107__n40__none__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1107__n40__none__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1107__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1107__n40__time_scaled__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1108__n40__none__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1108__n40__none__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1108__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1108__n40__time_scaled__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1109__n40__none__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1109__n40__none__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1109__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1109__n40__time_scaled__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1110__n40__none__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1110__n40__none__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "none",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1110__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort408__subset508__model1110__n40__time_scaled__forced_horizon",
+      "cohort_seed": 408,
+      "flow_mode": "time_scaled",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 508,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1101__n40__none__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1101__n40__none__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1101__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1101__n40__time_scaled__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1102__n40__none__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1102__n40__none__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1102__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1102__n40__time_scaled__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1103__n40__none__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1103__n40__none__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1103__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1103__n40__time_scaled__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1104__n40__none__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1104__n40__none__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1104__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1104__n40__time_scaled__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1105__n40__none__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1105__n40__none__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1105__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1105__n40__time_scaled__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1106__n40__none__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1106__n40__none__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1106__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1106__n40__time_scaled__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1107__n40__none__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1107__n40__none__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1107__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1107__n40__time_scaled__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1108__n40__none__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1108__n40__none__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1108__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1108__n40__time_scaled__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1109__n40__none__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1109__n40__none__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1109__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1109__n40__time_scaled__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1110__n40__none__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1110__n40__none__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "none",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1110__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort409__subset509__model1110__n40__time_scaled__forced_horizon",
+      "cohort_seed": 409,
+      "flow_mode": "time_scaled",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 509,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1101__n40__none__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1101__n40__none__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1101__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1101__n40__time_scaled__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1101,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1102__n40__none__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1102__n40__none__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1102__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1102__n40__time_scaled__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1102,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1103__n40__none__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1103__n40__none__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1103__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1103__n40__time_scaled__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1103,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1104__n40__none__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1104__n40__none__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1104__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1104__n40__time_scaled__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1104,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1105__n40__none__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1105__n40__none__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1105__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1105__n40__time_scaled__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1105,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1106__n40__none__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1106__n40__none__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1106__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1106__n40__time_scaled__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1106,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1107__n40__none__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1107__n40__none__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1107__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1107__n40__time_scaled__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1107,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1108__n40__none__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1108__n40__none__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1108__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1108__n40__time_scaled__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1108,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1109__n40__none__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1109__n40__none__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1109__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1109__n40__time_scaled__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1109,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1110__n40__none__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1110__n40__none__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "none",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1110__n40__time_scaled__standard_early_stop",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "standard_early_stop",
+      "subset_seed": 510,
+      "world": "smooth"
+    },
+    {
+      "cell_id": "p07__smooth__cohort410__subset510__model1110__n40__time_scaled__forced_horizon",
+      "cohort_seed": 410,
+      "flow_mode": "time_scaled",
+      "model_seed": 1110,
+      "n_train": 40,
+      "optimization_policy": "forced_horizon",
+      "subset_seed": 510,
+      "world": "smooth"
+    }
+  ],
+  "expected_cell_count": 200,
+  "phase": "phase07",
+  "phase07_plan_sha256": "3dbf88a54b982c7c6e73d71027e4f814dc633d660e3f8804a354b9d0d94fab91",
+  "schema_version": 1
+}

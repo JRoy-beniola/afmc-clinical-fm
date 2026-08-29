@@ -1,0 +1,75 @@
+{
+  "activated_cells": [
+    {
+      "H_architecture": 0.0276362299919128,
+      "cohort_seed": 407,
+      "flow_mode": "none",
+      "forced_selected_checkpoint_epoch": 100,
+      "forced_test_mae": 0.3018235564231872,
+      "model_seed": 1101,
+      "standard_selected_checkpoint_epoch": 42,
+      "standard_stop_epoch": 54,
+      "standard_test_mae": 0.3294597864151001,
+      "subset_seed": 507,
+      "would_patience_exhaust_epoch": 54
+    },
+    {
+      "H_architecture": 0.0580074489116668,
+      "cohort_seed": 407,
+      "flow_mode": "time_scaled",
+      "forced_selected_checkpoint_epoch": 100,
+      "forced_test_mae": 0.2657787501811981,
+      "model_seed": 1103,
+      "standard_selected_checkpoint_epoch": 47,
+      "standard_stop_epoch": 59,
+      "standard_test_mae": 0.323786199092865,
+      "subset_seed": 507,
+      "would_patience_exhaust_epoch": 59
+    }
+  ],
+  "analysis_type": "EXPLORATORY_POSTHOC_DIAGNOSTIC",
+  "by_architecture": {
+    "none": {
+      "checkpoint_epoch_changed": 1,
+      "forced_patience_event": 1,
+      "matched_cells": 50,
+      "mean_H": 0.000552724599838256,
+      "standard_patience_exhausted": 1,
+      "test_mae_changed": 1
+    },
+    "time_scaled": {
+      "checkpoint_epoch_changed": 1,
+      "forced_patience_event": 1,
+      "matched_cells": 50,
+      "mean_H": 0.001160148978233336,
+      "standard_patience_exhausted": 1,
+      "test_mae_changed": 1
+    }
+  },
+  "interpretive_boundary": "This exploratory diagnostic cannot alter the frozen Phase 0.7 adjudication. It records that the stopping-policy intervention was behaviorally active in only 2 of 100 matched architecture cells.",
+  "intervention_exposure": {
+    "activation_fraction": 0.02,
+    "checkpoint_epoch_changed": 2,
+    "forced_patience_event": 2,
+    "matched_architecture_cells": 100,
+    "patience_event_mismatches": 0,
+    "standard_patience_exhausted": 2,
+    "test_mae_changed": 2
+  },
+  "official_adjudication": "P07_OPTIMIZATION_HORIZON_NOT_ESTABLISHED",
+  "official_adjudication_immutable": true,
+  "pair_level_interaction": {
+    "max_G": 0.0580074489116668,
+    "mean_G": 0.00060742437839508,
+    "mean_H_control": 0.000552724599838256,
+    "mean_H_time_scaled": 0.001160148978233336,
+    "median_G": 0.0,
+    "min_G": -0.0276362299919128,
+    "negative_G_pairs": 1,
+    "pairs": 50,
+    "positive_G_pairs": 1,
+    "zero_G_pairs": 48
+  },
+  "phase": "phase07",
+  "schema_version": 1
+}

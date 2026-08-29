@@ -1,0 +1,21 @@
+{
+  "execution_commit": "43a9f75d69250f6421b5d2e8f35f656665abd62e",
+  "official_adjudication": "P07_OPTIMIZATION_HORIZON_NOT_ESTABLISHED",
+  "official_adjudication_sha256": "44c15c7433cd3847d98679a9b7f9739d93440f204c6ac710ba3c386f1606b522",
+  "official_result_is_immutable": true,
+  "parent_official_freeze_record_sha256": "de45ef1f932492a2dd27c72750ec624088aff0418cca674afceba72a87d13696",
+  "phase": "phase07",
+  "posthoc_artifacts": {
+    "posthoc/G_matrix.csv": "6989ed7fba684174cfa92f22a43afdc2e6a34f53af46390c654b39a6e550336d",
+    "posthoc/POSTHOC_SHA256SUMS.txt": "9c705e782f71e1b6d3bd3eb409ae53ee4fe8f2a553ae9e3aecb56e8651ff3f9e",
+    "posthoc/cell_execution_summary.csv": "fe253ff8269681f71565463f32df4e455aaf540ba89768a7ff9d73f8880fda0a",
+    "posthoc/context_means.csv": "2d83b5f949625ffc5f5829cb532acefe9e6e23fc8ed4536f784698946167b308",
+    "posthoc/intervention_exposure.csv": "6210777474ed6e116116b21d3954a3cbd456513f05c2e45ca263892fef7c5308",
+    "posthoc/model_means.csv": "6bcf4e3507f39094c2017fc28c9fc3a055ddb268b0e818686c44eb434661e5d3",
+    "posthoc/phase07-posthoc-summary.json": "febcb3df35628d75b7698577266e4b73068c1ea5285b786c5a18c2cdef747d15",
+    "posthoc/phase07_pair_table.csv": "261c12425f17bb1496c2f29821ad4050a554d333b9d7bd172bd7d026c2258804"
+  },
+  "schema_version": 1,
+  "scientific_boundary": "Post-hoc diagnostics are exploratory and cannot modify, rescue, or replace the frozen official Phase 0.7 adjudication.",
+  "status": "FROZEN_EXPLORATORY_POSTHOC"
+}
